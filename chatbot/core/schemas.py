@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 @dataclass(frozen=True)
@@ -102,3 +103,86 @@ class AnswerResponse(BaseModel):
     figures: list[str] = []
     follow_ups: list[str] = []
     not_found: bool = False
+
+
+# KB 스키마 (kb/troubleshooting/*.json, kb/maintenance/*.json)
+# KB 클래스는 모두 extra="forbid": 정의에 없는 필드(오타 등)가 들어오면 값을 버리지 않고 오류로 알림
+
+KB_ID_PATTERN = r"^(TS|MT)-[A-Z0-9]+-T\d{2}-\d{2}$"   # 예: TS-MB200-T08-05
+
+
+class SourceRef(BaseModel):
+    """KB 내용의 출처 (매뉴얼의 어느 문서·쪽·표/절)."""
+    model_config = ConfigDict(extra="forbid")
+    doc_id: str
+    version: str
+    page: int = Field(ge=1)
+    ref: str  # "Table 8", "Section 4.1"
+
+
+class FigureRef(BaseModel):
+    """KB와 관련된 그림. image_path는 crop_regions가 잘라 둔 이미지 경로 (색인 시 채움)."""
+    model_config = ConfigDict(extra="forbid")
+    figure_ref: str  # "Figure 5"
+    page: int = Field(ge=1)
+    image_path: str | None = None
+
+
+class KbCause(BaseModel):
+    """트러블슈팅 KB의 원인 1개와 조치. cause_id = {kb_id}#c{순번}."""
+    model_config = ConfigDict(extra="forbid")
+    cause_id: str
+    cause: str
+    actions: list[str] = Field(min_length=1)
+
+
+class _KbBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")  # TroubleshootingKB·MaintenanceKB가 물려받음
+    kb_id: str = Field(pattern=KB_ID_PATTERN)
+    applies_to: list[str] = Field(min_length=1)  # data/models.csv의 모델명과 같은 표기
+    sources: list[SourceRef] = Field(min_length=1)
+    figures: list[FigureRef] = []
+    related_kb: list[str] = []
+
+
+class TroubleshootingKB(_KbBase):
+    """증상 → 원인 → 조치. 매뉴얼의 트러블슈팅 표·알람 코드 표에서 만듦."""
+    type: Literal["troubleshooting"]
+    symptom: str
+    alarm_codes: list[str] = []
+    causes: list[KbCause] = Field(min_length=1)
+    safety: list[str] = []
+
+    @model_validator(mode="after")
+    def _check_ids(self):
+        if not self.kb_id.startswith("TS-"):
+            raise ValueError("트러블슈팅 KB의 kb_id는 TS-로 시작해야 함")
+        for i, c in enumerate(self.causes, start=1):
+            expected = f"{self.kb_id}#c{i}"
+            if c.cause_id != expected:
+                raise ValueError(f"cause_id는 원본 표 순서대로 {expected}이어야 함 (현재 {c.cause_id})")
+        return self
+
+
+class MaintenanceKB(_KbBase):
+    """점검·정비 작업과 주기. 매뉴얼의 점검표·윤활표에서 만듦."""
+    type: Literal["maintenance"]
+    task: str
+    interval: Literal["daily", "weekly", "monthly", "quarterly", "yearly", "operating_hours"]
+    interval_hours: int | None = None        # interval = operating_hours일 때만
+    first_interval_hours: int | None = None  # 첫 주기가 다른 경우 (예: 첫 500 h)
+    interval_note: str | None = None         # 원문 그대로의 보충 (예: "or 12 months")
+    criteria: str | None = None              # 판정 기준 (예: "Replace at 3 mm wear")
+    details: list[str] = []                  # 윤활유 종류·양 등
+    lockout_required: bool
+
+    @model_validator(mode="after")
+    def _check_interval(self):
+        if not self.kb_id.startswith("MT-"):
+            raise ValueError("점검 KB의 kb_id는 MT-로 시작해야 함")
+        if (self.interval == "operating_hours") != (self.interval_hours is not None):
+            raise ValueError("interval_hours는 interval이 operating_hours일 때만, 그리고 반드시 적어야 함")
+        return self
+
+
+KbEntry = Annotated[Union[TroubleshootingKB, MaintenanceKB], Field(discriminator="type")]
