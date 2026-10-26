@@ -11,11 +11,27 @@
   - 다른 파일에서는 os.getenv(...) 로 직접 읽지 말고 항상 Settings.load() 를 쓴다.
     (설정을 읽는 곳이 한 군데여야 이름을 바꿀 때 이 파일만 고치면 된다)
   - 코드에 API 키·모델명·비밀번호를 직접 쓰지 않는다. (기능명세서 config.py 행)
+  - 환경변수 이름은 저장소의 .env.example 이 기준이다.
+    Settings 속성 이름은 ".env 이름을 소문자로 바꾼 것"으로 맞춘다.
+ 
+[.env 이름 ↔ Settings 속성 이름]
+  OPENAI_API_KEY             → settings.openai_api_key
+  MODEL_TEXT                 → settings.model_text
+  MODEL_VISION               → settings.model_vision
+  EMBEDDING_MODEL            → settings.embedding_model
+  DB_HOST / DB_PORT / DB_USER / DB_PASSWORD / DB_NAME
+                             → settings.db_host / db_port / db_user / db_password / db_name
+  DB_SSL_CA                  → settings.db_ssl_ca
+  BROWSER_STORAGE_KEY        → settings.browser_storage_key
+  BROWSER_SECRET             → settings.browser_secret
+  SESSION_HOURS              → settings.session_hours
+  NOT_FOUND_THRESHOLD        → settings.not_found_threshold
+  IMAGE_CONFIDENCE_THRESHOLD → settings.image_confidence_threshold
  
 [이 파일이 제공하는 것]
   - Settings.load()        : 앱 전체 설정. 필수 값을 모두 검사한다. (앱·팀원 코드용)
   - load_openai_settings() : OpenAI 키·모델명만 읽는다. (scripts/check_models.py 전용)
-                             → 모델 이름을 아직 모르는 상태에서도 모델 확인을 할 수 있게 하려는 것
+  - load_seed_passwords()  : 초기 계정 비밀번호만 읽는다. (scripts/seed.py 전용)
   - ConfigError            : 설정이 잘못됐을 때 나는 오류
  
 [사용 예]
@@ -31,24 +47,24 @@
 # 팀원마다 파이썬 버전이 조금 달라도 타입 표기 때문에 깨지지 않게 하는 보험이다.
 from __future__ import annotations
  
-import os                                   # 환경변수를 읽는 기본 도구
+import os                                          # 환경변수를 읽는 기본 도구
 from dataclasses import dataclass, field, fields   # 설정을 담는 "그릇"(클래스)을 쉽게 만드는 도구
-from pathlib import Path                    # Windows(\) / Mac(/) 경로 차이를 알아서 처리해 주는 도구
-from typing import Callable, Optional, TypeVar  # 타입 표기 도구 (Optional: 값이 없을 수도 있음(None))
+from pathlib import Path                           # Windows(\) / Mac(/) 경로 차이를 알아서 처리해 주는 도구
+from typing import Callable, Optional, TypeVar     # 타입 표기 도구 (Optional: 값이 없을 수도 있음(None))
  
-from dotenv import load_dotenv              # .env 파일 내용을 환경변수로 올려 주는 도구 (pip install python-dotenv)
+from dotenv import load_dotenv                     # .env 파일 내용을 환경변수로 올려 주는 도구 (pip install python-dotenv)
  
  
 # ------------------------------------------------------------------------------
 # 1. 기준 경로
 # ------------------------------------------------------------------------------
-# __file__        : 지금 이 파일(config.py)의 위치
-# .resolve()      : 전체 경로로 바꿈 (예: C:/Users/.../project/config.py)
-# .parent         : 그 파일이 들어 있는 폴더 = 프로젝트 최상단 폴더
+# __file__   : 지금 이 파일(config.py)의 위치
+# .resolve() : 전체 경로로 바꿈 (예: C:/workspaces/wanna_know/config.py)
+# .parent    : 그 파일이 들어 있는 폴더 = 프로젝트 최상단 폴더
 # 그냥 ".env" 라고 쓰면 "터미널이 지금 있는 폴더" 기준으로 찾기 때문에,
 # 다른 폴더에서 실행하면 못 찾는다. BASE_DIR 기준이면 어디서 실행해도 같은 파일을 찾는다.
 # ※ config.py 를 src/ 같은 하위 폴더로 옮기면 .parent 를 .parent.parent 로 바꿔야 한다.
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 ENV_PATH = BASE_DIR / ".env"
  
  
@@ -56,12 +72,12 @@ ENV_PATH = BASE_DIR / ".env"
 # 2. 값이 비었을 때 보여 줄 "해결 방법" 안내
 # ------------------------------------------------------------------------------
 # 오류 줄마다 "→ 어디서 값을 구하는지"를 붙여 주기 위한 사전(dict)이다.
-# 키: 환경변수 이름 / 값: 해결 방법
+# 키: 환경변수 이름 (.env.example 과 같아야 한다) / 값: 해결 방법
 FIX_HINTS: dict[str, str] = {
     "OPENAI_API_KEY": "OpenAI 대시보드(platform.openai.com) > API keys 에서 발급한 키를 붙여 넣기",
-    "MODEL_TEXT": "python scripts/check_models.py 실행 → '텍스트·사진 후보' 중 텍스트 테스트를 통과한 이름 적기",
-    "MODEL_VISION": "python scripts/check_models.py 실행 → 사진 테스트를 통과한 이름 적기",
-    "MODEL_EMBED": "python scripts/check_models.py 실행 → '임베딩 후보'에서 고르기 (보통 text-embedding-3-small)",
+    "MODEL_TEXT": "팀에서 정한 텍스트 답변용 모델 이름 적기",
+    "MODEL_VISION": "팀에서 정한 사진(명판·손상) 분석용 모델 이름 적기",
+    "EMBEDDING_MODEL": "임베딩 모델 이름 적기 (.env.example 기본값: text-embedding-3-small)",
     "DB_HOST": "Aiven 콘솔 > MySQL 서비스 > Overview > Connection information 의 Host",
     "DB_PORT": "같은 화면의 Port (숫자)",
     "DB_USER": "같은 화면의 User (보통 avnadmin)",
@@ -69,8 +85,8 @@ FIX_HINTS: dict[str, str] = {
     "DB_NAME": "같은 화면의 Database name (보통 defaultdb)",
     "DB_SSL_CA": "같은 화면의 CA certificate 를 내려받아 프로젝트 최상단 certs/ca.pem 으로 저장 "
                  "(로컬 MySQL처럼 SSL을 안 쓰면 .env 에 DB_SSL_CA= 처럼 값을 비워 두기)",
-    "BROWSER_STORAGE_KEY": "아무 고정 이름이면 됨 (예: wanna_know_session)",
-    "BROWSER_SECRET_KEY": '터미널에서 python -c "import secrets; print(secrets.token_hex(32))" 실행 → 나온 값 붙여 넣기',
+    "BROWSER_STORAGE_KEY": "아무 고정 이름이면 됨 (.env.example 기본값: cv_session)",
+    "BROWSER_SECRET": '터미널에서 python -c "import secrets; print(secrets.token_hex(32))" 실행 → 나온 값 붙여 넣기',
 }
  
  
@@ -191,7 +207,7 @@ def _ssl_ca_path(problems: list[str]) -> Optional[Path]:
     받는 것: 문제 목록
     돌려주는 것: 인증서 경로(Path). .env 에 DB_SSL_CA= 처럼 비워 두면 None (SSL 없이 접속)
     """
-    # 환경변수가 아예 없으면 기본값 certs/ca.pem (기능명세서 그대로)
+    # 환경변수가 아예 없으면 기본값 certs/ca.pem (.env.example 과 같음)
     # 환경변수가 "있는데 비어 있으면" 빈 문자열 → SSL 사용 안 함 (기획안 8번: 로컬 MySQL 백업 시연용)
     raw = os.getenv("DB_SSL_CA", "certs/ca.pem").strip()
     if not raw:
@@ -237,10 +253,10 @@ class Settings:
     """프로젝트 전체에서 쓰는 설정 값 묶음. Settings.load() 로 만든다."""
  
     # --- OpenAI (박세람 llm.py 에서 사용) ---
-    openai_api_key: str = field(repr=False)   # API 키 (비밀)
-    model_text: str                            # 텍스트 답변용 모델 이름 (환경변수 MODEL_TEXT)
-    model_vision: str                          # 사진(명판·손상) 분석용 모델 이름 (환경변수 MODEL_VISION)
-    model_embed: str                           # 임베딩 모델 이름 (환경변수 MODEL_EMBED)
+    openai_api_key: str = field(repr=False)   # OPENAI_API_KEY  : API 키 (비밀)
+    model_text: str                            # MODEL_TEXT      : 텍스트 답변용 모델 이름
+    model_vision: str                          # MODEL_VISION    : 사진(명판·손상) 분석용 모델 이름
+    embedding_model: str                       # EMBEDDING_MODEL : 임베딩 모델 이름
  
     # --- MySQL / Aiven (공통 db.py 의 Database.connect(settings) 에서 사용) ---
     db_host: str
@@ -251,24 +267,24 @@ class Settings:
     db_ssl_ca: Optional[Path]                  # 인증서(ca.pem) 경로. SSL 안 쓰면 None
  
     # --- 로그인 세션 (김현준 auth.py · gradio_app.py 의 gr.BrowserState 에서 사용) ---
-    browser_storage_key: str                   # 브라우저에 토큰을 저장할 때 쓰는 고정 이름
-    browser_secret_key: str = field(repr=False)  # 브라우저 저장 값을 암호화하는 키 (비밀)
-    session_ttl_hours: int                     # 로그인 유지 시간 (기본 8시간)
+    browser_storage_key: str                   # BROWSER_STORAGE_KEY : 브라우저에 토큰을 저장할 때 쓰는 고정 이름
+    browser_secret: str = field(repr=False)    # BROWSER_SECRET      : 브라우저 저장 값을 암호화하는 키 (비밀)
+    session_hours: int                         # SESSION_HOURS       : 로그인 유지 시간 (기본 8시간)
  
     # --- 기준값 ---
-    evidence_score_threshold: float            # 근거 점수가 이보다 낮으면 "확인되지 않음" (조윤빈, 기본 0.55)
-    photo_confidence_threshold: float          # 사진 확신도가 이보다 낮으면 재촬영 요청 (김민재, 기본 0.6)
+    not_found_threshold: float                 # NOT_FOUND_THRESHOLD        : 근거 점수가 이보다 낮으면 "확인되지 않음" (조윤빈, 기본 0.55)
+    image_confidence_threshold: float          # IMAGE_CONFIDENCE_THRESHOLD : 사진 확신도가 이보다 낮으면 재촬영 요청 (김민재, 기본 0.6)
  
     # --- 문서·색인 경로 (모두 프로젝트 최상단 기준) ---
     # 사람마다 다를 필요가 없는 값이라 .env 에 넣지 않고 고정값으로 둔다. (설정할 항목을 줄여 실수 감소)
     # ※ 폴더 구조도 확정본과 다르면 이 값만 고치면 된다.
-    raw_dir: Path = BASE_DIR / "data" / "raw"                   # 원본 매뉴얼 PDF
+    raw_dir: Path = BASE_DIR / "data" / "raw"                      # 원본 매뉴얼 PDF
     admin_add_dir: Path = BASE_DIR / "data" / "raw" / "admin_add"  # 관리자가 화면에서 추가한 PDF
-    interim_dir: Path = BASE_DIR / "data" / "interim"           # 표·그림 잘라낸 이미지와 변환 결과
-    kb_dir: Path = BASE_DIR / "kb"                              # 지식베이스(JSON)
-    chroma_dir: Path = BASE_DIR / "chroma_db"                   # 벡터 DB 폴더 (.gitignore 대상)
-    bm25_path: Path = BASE_DIR / "chroma_db" / "bm25.pkl"       # BM25 색인 파일 (강경원과 위치 확정 필요)
-    results_dir: Path = BASE_DIR / "results"                    # 평가 결과 CSV
+    interim_dir: Path = BASE_DIR / "data" / "interim"              # 표·그림 잘라낸 이미지와 변환 결과
+    kb_dir: Path = BASE_DIR / "kb"                                 # 지식베이스(JSON)
+    chroma_dir: Path = BASE_DIR / "chroma_db"                      # 벡터 DB 폴더 (.gitignore 대상)
+    bm25_path: Path = BASE_DIR / "chroma_db" / "bm25.pkl"          # BM25 색인 파일 (강경원과 위치 확정 필요)
+    results_dir: Path = BASE_DIR / "results"                       # 평가 결과 CSV
  
     # @classmethod : 객체가 아직 없어도 Settings.load() 처럼 클래스 이름으로 바로 부를 수 있게 한다.
     #                cls 는 Settings 클래스 자신을 가리킨다.
@@ -286,27 +302,25 @@ class Settings:
         # 3) 모든 값을 읽으면서 바로 Settings 를 만든다. (읽는 도중 문제가 생기면 problems 에 쌓인다)
         #    파이썬은 괄호 안의 인자를 "전부" 먼저 계산한 뒤에 Settings 를 만들기 때문에,
         #    여기서 이미 모든 항목 검사가 끝난다. (문제를 한 번에 모으는 동작은 그대로)
-        #    ※ 예전처럼 dict 에 담았다가 cls(**values) 로 펼치면, VS Code 검사기가
-        #      "어느 칸에 어떤 타입이 들어 있는지" 추적하지 못해 칸마다 빨간 줄을 띄웠다.
+        #    ※ dict 에 담았다가 cls(**values) 로 펼치면 VS Code 검사기가 칸마다 빨간 줄을 띄운다.
         settings = cls(
             openai_api_key=_required("OPENAI_API_KEY", problems),
             model_text=_required("MODEL_TEXT", problems),
             model_vision=_required("MODEL_VISION", problems),
-            model_embed=_required("MODEL_EMBED", problems),
+            embedding_model=_required("EMBEDDING_MODEL", problems),
             db_host=_required("DB_HOST", problems),
             # 포트는 Aiven 서비스마다 다르다. 기본값(3306)을 깔면 엉뚱한 곳에 접속하므로 반드시 적게 한다.
-            # 기본값 0 은 "비어 있음" 표시용이다. 비어 있으면 required=True 라서 문제로 기록되고,
-            # 아래 4)에서 멈추므로 0 이 실제로 쓰이는 일은 없다. (None 대신 0: 타입을 int 로 맞추기 위해)
+            # 기본값 0 은 "비어 있음" 표시용이다. 비어 있으면 문제로 기록되고 4)에서 멈추므로 실제로 쓰이지 않는다.
             db_port=_number("DB_PORT", 0, int, problems, 1, 65535, required=True),
             db_user=_required("DB_USER", problems),
             db_password=_required("DB_PASSWORD", problems),
             db_name=_required("DB_NAME", problems),
             db_ssl_ca=_ssl_ca_path(problems),
             browser_storage_key=_required("BROWSER_STORAGE_KEY", problems),
-            browser_secret_key=_required("BROWSER_SECRET_KEY", problems),
-            session_ttl_hours=_number("SESSION_TTL_HOURS", 8, int, problems, 1, 168),
-            evidence_score_threshold=_number("EVIDENCE_SCORE_THRESHOLD", 0.55, float, problems, 0.0, 1.0),
-            photo_confidence_threshold=_number("PHOTO_CONFIDENCE_THRESHOLD", 0.6, float, problems, 0.0, 1.0),
+            browser_secret=_required("BROWSER_SECRET", problems),
+            session_hours=_number("SESSION_HOURS", 8, int, problems, 1, 168),
+            not_found_threshold=_number("NOT_FOUND_THRESHOLD", 0.55, float, problems, 0.0, 1.0),
+            image_confidence_threshold=_number("IMAGE_CONFIDENCE_THRESHOLD", 0.6, float, problems, 0.0, 1.0),
         )
  
         # 4) 문제가 있으면 여기서 멈추고 한 번에 알려 준다. (빈 값이 든 settings 는 버려진다)
@@ -319,11 +333,8 @@ class Settings:
 # ------------------------------------------------------------------------------
 # 6. OpenAI 설정만 따로 읽기 (scripts/check_models.py 전용)
 # ------------------------------------------------------------------------------
-# 이 부분이 없으면 생기는 문제(실제로 겪은 문제):
-#   check_models.py 는 "어떤 모델 이름을 MODEL_TEXT 에 적을지" 알아내는 도구인데,
-#   Settings.load() 를 쓰면 MODEL_TEXT·MODEL_VISION 이 이미 채워져 있어야 하고,
-#   모델 확인과 상관없는 DB 정보·인증서·암호 키까지 요구해서 실행조차 못 했다.
-#   → OpenAI 키만 있으면 실행되도록 따로 읽는 함수를 둔다.
+# 모델 이름을 아직 정하지 않은 상태에서도 "내 키로 쓸 수 있는 모델"을 확인할 수 있게,
+# OPENAI_API_KEY 만 필수로 검사한다. (Settings.load() 는 DB·세션 값까지 모두 요구하기 때문)
 @dataclass(frozen=True)
 class OpenAISettings:
     """모델 확인용 OpenAI 설정. 모델 이름은 아직 비어 있어도("") 된다."""
@@ -331,7 +342,7 @@ class OpenAISettings:
     api_key: str = field(repr=False)
     model_text: str
     model_vision: str
-    model_embed: str
+    embedding_model: str
  
  
 def load_openai_settings() -> OpenAISettings:
@@ -348,23 +359,66 @@ def load_openai_settings() -> OpenAISettings:
         api_key=api_key,
         model_text=os.getenv("MODEL_TEXT", "").strip(),
         model_vision=os.getenv("MODEL_VISION", "").strip(),
-        model_embed=os.getenv("MODEL_EMBED", "").strip(),
+        embedding_model=os.getenv("EMBEDDING_MODEL", "").strip(),
     )
  
  
 # ------------------------------------------------------------------------------
-# 7. 직접 실행했을 때: 설정 점검 (python config.py)
+# 7. 초기 계정 비밀번호 읽기 (scripts/seed.py 전용)
+# ------------------------------------------------------------------------------
+# 왜 필요한가:
+#   seed.py 가 초기 계정을 넣으려면 비밀번호 원문이 필요하다. 하지만 원문을 코드에 쓰면 Git 과
+#   제출용 zip 에 그대로 노출된다. → DB 비밀번호처럼 .env(Git 제외)에 두고 이 함수로만 읽는다.
+#
+# 왜 Settings 에 넣지 않았나:
+#   Settings.load() 는 모든 항목을 "필수"로 검사한다. 여기에 seed 비밀번호를 넣으면
+#   앱만 실행하려는 팀원도 seed 비밀번호를 채워야 실행된다.
+#   → seed 를 돌리는 사람만 채우면 되도록 별도 함수로 분리했다.
+SEED_PASSWORD_MIN_LENGTH = 8   # 너무 짧은 초기 비밀번호 방지
+ 
+ 
+def load_seed_passwords(names: list[str]) -> dict[str, str]:
+    """초기 계정 비밀번호를 .env 에서 읽는다. (scripts/seed.py 전용)
+ 
+    받는 것: 읽을 .env 항목 이름 목록 (예: ["SEED_ADMIN_PASSWORD", "SEED_USER_PASSWORD"])
+    돌려주는 것: {항목 이름: 비밀번호 원문} 사전
+    비어 있거나 8자 미만인 항목이 있으면 모아서 ConfigError 로 알려 준다.
+    ※ 오류 메시지에는 비밀번호 값을 절대 넣지 않는다. (화면·로그 노출 방지)
+    """
+    env_note = _load_env_file()
+    problems: list[str] = []
+    passwords: dict[str, str] = {}
+ 
+    # dict.fromkeys(names) : 같은 이름이 여러 번 와도 한 번만 검사한다. (순서는 그대로 유지)
+    # 예) 사원 계정 3개가 모두 SEED_USER_PASSWORD 를 쓰면 한 번만 읽는다.
+    for name in dict.fromkeys(names):
+        value = os.getenv(name, "").strip()
+        if not value:
+            problems.append(
+                f"{name} 값이 비어 있습니다 → 초기 계정 비밀번호를 직접 정해 .env 에 적기 "
+                f"({SEED_PASSWORD_MIN_LENGTH}자 이상, Git 에는 올라가지 않음)"
+            )
+        elif len(value) < SEED_PASSWORD_MIN_LENGTH:
+            problems.append(f"{name} 는 {SEED_PASSWORD_MIN_LENGTH}자 이상이어야 합니다")
+        passwords[name] = value
+ 
+    _raise_if_problems(problems, env_note)
+    return passwords
+ 
+ 
+# ------------------------------------------------------------------------------
+# 8. 직접 실행했을 때: 설정 점검 (python config.py)
 # ------------------------------------------------------------------------------
 # if __name__ == "__main__": 아래는 "python config.py" 로 직접 실행할 때만 동작한다.
 # 다른 파일이 import config 할 때는 실행되지 않는다.
 if __name__ == "__main__":
     try:
-        settings = Settings.load()
+        loaded = Settings.load()
     except ConfigError as error:
         # 긴 오류 화면(Traceback) 대신 안내 문구만 보여 주고 종료한다. (종료 코드 1 = 실패)
         raise SystemExit(str(error))
  
     print("[OK] 설정을 모두 읽었습니다. (비밀 값은 표시하지 않음)")
-    for item in fields(settings):
+    for item in fields(loaded):
         if item.repr:                     # repr=False 인 비밀 값은 건너뛴다
-            print(f"  {item.name} = {getattr(settings, item.name)}")
+            print(f"  {item.name} = {getattr(loaded, item.name)}")
