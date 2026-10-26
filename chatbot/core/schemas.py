@@ -11,7 +11,7 @@ class User:
     """로그인한 사원. 값 변경 불가, 비밀번호 해시는 넣지 않음."""
     employee_id: str
     name: str
-    role: str  # "engineer" | "admin"
+    role: str  # "user" | "admin"
 
     @property
     def is_admin(self) -> bool:

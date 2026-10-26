@@ -45,7 +45,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import pymysql                              # noqa: E402  MySQL 접속 라이브러리
 from pymysql.constants import CLIENT        # noqa: E402  접속 옵션 상수
  
-from config import BASE_DIR, ConfigError, Settings, load_seed_passwords   # noqa: E402
+from chatbot.core.config import BASE_DIR, ConfigError, Settings, load_seed_passwords   # noqa: E402
  
  
 # ------------------------------------------------------------------------------
@@ -116,7 +116,7 @@ DEFAULT_ACCOUNTS: list[AccountSpec] = [
 # ------------------------------------------------------------------------------
 # 2. 고정값
 # ------------------------------------------------------------------------------
-SCHEMA_PATH = BASE_DIR / "db" / "schema.sql"   # 테이블 만드는 SQL
+SCHEMA_PATH = BASE_DIR / "chatbot" / "db" / "schema.sql"   # 테이블 만드는 SQL
 ALLOWED_ROLES = ("user", "admin")              # users.role 에 들어갈 수 있는 값
 EMPLOYEE_ID_MAX = 20                           # users.employee_id VARCHAR(20)
 NAME_MAX = 50                                  # users.name VARCHAR(50)

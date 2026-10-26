@@ -3,9 +3,9 @@
 
 CREATE TABLE IF NOT EXISTS users (
   employee_id    VARCHAR(20)  PRIMARY KEY,
-  password_hash  VARCHAR(100) NOT NULL,
+  password_hash  VARCHAR(255) NOT NULL,
   name           VARCHAR(50)  NOT NULL,
-  role           ENUM('engineer', 'admin') NOT NULL DEFAULT 'engineer',
+  role           ENUM('user', 'admin') NOT NULL DEFAULT 'user',
   created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
