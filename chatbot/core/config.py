@@ -64,7 +64,7 @@ from dotenv import load_dotenv                     # .env 파일 내용을 환�
 # 그냥 ".env" 라고 쓰면 "터미널이 지금 있는 폴더" 기준으로 찾기 때문에,
 # 다른 폴더에서 실행하면 못 찾는다. BASE_DIR 기준이면 어디서 실행해도 같은 파일을 찾는다.
 # ※ config.py 를 src/ 같은 하위 폴더로 옮기면 .parent 를 .parent.parent 로 바꿔야 한다.
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 ENV_PATH = BASE_DIR / ".env"
  
  
