@@ -18,14 +18,15 @@ class PdfExtractor:
         """
         raise NotImplementedError("PdfExtractor.extract_text")
 
-    def crop_table(self, pdf_path: str, page: int, bbox: tuple):
+    def crop_regions(self, pdf_path: str, page: int, regions: list[dict]):
         """
-        표·그림 영역을 이미지로 잘라 LLMClient.vision으로 변환. 표는 Markdown, 그림은 영어 설명. 이미지 경로와 결과는
-        data/interim/에 저장 (다시 부르지 않음)
+        PDF의 표·그림 영역을 이미지로 잘라 비전 모델(LLMClient.vision)로 보내고, 표는 Markdown으로, 그림은 영어 설명으로 변환해
+        data/interim/에 저장. 같은 영역은 캐시를 써서 다시 호출하지 않음. regions는 영역마다 종류(table/figure)와 bbox,
+        결과는 영역마다 종류·변환 결과 텍스트·이미지 경로
 
-        Returns: list[list[str]]
+        Returns: list[dict]
         """
-        raise NotImplementedError("PdfExtractor.crop_table")
+        raise NotImplementedError("PdfExtractor.crop_regions")
 
     def split_sections(self, pages: list[Page]):
         """

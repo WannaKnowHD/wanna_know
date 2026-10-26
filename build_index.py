@@ -37,22 +37,13 @@ class IndexBuilder:
 
     def main(self):
         """
-        명령 1개(python build_index.py)로 data/raw/의 전체 PDF를 문서 추출(PdfExtractor) → KB
-        변환(KbBuilder) → KB 검증 → 청킹 → 색인 순서로 처음부터 다시 만듦 (청킹 설정·임베딩 모델을 바꿨을 때 사용)
+        data/raw/의 모든 PDF로 색인을 처음부터 다시 만듦. 새 PDF만 추출·KB 변환하고 기존 문서는 캐시 재사용 → 청킹 →
+        벡터·BM25 색인 생성. 새 색인은 임시 위치에 만든 뒤 완성되면 교체. 개발자 실행(python build_index.py)과 관리자 PDF
+        추가에서 같이 사용. 재생성이 이미 돌고 있으면 끝날 때까지 기다림(동시에 두 번 실행하지 않음). 실패하면 기존 색인을 그대로 둠
 
         Returns: None
         """
         raise NotImplementedError("IndexBuilder.main")
-
-    def add_document(self, pdf_path: str, meta: dict):
-        """
-        PDF 1건 추가 처리: 문서 추출(PdfExtractor) → KB 변환(KbBuilder) → KB 검증(validate_kb) → 청킹 →
-        벡터 색인에 추가, BM25 색인은 다시 생성. 같은 파일명이 있으면 기존 청크를 지우고 다시 색인. 진행 상태(색인 중 → 완료/실패와 사유)를
-        MySQL 문서 테이블에 기록
-
-        Returns: bool, str
-        """
-        raise NotImplementedError("IndexBuilder.add_document")
 
 
 if __name__ == "__main__":
