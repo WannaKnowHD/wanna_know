@@ -1,14 +1,21 @@
 """관리자 대시보드 (운영 현황·답변 품질·시스템·KB 현황)"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
+import gradio as gr
+
+from chatbot.ui.admin.usage_tab import build_usage_tab
+from chatbot.ui.admin.quality_tab import build_quality_tab
+from chatbot.ui.admin.system_tab import build_system_tab
+from chatbot.ui.admin.kb_tab import build_kb_tab
 
 if TYPE_CHECKING:
     from chatbot.core.schemas import User
     from chatbot.db.db import Database
     from datetime import date
     from pandas import DataFrame
-    import gradio as gr
 
 
 class AdminDashboard:
@@ -58,7 +65,9 @@ class AdminDashboard:
         """
         raise NotImplementedError("AdminDashboard.not_found_list")
 
-    def save_review(self, log_id: int, reviewed: bool, kb_update_needed: bool, user: User):
+    def save_review(
+        self, log_id: int, reviewed: bool, kb_update_needed: bool, user: User
+    ):
         """
         체크박스를 바꾸면 해당 로그의 담당자 확인·KB 업데이트 필요·처리자·처리 시각을 MySQL kb_gaps 테이블에 저장
         (log_id 기준으로 있으면 갱신, 없으면 추가). 실행 전 관리자 권한 확인
@@ -91,4 +100,25 @@ class AdminDashboard:
 
         Returns: gr.Tab
         """
-        raise NotImplementedError("AdminDashboard.build_admin_tab")
+
+        # 관리자 화면 공통 레이아웃
+        with gr.Tab("관리자") as admin_tab:
+            # 관리자 공통 헤더
+            gr.Markdown("# 관리자 대시보드")
+            gr.Markdown("컨베이어 챗봇 운영 및 관리 현황")
+
+            # 관리자 내부 탭 구성
+            with gr.Tabs():
+                # 운영 현황 탭
+                build_usage_tab()
+
+                # 답변 품질 탭
+                build_quality_tab()
+
+                # 시스템 현황 탭
+                build_system_tab()
+
+                # KB 현황 탭
+                build_kb_tab()
+
+        return admin_tab
