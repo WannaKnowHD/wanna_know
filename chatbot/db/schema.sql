@@ -1,4 +1,5 @@
--- 기능명세서 기준 테이블. 팀에서 이미 정한 테이블이 있으면 이름·열을 맞춰 합칠 것.
+-- 팀 ERD 기준 테이블: users, sessions, chat_logs, chat_history, kb_gaps, documents, eval_results(미정).
+-- ERD와 다른 열이 있으면 ERD에 맞춰 고칠 것.
 
 CREATE TABLE IF NOT EXISTS users (
   employee_id    VARCHAR(20)  PRIMARY KEY,
@@ -16,8 +17,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   FOREIGN KEY (employee_id) REFERENCES users(employee_id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS query_logs (
+-- 요청 로그. 평가 실행(eval/run_eval.py)에서 남긴 로그는 source='eval'로 저장해 대시보드 통계에서 뺀다.
+CREATE TABLE IF NOT EXISTS chat_logs (
   log_id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+  source            ENUM('user', 'eval') NOT NULL DEFAULT 'user',   -- 실사용 / 자동 채점
   employee_id       VARCHAR(20),
   created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   question          TEXT NOT NULL,
@@ -33,12 +36,20 @@ CREATE TABLE IF NOT EXISTS query_logs (
   tokens_in         INT,
   tokens_out        INT,
   error             VARCHAR(255),
-  reviewed          BOOLEAN NOT NULL DEFAULT FALSE,   -- 담당자 확인
-  kb_update_needed  BOOLEAN NOT NULL DEFAULT FALSE,   -- KB 업데이트 필요
-  reviewed_by       VARCHAR(20),
-  reviewed_at       DATETIME,
   INDEX idx_logs_created (created_at),
   INDEX idx_logs_not_found (not_found)
+);
+
+-- 답 못 찾은 질문의 검토 상태. 로그는 그대로 두고, 관리자가 체크박스를 처음 바꿀 때 행이 생긴다.
+-- log_id가 UNIQUE라서 save_review는 INSERT ... ON DUPLICATE KEY UPDATE 한 번으로 "있으면 갱신, 없으면 추가"를 처리한다.
+CREATE TABLE IF NOT EXISTS kb_gaps (
+  gap_id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+  log_id            BIGINT NOT NULL UNIQUE,
+  reviewed          BOOLEAN NOT NULL DEFAULT FALSE,   -- 담당자 확인
+  kb_update_needed  BOOLEAN NOT NULL DEFAULT FALSE,   -- KB 업데이트 필요
+  reviewed_by       VARCHAR(20),                      -- TODO: ERD에서 users(employee_id) FK인지 확인
+  reviewed_at       DATETIME,
+  FOREIGN KEY (log_id) REFERENCES chat_logs(log_id)  -- TODO: ERD에서 ON DELETE 동작 확인
 );
 
 CREATE TABLE IF NOT EXISTS chat_history (
@@ -64,3 +75,5 @@ CREATE TABLE IF NOT EXISTS documents (
   error_message     VARCHAR(255),
   indexed_at        DATETIME
 );
+
+-- TODO: eval_results 테이블 (ERD에 있음, 열 정보가 정해지면 추가)
