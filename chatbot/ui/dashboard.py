@@ -16,7 +16,9 @@ class AdminDashboard:
 
     def load_logs(self, start: date, end: date, db: Database):
         """
-        선택한 기간의 질의 로그를 MySQL query_logs 테이블에서 읽어 표로 변환 (운영 현황 탭의 기간 선택과 연결)
+        선택한 기간의 질의 로그를 MySQL chat_logs 테이블에서 읽어 표로 변환 (운영 현황 탭의 기간 선택과 연결).
+        평가 로그(source='eval')는 제외. kb_gaps를 log_id로 LEFT JOIN해 reviewed·kb_update_needed 열을 함께 담음
+        (kb_gaps에 행이 없으면 false)
 
         Returns: DataFrame
         """
@@ -48,8 +50,9 @@ class AdminDashboard:
 
     def not_found_list(self, logs: DataFrame):
         """
-        답변 품질 탭 하위: 답을 못 찾은 질문 목록(시각·질문·설비·검색 점수·담당자 확인·KB 업데이트 필요) 출력. 담당자 확인·KB 업데이트 필요는
-        체크박스 열로 표시
+        답변 품질 탭 하위: chat_logs에서 답을 못 찾은 질문(not_found=true, source='user')과 kb_gaps의 검토 상태를 합쳐
+        목록(시각·질문·설비·검색 점수·담당자 확인·KB 업데이트 필요) 출력. 검토 상태는 load_logs가 kb_gaps를 LEFT JOIN해
+        담아 둔 reviewed·kb_update_needed 열을 사용. 담당자 확인·KB 업데이트 필요는 체크박스 열로 표시
 
         Returns: DataFrame
         """
@@ -57,8 +60,8 @@ class AdminDashboard:
 
     def save_review(self, log_id: int, reviewed: bool, kb_update_needed: bool, user: User):
         """
-        체크박스를 바꾸면 해당 로그의 담당자 확인·KB 업데이트 필요·처리자·처리 시각을 MySQL query_logs에 갱신(UPDATE). 실행 전
-        관리자 권한 확인
+        체크박스를 바꾸면 해당 로그의 담당자 확인·KB 업데이트 필요·처리자·처리 시각을 MySQL kb_gaps 테이블에 저장
+        (log_id 기준으로 있으면 갱신, 없으면 추가). 실행 전 관리자 권한 확인
 
         Returns: bool
         """
@@ -74,8 +77,8 @@ class AdminDashboard:
 
     def add_pdf(self, pdf: bytes, filename: str):
         """
-        KB 현황 탭의 "PDF 추가하기": 업로드한 PDF를 data/raw/admin_add/에 저장하고
-        IndexBuilder.add_document를 호출해 추출 → KB 변환 → 청킹 → 색인. 목록 상태를 "색인 중 → 완료/실패"로 표시
+        업로드한 PDF를 data/raw/admin_add/에 저장 → documents 상태를 '색인 중'으로 기록 → IndexBuilder.main 호출
+        (전체 재생성, 캐시 재사용) → 완료/실패와 사유 기록 → 목록 상태 표시. 재생성 중에는 기존 색인으로 답변
 
         Returns: bool, str
         """
