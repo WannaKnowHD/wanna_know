@@ -25,3 +25,6 @@ CLAUDE.md
 CLAUDE.local.md
 CLAUDE.local.md.example
 docs/
+
+# 로컬 전용 테스트
+tests/auth_test.py
