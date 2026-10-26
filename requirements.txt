@@ -1,0 +1,14 @@
+# 첫 설치 후 `pip freeze > requirements.lock.txt`로 실제 버전을 고정해 팀원과 맞추세요.
+gradio>=6.0
+openai
+pydantic
+python-dotenv
+pymupdf
+chromadb
+rank-bm25
+sentence-transformers   # 리랭커 (bge-reranker-v2-m3)
+pymysql
+bcrypt
+pandas
+openpyxl
+pytest

@@ -1,0 +1,27 @@
+# 비밀 정보
+.env
+certs/*
+!certs/.gitkeep
+
+# 원본 문서·중간 산출물·색인 (용량·저작권)
+data/raw/*/*
+!data/raw/*/.gitkeep
+data/interim/*
+!data/interim/.gitkeep
+index/*
+!index/.gitkeep
+
+# 파이썬·도구
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.DS_Store
+.gradio/
+
+# 에이전트(Claude Code)용 파일·문서 (공식 폴더 구조 밖, 각자 로컬에 둠)
+CLAUDE.md
+CLAUDE.local.md
+CLAUDE.local.md.example
+docs/
