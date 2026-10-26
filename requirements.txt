@@ -11,3 +11,6 @@ bcrypt
 pandas
 openpyxl
 pytest
+langchain-core
+langchain-openai
+python-dotenv
