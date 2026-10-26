@@ -1,1 +1,4 @@
-doc_id,filename,title,version,equipment_models,lang
+doc_id,file,original_file,maker,usage,original_pages,page_map,troubleshooting_printed_pages,note
+hytrol_138acc,hytrol_138acc_p1-27.pdf,2007_583_138acc.pdf,Hytrol,initial,1-27,,22-23,영·스 2단 → 영문 단만. LRC·LRS 분해도(p.28-48) 제외
+fenner_belt,fenner_belt_p23-42.pdf,Fenner-Dunlop-Conveyor-Belt-Manual.pdf,Fenner Dunlop,initial,21-40,1-20>21,23-27,PDF 쪽 = 인쇄 쪽 + 2. 벨트 선정·설계(p.1-20)·버킷 엘리베이터 등 제외
+preco_l_series,preco_l_series_p6-29_54-60.pdf,L-instrukcija_EN_2022-21-12.pdf,PRECO,initial,6-29;54-60,1-24>6;25-31>54,57,왜건·카운터웨이트 타워(p.30-53) 제외
