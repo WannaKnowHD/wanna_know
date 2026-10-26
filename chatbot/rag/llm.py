@@ -61,7 +61,7 @@ class LLMClient:
 
         # (3) 검색용 임베딩
         self.embeddings = OpenAIEmbeddings(
-            model=settings.model_embed,
+            model=settings.embedding_model,
             api_key=settings.openai_api_key,
             max_retries=3,
         )
@@ -69,7 +69,7 @@ class LLMClient:
         # (4) 임베딩 캐시 : {문장: 벡터}
         #     같은 문장을 다시 임베딩하지 않으려고 저장해 둔다 (시간·비용 절약)
         if cache_path is None:
-            cache_path = os.path.join(str(settings.chroma_dir), f"embed_cache_{settings.model_embed}.json")
+            cache_path = os.path.join(str(settings.chroma_dir), f"embed_cache_{settings.embedding_model}.json")
         self.cache_path = cache_path
         self.cache = self.load_cache()
 
@@ -92,13 +92,15 @@ class LLMClient:
         받는 것:
           messages    : [{"role": "system" 또는 "user", "content": "..."}, ...]
           model       : 비우면 MODEL_TEXT 를 쓴다 (모델 비교 실험 때만 넣는다)
-          json_schema : 넣으면 답을 이 JSON 형식으로 받는다
+          json_schema : 넣으면 답을 이 형식으로 받는다
+                        - pydantic 모델 (예: schemas.py 의 LlmAnswer) ← 권장
+                        - 또는 JSON 스키마 dict
         돌려주는 것 (dict):
           text       : 답 글자
-          parsed     : JSON 형식으로 받은 답 (json_schema 를 안 넣었거나 형식이 깨지면 None)
+          parsed     : 형식에 맞춰 받은 답을 dict 로 (json_schema 를 안 넣었거나 형식이 깨지면 None)
           model      : 사용한 모델 이름
           usage      : 토큰 수 {"input_tokens", "output_tokens", "total_tokens"}
-          latency_ms : 걸린 시간 (밀리초)
+          latency_ms : 걸린 시간 (밀리초, 정수)  → trace.latency_ms 에 그대로 넣을 수 있음
         """
         llm = self.text_llm
         if model is not None and model != self.settings.model_text:
@@ -114,7 +116,8 @@ class LLMClient:
         받는 것:
           image       : 사진 파일 내용 (bytes)  예) open("명판.png", "rb").read()
           prompt      : 지시문  예) "명판에서 모델명을 읽어라"
-          json_schema : 결과 JSON 형식
+          json_schema : 결과 형식 (pydantic 모델 또는 JSON 스키마 dict)
+                        예) schemas.py 의 NameplateResult, DamageResult
         돌려주는 것: chat 과 같은 dict
         """
         if not image:
@@ -190,14 +193,17 @@ class LLMClient:
             output = structured_llm.invoke(messages)
             response = output["raw"]
             parsed = output["parsed"]
+            if hasattr(parsed, "model_dump"):
+                # pydantic 모델로 받은 경우 → dict 로 바꿔서 돌려준다 (돌려주는 형식을 항상 dict 로 통일)
+                parsed = parsed.model_dump()
             if output["parsing_error"] is not None:
                 # 형식이 깨져도 멈추지 않고 None 으로 돌려준다 (다시 요청할지는 validator.py 가 정한다)
                 print(f"[llm] {name}: JSON 형식이 깨졌습니다")
                 parsed = None
 
-        latency_ms = round((time.time() - start) * 1000, 1)
+        latency_ms = int((time.time() - start) * 1000)
         usage = response.usage_metadata or {}
-        print(f"[llm] {name}: {llm.model_name} · {latency_ms:.0f} ms · 토큰 {usage.get('total_tokens')}")
+        print(f"[llm] {name}: {llm.model_name} · {latency_ms} ms · 토큰 {usage.get('total_tokens')}")
 
         return {
             "text": response.content if isinstance(response.content, str) else str(response.content),
@@ -211,7 +217,13 @@ class LLMClient:
     # 도우미
     # ==========================================================================
     def to_schema(self, json_schema):
-        """{"name": ..., "schema": {...}} 형식이면 안쪽 schema 를 꺼내고 이름을 title 로 붙인다."""
+        """LangChain 에 넘길 형식으로 맞춘다.
+
+        - pydantic 모델이면 그대로 넘긴다 (LangChain 이 알아서 JSON 스키마로 바꿈)
+        - {"name": ..., "schema": {...}} 형식이면 안쪽 schema 를 꺼내고 이름을 title 로 붙인다
+        """
+        if isinstance(json_schema, type):
+            return json_schema
         if "schema" in json_schema:
             schema = dict(json_schema["schema"])
             schema["title"] = json_schema.get("name", "answer")
