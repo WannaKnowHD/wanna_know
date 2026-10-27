@@ -37,15 +37,21 @@ from chatbot.core.schemas import Page, Section
 
 # 스페인어 줄인지 판단할 때 쓰는 말 (영어에는 거의 안 나오는 짧은 단어)
 SPANISH_WORDS = {"de", "la", "el", "los", "las", "del", "para", "con", "una", "por",
-                 "que", "se", "en", "y", "es", "al", "su", "sus", "como", "lo", "un"}
+                 "que", "se", "en", "y", "es", "al", "su", "sus", "como", "lo", "un",
+                 "grados", "temperatura", "ambiente", "revisar", "semanal", "mensual", "trimestral"}
 SPANISH_CHARS = set("áéíóúñ¿¡")
 
 MARGIN = 0.07          # 위·아래 7% 는 머리말·쪽번호 영역으로 본다
 MIN_FIGURE_AREA = 0.03  # 페이지 넓이의 3% 보다 작은 그림·도형 묶음은 그림으로 보지 않는다
+MIN_IMAGE_AREA = 0.01   # 사진(이미지)·자세한 도면은 1% 까지 그림으로 본다 (작아도 실제 그림인 경우가 많음)
+DETAILED_PATHS = 30     # 선·도형이 30개 이상이면 자세한 도면으로 본다
 TEXT_HEAVY = 0.35       # 도형 묶음 넓이의 35% 이상이 글자면 그림이 아니라 글 상자로 본다
 MIN_PATHS = 6           # 선·도형이 6개보다 적으면 단순 테두리로 본다
 LABEL_MAX = 40          # 그림 안에서 이보다 짧은 줄은 이름표로 본다
+LABEL_NEAR = 15         # 그림에서 15pt 안에 있는 이름표 덩어리는 그림 상자에 넣는다
 NEAR = 8                # 8pt 안으로 붙어 있는 조각은 같은 그림으로 합친다
+CELL_GAP = 12           # 테두리만 있는 표에서 단어 사이가 12pt 넘게 벌어지면 다른 칸으로 본다
+REPEAT_PAGES = 3        # 같은 자리의 그림 조각이 3쪽 이상 반복되면 꾸밈(로고·바닥 줄)으로 보고 뺀다
 
 
 class PdfExtractor:
@@ -87,11 +93,16 @@ class PdfExtractor:
         if pages is None:
             pages = range(1, doc.page_count + 1)
 
+        # 모든 쪽에서 그림 후보를 먼저 모아, 여러 쪽에 같은 자리로 반복되는 꾸밈을 찾는다
+        candidates = {no: self.figure_candidates(doc[no - 1]) for no in range(1, doc.page_count + 1)}
+        decorations = self.find_decorations(candidates.values())
+
         result = []
         for page_no in pages:
             pdf_page = doc[page_no - 1]
-            regions = self.find_regions(pdf_page)
-            lines = self.read_lines(pdf_page, regions)
+            regions = self.find_regions(pdf_page, candidates[page_no], decorations)
+            lines = self.read_lines(pdf_page, regions)       # 스페인어 표 글자도 본문에서 빠짐
+            regions = [r for r in regions if not r.pop("spanish", False)]   # 스페인어 표는 결과에서 뺌
             result.append(Page(
                 doc_id=doc_id,
                 page_no=page_no,
@@ -103,48 +114,194 @@ class PdfExtractor:
         doc.close()
         return result
 
-    def find_regions(self, pdf_page):
-        """표와 그림 영역(bbox)을 찾는다."""
+    def find_regions(self, pdf_page, candidates=None, decorations=()):
+        """표와 그림 영역(bbox)을 찾는다.
+
+        candidates  : figure_candidates() 결과 (없으면 여기서 구함)
+        decorations : 여러 쪽에 반복되는 꾸밈 자리 (find_decorations 결과) → 그림에서 뺌
+        """
         page_area = pdf_page.rect.width * pdf_page.rect.height
         regions = []
 
         # (1) 표 : PyMuPDF 의 표 찾기 (선으로 그려진 표)
+        #     회색으로 칠한 빈 칸은 "X" 로 읽는다 (Hytrol 점검표처럼 주기를 색칠로 표시한 표)
+        gray_boxes = [pymupdf.Rect(d["rect"]) for d in pdf_page.get_drawings() if self.is_gray(d.get("fill"))]
         for table in pdf_page.find_tables().tables:
-            rows = [[self.cell_text(pdf_page, cell) for cell in row.cells] for row in table.rows]
+            rows = [[self.cell_text(pdf_page, cell, gray_boxes) for cell in row.cells] for row in table.rows]
             if len(rows) < 2:                      # 1줄짜리는 표가 아님 (상자 테두리 등)
                 continue
+            text = self.rows_to_markdown(rows)
             regions.append({"type": "table", "bbox": tuple(table.bbox),
-                            "text": self.rows_to_markdown(rows), "image_path": None})
+                            "text": text, "image_path": None,
+                            "spanish": self.is_spanish_block(text)})   # extract_text 에서 빼고 지움
 
-        # (2) 그림 : 사진(이미지) + 선으로 그린 도면(도형 묶음)
-        #     도형 묶음 중 글자로 꽉 찬 것(문단 테두리, 제목 배경, NOTE 상자)은 그림이 아니다
+        #     칸 선 없이 바깥 테두리·색칠만 있는 표 (PRECO Motor output 표 등)
+        for box, rows in self.find_frame_tables(pdf_page, [pymupdf.Rect(r["bbox"]) for r in regions]):
+            text = self.rows_to_markdown(rows)
+            regions.append({"type": "table", "bbox": tuple(box), "text": text, "image_path": None,
+                            "spanish": self.is_spanish_block(text)})
+
+        # (2) 그림 : 사진(이미지) + 선으로 그린 도면(도형 묶음), 반복되는 꾸밈은 뺌
+        if candidates is None:
+            candidates = self.figure_candidates(pdf_page)
+        boxes = [box for box in candidates if self.box_key(box) not in decorations]
+        images = [pymupdf.Rect(info["bbox"]) for info in pdf_page.get_image_info()]
+        paths = [pymupdf.Rect(d["rect"]) for d in pdf_page.get_drawings() if self.is_visible(d)]
+
+        frames = self.find_frames(pdf_page)
+        blocks = [b for b in pdf_page.get_text("dict")["blocks"] if b.get("lines")]
+        label_rects = [pymupdf.Rect(ln["bbox"]) for b in blocks if self.is_label_block(b)   # 이름표 줄 하나하나
+                       for ln in b["lines"]]
+        para_rects = [pymupdf.Rect(b["bbox"]) for b in blocks if not self.is_label_block(b)]
+        for box in self.split_by_frames(self.merge_boxes(boxes), frames):
+            area = box.width * box.height
+            wide = box.width >= pdf_page.rect.width * 0.5 and box.height >= 20   # 가로로 긴 도면 (옆에서 본 컨베이어)
+            small_ok = area >= page_area * MIN_IMAGE_AREA and (
+                any(box.contains(i) for i in images)                                   # 작은 사진
+                or sum(1 for r in paths if r in box + (-1, -1, 1, 1)) >= DETAILED_PATHS)  # 작은 자세한 도면
+            if (area < page_area * MIN_FIGURE_AREA and not wide and not small_ok) or area > page_area * 0.9:
+                continue                           # 너무 작은 조각, 페이지 전체 테두리는 뺌
+            if any(box.intersects(pymupdf.Rect(r["bbox"])) for r in regions if r["type"] == "table"):
+                continue                           # 표 테두리 선은 그림이 아님
+            box = self.grow_figure(box, frames, label_rects, para_rects, pdf_page.rect)   # 이름표·테두리까지 넓힘
+            if any(self.same_box(box, pymupdf.Rect(r["bbox"])) for r in regions):
+                continue                           # 넓혔더니 같은 테두리가 된 조각은 한 번만
+            labels = self.label_lines(pdf_page, box)
+            spanish = len(labels) >= 2 and sum(self.is_spanish(t) for t in labels) / len(labels) >= 0.6
+            regions.append({"type": "figure", "bbox": tuple(box),
+                            "text": self.drop_spanish_text("\n".join(labels)), "image_path": None,
+                            "spanish": spanish})   # 이름표 60% 이상이 스페인어 = 스페인어판 그림 → extract_text 에서 뺌
+
+        regions.sort(key=lambda r: (r["bbox"][1], r["bbox"][0]))
+        return regions
+
+    def find_frames(self, pdf_page):
+        """그림 테두리 = 선으로만 그린 큰 사각형 (페이지 넓이 2% 이상). 예) FIGURE 20A 바깥 선"""
+        page_area = pdf_page.rect.width * pdf_page.rect.height
+        frames = []
+        for d in pdf_page.get_drawings():
+            rect = pymupdf.Rect(d["rect"])
+            kinds = {item[0] for item in d.get("items", [])}
+            if rect.get_area() >= page_area * 0.02 and kinds <= {"l", "re"} and self.is_visible(d) \
+                    and len(d["items"]) >= 4 and not any(self.same_box(rect, f) for f in frames):
+                frames.append(rect)
+        return frames
+
+    def grow_figure(self, box, frames, label_rects, para_rects, page_rect):
+        """그림 상자를 이름표까지 넓힌다. (비전 모델이 부품 이름까지 같이 보도록)
+
+        1) 그림의 80% 이상이 어떤 테두리 안에 있고, 테두리가 그림보다 6배 이하로 크고, 안에 본문 문단이 없으면
+           → 테두리 전체 (FIGURE 제목 포함. 그림 조각이 옆 테두리로 조금 삐져나와도 자기 테두리로 맞춤)
+        2) 아니면 → 그림에서 LABEL_NEAR 안에 있고 그림과 가로로 겹치는 이름표 덩어리를 넣는다
+           (넣은 이름표 옆 이름표도. 옆 단의 다른 그림 이름표까지 번지지 않게 가로로 겹치는 것만)
+        """
+        around = [f for f in frames
+                  if (box & f).get_area() >= box.get_area() * 0.8          # 그림 대부분이 테두리 안
+                  and f.get_area() <= box.get_area() * 6                    # 테두리가 그림보다 너무 크지 않음
+                  and not any(f.intersects(p) and p not in box for p in para_rects)]
+        if around:
+            return min(around, key=lambda f: f.get_area())
+        grown = pymupdf.Rect(box)
+        for _ in range(3):
+            near = [r for r in label_rects if (grown + (-LABEL_NEAR, -LABEL_NEAR, LABEL_NEAR, LABEL_NEAR)).intersects(r)
+                    and r.x0 < box.x1 and r.x1 > box.x0 and r not in grown]
+            if not near:
+                break
+            for r in near:
+                grown |= r
+        return grown & page_rect
+
+    def split_by_frames(self, boxes, frames):
+        """붙어 있는 그림 테두리(FIGURE 7A · 7B 처럼 칸이 나뉜 그림)는 테두리별로 나눈다.
+
+        한 상자 안에 서로 겹치지 않는 테두리가 2개 이상 있고 상자의 70% 이상을 덮으면, 상자 대신 테두리들을 쓴다.
+        (그림 안의 작은 확대 동그라미·상자는 테두리로 보지 않도록)
+        """
+        result = []
+        for box in boxes:
+            inside = [f for f in frames if f in box + (-2, -2, 2, 2)]
+            apart = all((a & b).get_area() < min(a.get_area(), b.get_area()) * 0.05
+                        for i, a in enumerate(inside) for b in inside[i + 1:])
+            covers = sum(f.get_area() for f in inside) >= box.get_area() * 0.7   # 테두리가 상자 대부분을 차지
+            if len(inside) >= 2 and apart and covers:
+                result += inside
+            else:
+                result.append(box)
+        return result
+
+    def same_box(self, a, b):
+        """두 상자가 2pt 안으로 같은 자리인지"""
+        return max(abs(a.x0 - b.x0), abs(a.y0 - b.y0), abs(a.x1 - b.x1), abs(a.y1 - b.y1)) < 2
+
+    def find_frame_tables(self, pdf_page, taken):
+        """바깥 테두리 안에 글자가 칸처럼 줄 맞춰 있으면 표로 본다. (find_tables 가 못 찾는 표)
+
+        - 테두리 : 페이지 폭 40% 이상, 높이 30pt 이상인 선 상자 (큰 것부터)
+        - 표 조건 : 칸이 3개 이상인 줄이 3줄 이상이고, 전체 줄의 60% 이상
+        돌려주는 것: [(상자, rows), ...]
+        """
+        width = pdf_page.rect.width
+        found = []
+        for drawing in sorted(pdf_page.get_drawings(), key=lambda d: -d["rect"].get_area()):
+            box = pymupdf.Rect(drawing["rect"])
+            if not drawing.get("color") or box.width < width * 0.4 or box.height < 30:
+                continue
+            if any(box.intersects(t) for t in taken + [f for f, _ in found]):
+                continue
+            # 세로로 쓴 글자(예: Slack H (mm))는 칸 계산에서 뺀다
+            words = [w for w in pdf_page.get_text("words", clip=box)
+                     if not ((w[3] - w[1]) > (w[2] - w[0]) * 1.5 and len(w[4]) > 1)]
+            lines = {}
+            for w in words:
+                lines.setdefault(round((w[1] + w[3]) / 6), []).append(w)
+            rows = [self.split_cells(line) for _, line in sorted(lines.items())]
+            multi = [row for row in rows if len(row) >= 3]
+            if len(multi) >= 3 and len(multi) >= len(rows) * 0.6:
+                found.append((box, [row for row in rows if len(row) >= 2]))
+        return found
+
+    def split_cells(self, words):
+        """한 줄의 단어를 간격(CELL_GAP)으로 나눠 칸 목록으로 만든다."""
+        words = sorted(words, key=lambda w: w[0])
+        cells, current = [], [words[0]]
+        for w in words[1:]:
+            if w[0] - current[-1][2] > CELL_GAP:
+                cells.append(current)
+                current = [w]
+            else:
+                current.append(w)
+        cells.append(current)
+        return [" ".join(w[4] for w in cell) for cell in cells]
+
+    def figure_candidates(self, pdf_page):
+        """그림 후보 상자 = 사진(이미지) + 도형 묶음.
+        도형 묶음 중 글자로 꽉 찬 것(문단 테두리, 제목 배경, NOTE 상자)은 그림이 아니다."""
         text_boxes = [pymupdf.Rect(b[:4]) for b in pdf_page.get_text("blocks")]
         boxes = [pymupdf.Rect(info["bbox"]) for info in pdf_page.get_image_info()]
+        visible = [d for d in pdf_page.get_drawings() if self.is_visible(d)]   # 흰색 배경 상자는 뺌
         try:
-            drawings = pdf_page.cluster_drawings()
+            drawings = pdf_page.cluster_drawings(drawings=visible) if visible else []
         except (ValueError, RuntimeError):
             drawings = []
-        paths = [pymupdf.Rect(d["rect"]) for d in pdf_page.get_drawings()]
+        paths = [pymupdf.Rect(d["rect"]) for d in visible]
         for box in drawings:
             if self.text_ratio(box, text_boxes) >= TEXT_HEAVY:
                 continue                           # 글자로 꽉 찬 상자
             if sum(1 for r in paths if r in box + (-1, -1, 1, 1)) < MIN_PATHS:
                 continue                           # 선 몇 개짜리 테두리 (제목 배경, 각주 상자)
             boxes.append(box)
+        return boxes
 
-        for box in self.merge_boxes(boxes):
-            area = box.width * box.height
-            if area < page_area * MIN_FIGURE_AREA or area > page_area * 0.9:
-                continue                           # 너무 작은 조각, 페이지 전체 테두리는 뺌
-            if any(box.intersects(pymupdf.Rect(r["bbox"])) for r in regions):
-                continue                           # 표 테두리 선은 그림이 아님
-            labels = [ln for ln in pdf_page.get_text("text", clip=box).splitlines()
-                      if ln.strip() and len(ln.strip()) < LABEL_MAX]
-            regions.append({"type": "figure", "bbox": tuple(box),
-                            "text": self.drop_spanish_text("\n".join(labels)), "image_path": None})
+    def find_decorations(self, candidates_per_page):
+        """여러 쪽(REPEAT_PAGES 이상)에 같은 자리로 나오는 그림 조각 = 로고·바닥 줄 같은 꾸밈"""
+        count = Counter()
+        for boxes in candidates_per_page:
+            count.update({self.box_key(box) for box in boxes})
+        return {key for key, n in count.items() if n >= REPEAT_PAGES}
 
-        regions.sort(key=lambda r: (r["bbox"][1], r["bbox"][0]))
-        return regions
+    def box_key(self, box):
+        """상자 위치를 5pt 단위로 반올림한 값 (쪽마다 아주 조금 달라도 같은 자리로 봄)"""
+        return tuple(round(v / 5) for v in (box.x0, box.y0, box.x1, box.y1))
 
     def read_lines(self, pdf_page, regions):
         """본문 줄을 읽는 순서대로 돌려준다. (표·그림 안 글자, 쪽번호, 스페인어 줄은 뺌)
@@ -158,17 +315,18 @@ class PdfExtractor:
 
         lines = []
         for block in pdf_page.get_text("dict")["blocks"]:
+            label_block = self.is_label_block(block)     # 짧은 줄만 있는 덩어리 = 그림 이름표 후보
             for line in block.get("lines", []):
                 text = "".join(span["text"] for span in line["spans"]).strip()
                 if not text:
                     continue
                 box = pymupdf.Rect(line["bbox"])
-                # 표 안 줄은 뺀다. 그림 안 줄은 짧은 이름표(부품명·번호)만 뺀다
-                #   (그림 영역이 크게 잡혀도 본문 문장은 본문에 남도록)
+                # 표 안 줄은 뺀다. 그림 안 줄은 이름표(짧은 줄로만 된 덩어리)만 뺀다
+                #   (그림 영역이 크게 잡혀도 본문 문단의 짧은 줄 "Replace all tread rollers." 은 본문에 남도록)
                 center = pymupdf.Point((box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2)
                 if any(center in r for r in table_boxes):
                     continue
-                if len(text) < LABEL_MAX and any(center in r for r in figure_boxes):
+                if label_block and any(center in r for r in figure_boxes):
                     continue
                 # 위·아래 여백의 숫자만 있는 줄 (쪽 번호) 은 뺀다
                 in_margin = box.y1 < height * MARGIN or box.y0 > height * (1 - MARGIN)
@@ -180,6 +338,26 @@ class PdfExtractor:
 
         lines = self.drop_spanish_column(lines, width)
         return self.reading_order([ln for ln in lines if not ln.pop("spanish")], width)
+
+    def is_label_block(self, block):
+        """글자 덩어리의 모든 줄이 LABEL_MAX 보다 짧으면 이름표 덩어리로 본다."""
+        texts = ["".join(s["text"] for s in ln["spans"]).strip() for ln in block.get("lines", [])]
+        texts = [t for t in texts if t]
+        return bool(texts) and all(len(t) < LABEL_MAX for t in texts)
+
+    def label_lines(self, pdf_page, box):
+        """그림 상자 안의 이름표 줄 (이름표 덩어리이고 줄 가운데가 상자 안인 것)"""
+        labels = []
+        for block in pdf_page.get_text("dict")["blocks"]:
+            if not self.is_label_block(block):
+                continue
+            for line in block["lines"]:
+                rect = pymupdf.Rect(line["bbox"])
+                center = pymupdf.Point((rect.x0 + rect.x1) / 2, (rect.y0 + rect.y1) / 2)
+                text = "".join(s["text"] for s in line["spans"]).strip()
+                if text and center in box:
+                    labels.append(text)
+        return labels
 
     def drop_spanish_column(self, lines, width):
         """영·스 2단 페이지면 스페인어 단을 통째로 뺀다.
@@ -366,10 +544,17 @@ class PdfExtractor:
         """스페인어 줄이면 True. (스페인어 특수 글자 또는 스페인어 단어 비율 25% 이상)"""
         if any(c in SPANISH_CHARS for c in text.lower()):
             return True
-        words = re.findall(r"[a-záéíóúñ]+", text.lower())
+        words = re.findall(r"[a-záéíóúñ]{2,}|\by\b", text.lower())   # 한 글자 조각(A m b i e n t e) 은 뺌
         if len(words) < 3:
             return False
         return sum(w in SPANISH_WORDS for w in words) / len(words) >= 0.25
+
+    def is_spanish_block(self, text):
+        """표 전체가 스페인어인지. 머리글 줄이 스페인어이거나 줄의 40% 이상이 스페인어면 True"""
+        rows = [r for r in text.splitlines() if r.strip() and not r.startswith("|---")]
+        if not rows:
+            return False
+        return self.is_spanish(rows[0]) or sum(self.is_spanish(r) for r in rows) / len(rows) >= 0.4
 
     def drop_spanish_text(self, text):
         """여러 줄 글자에서 스페인어 줄만 뺀다. (그림 안 설명 글자용)"""
@@ -392,11 +577,18 @@ class PdfExtractor:
             previous = line
         return text.strip()
 
-    def cell_text(self, pdf_page, cell):
-        """표 칸 안의 글자 (table.extract() 는 띄어쓰기가 사라지는 PDF 가 있어서 직접 읽음)"""
+    def cell_text(self, pdf_page, cell, gray_boxes=()):
+        """표 칸 안의 글자 (table.extract() 는 띄어쓰기가 사라지는 PDF 가 있어서 직접 읽음)
+
+        글자가 없고 회색으로 칠해진 칸은 "X" 로 돌려준다.
+        """
         if cell is None:                           # 합쳐진 칸
             return ""
-        text = pdf_page.get_text("text", clip=pymupdf.Rect(cell))
+        box = pymupdf.Rect(cell)
+        text = pdf_page.get_text("text", clip=box)
+        if not text.strip():
+            filled = sum((box & g).get_area() for g in gray_boxes if box.intersects(g))
+            return "X" if box.get_area() > 0 and filled / box.get_area() >= 0.6 else ""
         text = re.sub(r"-\n(?=[a-z])", "", text)  # fre-\nquently → frequently
         return re.sub(r"\s+", " ", text).strip()
 
@@ -426,6 +618,25 @@ class PdfExtractor:
                 if merged:
                     break
         return boxes
+
+    def is_visible(self, drawing):
+        """눈에 보이는 도형인지.
+        선 없이 흰색으로만 칠한 '사각형'(글자 뒤 배경 상자)은 안 보이는 것으로 본다.
+        흰색 곡선(아이콘 안쪽 무늬 등)은 그림의 일부라 남긴다."""
+        white = (1.0, 1.0, 1.0)
+        stroke = drawing.get("color")
+        fill = drawing.get("fill")
+        only_rects = all(item[0] == "re" for item in drawing.get("items", []))
+        background = (stroke is None or tuple(stroke) == white) and fill is not None \
+            and tuple(fill) == white and only_rects
+        return not background
+
+    def is_gray(self, color):
+        """회색 채우기인지 (흰색·검정·유채색은 아님)"""
+        if not color or len(color) != 3:
+            return False
+        r, g, b = color
+        return max(r, g, b) - min(r, g, b) < 0.05 and 0.3 < r < 0.95
 
     def text_ratio(self, box, text_boxes):
         """상자 넓이 중 글자 블록이 차지하는 비율 (0~1)"""
