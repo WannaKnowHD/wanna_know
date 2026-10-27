@@ -7,7 +7,7 @@ chromadb
 rank-bm25
 sentence-transformers
 pymysql
-bcrypt
+# bcrypt - 현재는 사용하고 있지 않습니다.
 pandas
 openpyxl
 pytest
