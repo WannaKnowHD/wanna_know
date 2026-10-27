@@ -10,6 +10,7 @@ data/interim/*
 !data/interim/.gitkeep
 index/*
 !index/.gitkeep
+chroma_db/
 
 # 파이썬·도구
 __pycache__/

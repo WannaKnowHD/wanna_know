@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import hashlib
 import secrets
-import bcrypt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트에서 chatbot 패키지 찾기
 
@@ -27,7 +26,7 @@ class FakeDb:
             return f"pbkdf2_sha256$1000${salt.hex()}${digest.hex()}"
 
         self.users = {
-            "e1": {"employee_id": "e1", "password_hash": hashed("pw-eng"), "name": "엔지니어", "role": "engineer"},
+            "e1": {"employee_id": "e1", "password_hash": hashed("pw-eng"), "name": "엔지니어", "role": "user"},
             "a1": {"employee_id": "a1", "password_hash": hashed("pw-admin"), "name": "관리자", "role": "admin"},
         }
         self.sessions = {}  # token → (employee_id, expires_at)
@@ -76,7 +75,7 @@ def test_load_users():
 
 def test_authenticate_success():
     auth, _ = make_auth()
-    assert auth.authenticate("e1", "pw-eng") == User("e1", "엔지니어", "engineer")
+    assert auth.authenticate("e1", "pw-eng") == User("e1", "엔지니어", "user")
     assert auth.authenticate("a1", "pw-admin").is_admin
     assert auth.authenticate(" e1 ", "pw-eng").employee_id == "e1"  # 사원번호 앞뒤 공백은 무시
 
