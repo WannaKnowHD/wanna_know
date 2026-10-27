@@ -30,17 +30,16 @@
  
 [이 파일이 제공하는 것]
   - Settings.load()        : 앱 전체 설정. 필수 값을 모두 검사한다. (앱·팀원 코드용)
-  - load_openai_settings() : OpenAI 키·모델명만 읽는다. (scripts/check_models.py 전용)
   - load_seed_passwords()  : 초기 계정 비밀번호만 읽는다. (scripts/seed.py 전용)
   - ConfigError            : 설정이 잘못됐을 때 나는 오류
  
 [사용 예]
-    from config import Settings
+    from chatbot.core.config import Settings   # "from config import" 는 .venv 의 다른 config 패키지를 불러오므로 쓰지 않는다
     settings = Settings.load()      # 앱이 시작될 때 한 번만 부른다
     print(settings.model_text)
  
 [직접 실행해서 점검]
-    python config.py
+    python chatbot/core/config.py   # 프로젝트 최상단에서 실행
 ==============================================================================
 """
 # 타입 표기(Optional[Path], list[str] 등)를 실행할 때 따지지 않게 한다.
@@ -58,12 +57,12 @@ from dotenv import load_dotenv                     # .env 파일 내용을 환�
 # ------------------------------------------------------------------------------
 # 1. 기준 경로
 # ------------------------------------------------------------------------------
-# __file__   : 지금 이 파일(config.py)의 위치
-# .resolve() : 전체 경로로 바꿈 (예: C:/workspaces/wanna_know/config.py)
-# .parent    : 그 파일이 들어 있는 폴더 = 프로젝트 최상단 폴더
+# __file__     : 지금 이 파일(config.py)의 위치
+# .resolve()   : 전체 경로로 바꿈 (예: C:/workspaces/wanna_know/chatbot/core/config.py)
+# .parents[2]  : 두 단계 위 폴더 = 프로젝트 최상단 폴더
+#                (parents[0] = chatbot/core, parents[1] = chatbot, parents[2] = wanna_know)
 # 그냥 ".env" 라고 쓰면 "터미널이 지금 있는 폴더" 기준으로 찾기 때문에,
 # 다른 폴더에서 실행하면 못 찾는다. BASE_DIR 기준이면 어디서 실행해도 같은 파일을 찾는다.
-# ※ config.py 를 src/ 같은 하위 폴더로 옮기면 .parent 를 .parent.parent 로 바꿔야 한다.
 BASE_DIR = Path(__file__).resolve().parents[2]
 ENV_PATH = BASE_DIR / ".env"
  
@@ -278,13 +277,13 @@ class Settings:
     # --- 문서·색인 경로 (모두 프로젝트 최상단 기준) ---
     # 사람마다 다를 필요가 없는 값이라 .env 에 넣지 않고 고정값으로 둔다. (설정할 항목을 줄여 실수 감소)
     # ※ 폴더 구조도 확정본과 다르면 이 값만 고치면 된다.
-    raw_dir: Path = BASE_DIR / "data" / "raw"                      # 원본 매뉴얼 PDF
+    raw_dir: Path = BASE_DIR / "data" / "raw"                      # 원본 매뉴얼 PDF 상위 폴더 (initial/: 초기 매뉴얼, admin_add/: 관리자 추가)
     admin_add_dir: Path = BASE_DIR / "data" / "raw" / "admin_add"  # 관리자가 화면에서 추가한 PDF
     interim_dir: Path = BASE_DIR / "data" / "interim"              # 표·그림 잘라낸 이미지와 변환 결과
     kb_dir: Path = BASE_DIR / "kb"                                 # 지식베이스(JSON)
     chroma_dir: Path = BASE_DIR / "chroma_db"                      # 벡터 DB 폴더 (.gitignore 대상)
     bm25_path: Path = BASE_DIR / "chroma_db" / "bm25.pkl"          # BM25 색인 파일 (강경원과 위치 확정 필요)
-    results_dir: Path = BASE_DIR / "results"                       # 평가 결과 CSV
+    results_dir: Path = BASE_DIR / "eval" / "results"              # 평가 결과 CSV (eval/results/{버전}_{날짜}.csv)
  
     # @classmethod : 객체가 아직 없어도 Settings.load() 처럼 클래스 이름으로 바로 부를 수 있게 한다.
     #                cls 는 Settings 클래스 자신을 가리킨다.
@@ -331,40 +330,7 @@ class Settings:
  
  
 # ------------------------------------------------------------------------------
-# 6. OpenAI 설정만 따로 읽기 (scripts/check_models.py 전용)
-# ------------------------------------------------------------------------------
-# 모델 이름을 아직 정하지 않은 상태에서도 "내 키로 쓸 수 있는 모델"을 확인할 수 있게,
-# OPENAI_API_KEY 만 필수로 검사한다. (Settings.load() 는 DB·세션 값까지 모두 요구하기 때문)
-@dataclass(frozen=True)
-class OpenAISettings:
-    """모델 확인용 OpenAI 설정. 모델 이름은 아직 비어 있어도("") 된다."""
- 
-    api_key: str = field(repr=False)
-    model_text: str
-    model_vision: str
-    embedding_model: str
- 
- 
-def load_openai_settings() -> OpenAISettings:
-    """OpenAI 키와 모델 이름만 읽는다. (scripts/check_models.py 전용)
- 
-    받는 것: 없음
-    돌려주는 것: OpenAISettings (OPENAI_API_KEY 만 필수, 모델 이름은 비어 있으면 "")
-    """
-    env_note = _load_env_file()
-    problems: list[str] = []
-    api_key = _required("OPENAI_API_KEY", problems)
-    _raise_if_problems(problems, env_note)
-    return OpenAISettings(
-        api_key=api_key,
-        model_text=os.getenv("MODEL_TEXT", "").strip(),
-        model_vision=os.getenv("MODEL_VISION", "").strip(),
-        embedding_model=os.getenv("EMBEDDING_MODEL", "").strip(),
-    )
- 
- 
-# ------------------------------------------------------------------------------
-# 7. 초기 계정 비밀번호 읽기 (scripts/seed.py 전용)
+# 6. 초기 계정 비밀번호 읽기 (scripts/seed.py 전용)
 # ------------------------------------------------------------------------------
 # 왜 필요한가:
 #   seed.py 가 초기 계정을 넣으려면 비밀번호 원문이 필요하다. 하지만 원문을 코드에 쓰면 Git 과
@@ -407,10 +373,10 @@ def load_seed_passwords(names: list[str]) -> dict[str, str]:
  
  
 # ------------------------------------------------------------------------------
-# 8. 직접 실행했을 때: 설정 점검 (python config.py)
+# 7. 직접 실행했을 때: 설정 점검 (python chatbot/core/config.py)
 # ------------------------------------------------------------------------------
-# if __name__ == "__main__": 아래는 "python config.py" 로 직접 실행할 때만 동작한다.
-# 다른 파일이 import config 할 때는 실행되지 않는다.
+# if __name__ == "__main__": 아래는 "python chatbot/core/config.py" 로 직접 실행할 때만 동작한다.
+# 다른 파일이 from chatbot.core.config import ... 로 불러올 때는 실행되지 않는다.
 if __name__ == "__main__":
     try:
         loaded = Settings.load()

@@ -6,7 +6,8 @@
 [이 파일이 하는 일]
   1) .env 의 DB 접속 정보로 MySQL(Aiven)에 접속한다.            (config.Settings.load)
   2) .env 에서 초기 계정 비밀번호를 읽는다.                       (config.load_seed_passwords)
-  3) db/schema.sql 을 실행해 테이블을 만든다.                     (이미 있으면 건너뜀)
+  3) chatbot/db/schema.sql 을 실행해 테이블을 만든다.             (이미 있으면 건너뜀)
+     예전 정의로 만든 users 테이블이면 지금 정의로 맞춘다.       (role 'engineer' → 'user', 해시 칸 길이)
   4) 아래 DEFAULT_ACCOUNTS 의 계정을 users 테이블에 넣는다.        (비밀번호는 해시로 바꿔서)
  
 [비밀번호는 어디에?]
@@ -20,11 +21,11 @@
   - 아래 목록에 없는 기존 계정은 지우지 않는다.
  
 [실행 전 준비]
-  1) .env 가 모두 채워져 있어야 한다. (python config.py 가 [OK])
+  1) .env 가 모두 채워져 있어야 한다. (python chatbot/core/config.py 가 [OK])
   2) .env 에 아래 두 줄 추가 (각자 8자 이상으로 정하기)
        SEED_ADMIN_PASSWORD=...
        SEED_USER_PASSWORD=...
-  3) pip install "PyMySQL[rsa]"
+  3) pip install -r requirements.txt   (pymysql 포함)
  
 [실행]  프로젝트 최상단 폴더에서, 가상환경을 켠 상태로
   python scripts/seed.py
@@ -37,7 +38,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
  
-# 이 파일은 scripts/ 안에 있어서, 그대로 두면 최상단의 config.py 를 못 찾는다.
+# 이 파일은 scripts/ 안에 있어서, 그대로 두면 chatbot 패키지(chatbot/core/config.py)를 못 찾는다.
 # → 최상단 폴더(scripts 의 부모)를 파이썬 검색 경로 맨 앞에 넣는다.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -45,7 +46,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import pymysql                              # noqa: E402  MySQL 접속 라이브러리
 from pymysql.constants import CLIENT        # noqa: E402  접속 옵션 상수
  
-from config import BASE_DIR, ConfigError, Settings, load_seed_passwords   # noqa: E402
+# ※ "from config import ..." 로 쓰면 가상환경에 설치된 다른 config 패키지를 가져온다. 전체 경로로 쓴다.
+from chatbot.core.config import BASE_DIR, ConfigError, Settings, load_seed_passwords   # noqa: E402
  
  
 # ------------------------------------------------------------------------------
@@ -116,8 +118,10 @@ DEFAULT_ACCOUNTS: list[AccountSpec] = [
 # ------------------------------------------------------------------------------
 # 2. 고정값
 # ------------------------------------------------------------------------------
-SCHEMA_PATH = BASE_DIR / "db" / "schema.sql"   # 테이블 만드는 SQL
-ALLOWED_ROLES = ("user", "admin")              # users.role 에 들어갈 수 있는 값
+SCHEMA_PATH = BASE_DIR / "chatbot" / "db" / "schema.sql"   # 테이블 만드는 SQL
+ALLOWED_ROLES = ("user", "admin")              # users.role 에 들어갈 수 있는 값 (schema.sql ENUM 과 같게)
+OLD_ROLE = "engineer"                          # 예전 schema.sql 의 일반 사원 값 → "user" 로 바꾼다
+PASSWORD_HASH_LEN = 255                        # users.password_hash VARCHAR(255) (pbkdf2 해시는 118자)
 EMPLOYEE_ID_MAX = 20                           # users.employee_id VARCHAR(20)
 NAME_MAX = 50                                  # users.name VARCHAR(50)
  
@@ -243,6 +247,42 @@ def apply_schema(conn: pymysql.connections.Connection, path: Path) -> None:
             pass
  
  
+def upgrade_users_table(conn: pymysql.connections.Connection) -> list[str]:
+    """예전 schema.sql 로 이미 만든 users 테이블을 지금 정의에 맞춘다. (이미 맞으면 아무것도 안 함)
+ 
+    받는 것: DB 연결
+    돌려주는 것: 바꾼 내용 목록 (바꾼 게 없으면 빈 목록)
+    왜 필요한가:
+      schema.sql 은 CREATE TABLE IF NOT EXISTS 라서 테이블이 이미 있으면 바뀐 정의가 반영되지 않는다.
+      예전 정의 그대로면 계정을 넣을 때 오류가 난다.
+        - role ENUM('engineer','admin')  → role='user' 를 넣으면 "Data truncated"
+        - password_hash VARCHAR(100)      → pbkdf2 해시(118자)를 넣으면 "Data too long"
+    """
+    changes: list[str] = []
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT COLUMN_NAME, COLUMN_TYPE, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+            "AND COLUMN_NAME IN ('role', 'password_hash')"
+        )
+        columns = {row[0].lower(): row for row in cursor.fetchall()}
+ 
+        # 1) role: 'engineer' 가 남아 있으면 → 'user' 추가 → 기존 행 변경 → 'engineer' 제거 (기존 계정 유지)
+        role = columns.get("role")
+        if role is not None and f"'{OLD_ROLE}'" in role[1]:
+            cursor.execute("ALTER TABLE users MODIFY role ENUM('engineer', 'user', 'admin') NOT NULL DEFAULT 'user'")
+            cursor.execute("UPDATE users SET role = 'user' WHERE role = %s", (OLD_ROLE,))
+            cursor.execute("ALTER TABLE users MODIFY role ENUM('user', 'admin') NOT NULL DEFAULT 'user'")
+            changes.append(f"users.role: '{OLD_ROLE}' → 'user'")
+ 
+        # 2) password_hash: 칸이 짧으면 늘린다 (줄이지는 않음)
+        password_hash = columns.get("password_hash")
+        if password_hash is not None and (password_hash[2] or 0) < PASSWORD_HASH_LEN:
+            cursor.execute(f"ALTER TABLE users MODIFY password_hash VARCHAR({PASSWORD_HASH_LEN}) NOT NULL")
+            changes.append(f"users.password_hash: VARCHAR({password_hash[2]}) → VARCHAR({PASSWORD_HASH_LEN})")
+    return changes
+ 
+ 
 def upsert_accounts(conn: pymysql.connections.Connection, accounts: list[SeedAccount]) -> dict[str, int]:
     """계정을 users 테이블에 넣거나 고친다.
  
@@ -318,6 +358,8 @@ def main() -> int:
     try:
         apply_schema(conn, SCHEMA_PATH)
         print(f"[OK] 테이블 확인 완료 ({SCHEMA_PATH.name})")
+        for change in upgrade_users_table(conn):
+            print(f"[OK] 예전 테이블 정의 변경: {change}")
         counts = upsert_accounts(conn, accounts)
     except (pymysql.MySQLError, SeedError) as error:
         conn.rollback()
