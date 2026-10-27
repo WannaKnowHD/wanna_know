@@ -7,7 +7,8 @@
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-
+import hashlib
+import secrets
 import bcrypt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 프로젝트 루트에서 chatbot 패키지 찾기
@@ -20,8 +21,10 @@ class FakeDb:
     """AuthManager가 보내는 SQL만 알아듣는 가짜 Database. 시연 값이 아닌 테스트 전용 계정."""
 
     def __init__(self):
-        def hashed(pw):
-            return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+        def hashed(pw):  # seed.py 와 같은 형식 (테스트가 빠르도록 반복 횟수만 1000)
+            salt = secrets.token_bytes(16)
+            digest = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, 1000)
+            return f"pbkdf2_sha256$1000${salt.hex()}${digest.hex()}"
 
         self.users = {
             "e1": {"employee_id": "e1", "password_hash": hashed("pw-eng"), "name": "엔지니어", "role": "engineer"},

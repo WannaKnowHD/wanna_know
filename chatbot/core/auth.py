@@ -1,22 +1,46 @@
 """로그인, 세션 관리"""
 from __future__ import annotations
 
+import hashlib
+import hmac
 import secrets
-from functools import cache
 from typing import TYPE_CHECKING
-
-import bcrypt
 
 from chatbot.core.schemas import User
 
 if TYPE_CHECKING:
     from chatbot.db.db import Database
 
+# ------------------------------------------------------------------------------
+# 비밀번호 확인 (scripts/seed.py 의 verify_password 를 그대로 복사)
+# ------------------------------------------------------------------------------
+# 저장 형식: pbkdf2_sha256$반복횟수$소금값(16진수)$해시값(16진수)
+# ※ seed.py 와 형식·방식이 조금이라도 다르면 맞는 비밀번호도 로그인에 실패한다.
+#   해시 방식을 바꾸면 seed.py 와 이 파일 두 곳을 같이 고쳐야 한다.
+HASH_ALGORITHM = "pbkdf2_sha256"
 
-@cache
-def _dummy_hash() -> bytes:
-    """없는 사원번호도 비밀번호 검사와 같은 시간이 걸리게 하려고 쓰는 가짜 해시."""
-    return bcrypt.hashpw(b"dummy-password", bcrypt.gensalt())
+# 없는 사원번호도 비밀번호 검사와 같은 시간이 걸리게 하려는 가짜 해시 (반복 횟수는 seed.py 의 HASH_ITERATIONS 와 맞춤)
+_DUMMY_HASH = f"{HASH_ALGORITHM}$600000${'00' * 16}${'00' * 32}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """입력한 비밀번호가 저장된 해시와 맞는지 확인한다.
+
+    받는 것: 비밀번호 원문, DB에 저장된 해시 문자열
+    돌려주는 것: 맞으면 True, 틀리거나 해시 형식이 이상하면 False
+    """
+    try:
+        algorithm, iterations_text, salt_hex, digest_hex = stored_hash.split("$")
+        iterations = int(iterations_text)
+        salt = bytes.fromhex(salt_hex)
+        expected = bytes.fromhex(digest_hex)
+    except (ValueError, AttributeError):
+        return False
+    if algorithm != HASH_ALGORITHM:
+        return False
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    # == 대신 compare_digest: 걸린 시간으로 정답을 추측하는 공격을 막기 위해 항상 같은 시간으로 비교
+    return hmac.compare_digest(digest, expected)
 
 
 class AuthManager:
@@ -58,11 +82,8 @@ class AuthManager:
             "SELECT employee_id, password_hash, name, role FROM users WHERE employee_id = %s", (employee_id,)
         ) if employee_id else []
         row = rows[0] if rows else None
-        stored = row["password_hash"].encode() if row else _dummy_hash()
-        try:
-            matched = bcrypt.checkpw((password or "").encode(), stored)
-        except ValueError:  # bcrypt가 받을 수 없는 입력(72바이트 초과 등)
-            matched = False
+        stored = row["password_hash"] if row else _DUMMY_HASH
+        matched = verify_password(password or "", stored)
         return self._to_user(row) if row and matched else None
 
     def create_session(self, user: User):
