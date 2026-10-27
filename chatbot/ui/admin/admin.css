@@ -176,3 +176,171 @@
   padding: 1.75rem var(--admin-gutter) 2.5rem !important;
   background: var(--admin-bg);
 }
+
+/* ===================================================== */
+/* 시스템 탭 (system_tab.py) — 모든 규칙은 #admin-system-tab 안에서만 적용 */
+/* 크기는 rem, 글자 기준 간격은 em, 테두리 두께·알약 모양만 px */
+/* ===================================================== */
+
+/* 시스템 탭에서 쓰는 값 모음: 디자인 수정은 여기 값만 바꾸면 됨 */
+#admin-system-tab {
+  --system-bar-color: #0f6b4a;
+  --system-card-radius: 0.75rem;
+  --system-card-padding: 1.25rem;
+  --system-section-gap: 1.25rem;
+  --system-metric-width: 16.25rem;
+  --system-metric-value-size: 1.75rem;
+  --system-title-size: 0.9375rem;
+  --system-text-size: 0.8125rem;
+  --system-small-size: 0.75rem;
+  --system-stage-name-width: 8rem;
+  --system-stage-bar-width: 26rem;
+  --system-stage-bar-height: 0.625rem;
+
+  gap: var(--system-section-gap);
+}
+
+/* gr.HTML 기본 안쪽 여백 제거 */
+#admin-system-tab .html-container {
+  padding: 0;
+}
+
+/* ── 상단 지표 카드 줄 (가로 배치, 줄바꿈 없음) ───────── */
+#admin-system-tab .system-metric-row {
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: var(--system-section-gap);
+}
+
+#admin-system-tab .system-metric-row > * {
+  flex: 0 0 var(--system-metric-width);
+  min-width: 0;
+}
+
+/* 집계 기간은 남은 너비를 차지 */
+#admin-system-tab .system-metric-row > .system-period {
+  flex: 1 1 auto;
+}
+
+#admin-system-tab .system-metric-card {
+  padding: var(--system-card-padding);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--system-card-radius);
+  background: var(--admin-surface);
+}
+
+#admin-system-tab .system-metric-title,
+#admin-system-tab .system-metric-caption {
+  margin: 0;
+  color: var(--admin-text-muted);
+  font-size: var(--system-text-size);
+}
+
+#admin-system-tab .system-metric-value {
+  margin: 0.25em 0;
+  color: var(--admin-text);
+  font-size: var(--system-metric-value-size);
+  font-weight: 800;
+}
+
+#admin-system-tab .system-period-text {
+  margin: 0;
+  color: var(--admin-text-muted);
+  font-size: var(--system-small-size);
+}
+
+/* ── 카드 (단계별 응답 시간·최근 오류) ───────── */
+#admin-system-tab .system-card {
+  gap: 0.75rem;
+  padding: var(--system-card-padding);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--system-card-radius);
+  background: var(--admin-surface);
+}
+
+#admin-system-tab .system-card-title {
+  margin: 0;
+  color: var(--admin-text);
+  font-size: var(--system-title-size);
+  font-weight: 700;
+}
+
+/* ── 단계별 응답 시간 막대 ───────── */
+#admin-system-tab .system-stage-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+#admin-system-tab .system-stage-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+#admin-system-tab .system-stage-name {
+  flex: 0 0 var(--system-stage-name-width);
+  color: var(--admin-text);
+  font-size: var(--system-text-size);
+}
+
+/* 막대: <progress> 요소, 값/최댓값 비율만큼 색이 채워짐 */
+#admin-system-tab .system-stage-bar {
+  flex: 0 1 var(--system-stage-bar-width);
+  height: var(--system-stage-bar-height);
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  appearance: none;
+}
+
+#admin-system-tab .system-stage-bar::-webkit-progress-bar {
+  background: transparent;
+}
+
+#admin-system-tab .system-stage-bar::-webkit-progress-value {
+  border-radius: 999px;
+  background: var(--system-bar-color);
+}
+
+#admin-system-tab .system-stage-bar::-moz-progress-bar {
+  border-radius: 999px;
+  background: var(--system-bar-color);
+}
+
+#admin-system-tab .system-stage-value {
+  color: var(--admin-text-muted);
+  font-size: var(--system-small-size);
+}
+
+/* ── 최근 오류 표 (gr.Dataframe) ───────── */
+/* Gradio 표 기본값(고정폭 글꼴·줄무늬 배경)을 디자인 색으로 덮어씀 */
+#admin-system-tab .system-error-table {
+  --font-mono: var(--font);
+  --table-even-background-fill: var(--admin-surface);
+  --table-odd-background-fill: var(--admin-surface);
+  --table-border-color: var(--admin-border);
+}
+
+/* 칸 사이 세로선 제거 (Gradio가 box-shadow로 그림) */
+#admin-system-tab .system-error-table .header-cell,
+#admin-system-tab .system-error-table .body-cell {
+  box-shadow: none !important;
+}
+
+/* 행 사이 가로선 */
+#admin-system-tab .system-error-table .virtual-row {
+  border-top: 1px solid var(--admin-border);
+}
+
+#admin-system-tab .system-error-table .header-cell {
+  background: var(--admin-bg) !important;
+  color: var(--admin-text-muted);
+  font-size: var(--system-text-size);
+  font-weight: 500;
+}
+
+#admin-system-tab .system-error-table .body-cell {
+  color: var(--admin-text);
+  font-size: var(--system-text-size);
+}
