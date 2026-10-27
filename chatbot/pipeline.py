@@ -107,13 +107,10 @@ class RagPipeline:
                 continue
             if any(term_norm in "".join(found.split()).lower() for found in matched):
                 continue
-            values = glossary[term]                 # 영문 용어는 문자열 하나일 수도, 목록일 수도 있음 → 목록으로 통일하고 빈 값은 버림
-            english = [v.strip() for v in ([values] if isinstance(values, str) else values or []) if v and v.strip()]
-            if english:
-                matched[term] = english
+            matched[term] = glossary[term]  # Glossary.load_glossary 가 영문 용어 목록(비어 있지 않음)으로 정리해 둠
 
         # 2) 용어집에 걸린 표현은 영문 용어를 정해서 LLM 에게 주고(REWRITE_QUERY 가 "이 용어를 우선 쓰라"고 함), 나머지만 LLM 이 바꿈
-        glossary_text = "\n".join(f"{k} → {', '.join(v)}" for k, v in matched.items()) or "(none)"
+        glossary_text = "\n".join(f"{k} → {'; '.join(v)}" for k, v in matched.items()) or "(none)"
         queries: list[str] = []
         try:
             text = self.llm.chat(REWRITE_QUERY.format(glossary=glossary_text, question=question))["text"]
@@ -123,10 +120,11 @@ class RagPipeline:
             print(f"[pipeline] 검색어 변환 실패 → 용어집만 사용: {type(e).__name__}: {e}")
         queries = [q for q in queries if q]
 
-        # 3) LLM 이 용어집 용어를 하나도 쓰지 않았다면, 용어집의 영문 용어로 만든 검색어를 맨 앞에 둠
+        # 3) LLM 이 용어집 용어를 하나도 쓰지 않았다면, 걸린 표현마다 첫 영문 용어를 검색어로 만들어 맨 앞에 둠
+        #    (용어집 용어는 매뉴얼에 실제로 적힌 표현이라 BM25 검색에 걸림)
         if matched and not any(t.lower() in q.lower() for q in queries for v in matched.values() for t in v):
-            queries.insert(0, " ".join(v[0] for v in matched.values()))
-            
+            queries[:0] = [v[0] for v in matched.values()]
+
         # 대소문자만 다른 검색어는 하나만 남김 ("Motor Overheating" = "motor overheating")
         unique: list[str] = []
         for q in queries:
