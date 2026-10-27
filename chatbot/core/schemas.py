@@ -82,29 +82,6 @@ class Model:
     doc_ids: list[str] = field(default_factory=list)
 
 
-class Cause(BaseModel):
-    id: str
-    text: str
-
-
-class Source(BaseModel):
-    doc_id: str
-    page: int
-    quote: str = ""
-
-
-class AnswerResponse(BaseModel):
-    """LLM 응답 JSON 형식. validator.validate_schema가 이 모델로 검사."""
-    summary: str = ""
-    safety: list[str] = []
-    causes: list[Cause] = []
-    actions: list[str] = []
-    sources: list[Source] = []
-    figures: list[str] = []
-    follow_ups: list[str] = []
-    not_found: bool = False
-
-
 # KB 스키마 (kb/troubleshooting/*.json, kb/maintenance/*.json)
 # KB 클래스는 모두 extra="forbid": 정의에 없는 필드(오타 등)가 들어오면 값을 버리지 않고 오류로 알림
 
@@ -207,3 +184,180 @@ class MaintenanceKB(_KbBase):
 
 
 KbEntry = Annotated[Union[TroubleshootingKB, MaintenanceKB], Field(discriminator="type")]
+
+
+# ------------------------------------------------------------------------------
+# 응답 JSON 스키마 (WBS 2.1.4, 조윤빈). 설명은 응답 JSON 스키마 문서 v0.5
+#   - AnswerResponse : RagPipeline.answer가 돌려주는 응답 1건
+#                      (화면·로그·대화 기록·채점이 읽음)
+#   - LLMAnswer      : generate가 llm.chat(json_schema=LLMAnswer)로 받는 부분
+# 코드값(status, input_type 등)은 소문자로 쓴다.
+# ------------------------------------------------------------------------------
+SCHEMA_VERSION = "0.5"
+
+# 원인 id = {kb_id}#c{순번}. KbCause.cause_id와 같은 규칙
+# 예: TS-HYTROL138ACC-T01-04#c1
+CAUSE_ID_PATTERN = KB_ID_PATTERN.removesuffix("$") + r"#c\d+$"
+
+Status = Literal["answered", "not_found", "nameplate", "retake", "error"]
+InputType = Literal["text", "nameplate_photo", "damage_photo", "other_photo", "voice"]
+QuestionType = Literal["troubleshooting", "maintenance", "procedure", "out_of_scope"]
+# kb = KB 항목, text · table · figure = 매뉴얼 청크 (Section.type과 같은 값)
+ChunkType = Literal["kb", "text", "table", "figure"]
+
+
+class StrictModel(BaseModel):
+    """정의하지 않은 키가 들어오면 검증에 실패한다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class Cause(StrictModel):
+    """원인 1개와 조치. 문장은 검색된 KB의 KbCause를 그대로 복사한다."""
+
+    id: str = Field(pattern=CAUSE_ID_PATTERN)
+    cause: str  # KbCause.cause
+    actions: list[str]  # KbCause.actions (점검할 순서)
+
+
+class ActionStep(StrictModel):
+    """점검·절차의 한 단계 (maintenance · procedure 답변)."""
+
+    text: str
+    ref_id: str  # sources[].ref_id 중 하나
+
+
+class LLMSource(StrictModel):
+    ref_id: str  # 검색 결과 id (kb_id 또는 chunk_id)
+    quote: str  # 매뉴얼 원문 그대로
+
+
+class LLMAnswer(StrictModel):
+    """generate()가 LLM에게 받는 부분. strict 모드를 위해 기본값을 두지 않는다."""
+
+    not_found: bool
+    summary: str
+    cause_ids: list[str]  # 원인 문장은 코드가 KB에서 복사한다
+    actions: list[ActionStep]
+    sources: list[LLMSource]
+
+
+class Source(LLMSource):
+    """근거 1건. ref_id · quote는 LLM이, 나머지는 검색 메타데이터로 코드가 채운다."""
+
+    doc_id: str
+    doc_title: str
+    page: int
+    chunk_type: ChunkType
+    image_path: str | None = None
+
+
+class SafetyNote(StrictModel):
+    rule_id: str
+    text: str
+    doc_title: str | None = None
+    page: int | None = None
+
+
+class Figure(StrictModel):
+    label: str
+    caption: str
+    doc_id: str
+    page: int
+    image_path: str
+
+
+class Equipment(StrictModel):
+    model: str
+    doc_ids: list[str]
+    source: Literal["nameplate", "question"]
+
+
+class NameplateResult(StrictModel):
+    raw_text: str | None  # 판독한 모델명 글자 그대로 (예: "138 ACC")
+    serial: str | None
+    maker: str | None
+    matched_model: str | None  # models.csv에서 찾은 모델 (match_model이 채움)
+    match: Literal["exact", "near", "none"]
+    confidence: float = Field(ge=0, le=1)  # 판독 확신도
+
+
+class DamageResult(StrictModel):
+    label: Literal["hole", "tear", "joint", "edge_damage", "other"]
+    symptom_ko: str
+    confidence: float = Field(ge=0, le=1)  # 0.6 미만이면 재촬영
+
+
+class ImageResult(StrictModel):
+    kind: Literal["nameplate", "belt_damage", "other"]
+    confidence: float = Field(ge=0, le=1)  # 사진 종류 판별 확신도
+    nameplate: NameplateResult | None = None
+    damage: DamageResult | None = None
+
+
+class TraceHit(StrictModel):
+    id: str
+    score: float
+    doc_id: str
+    page: int | None = None
+
+    @classmethod
+    def from_hit(cls, hit: Hit) -> TraceHit:
+        """검색 결과에서 로그·채점에 필요한 값만 남긴다."""
+        return cls(id=hit.id, score=hit.score, doc_id=hit.doc_id, page=hit.page)
+
+
+class TraceError(StrictModel):
+    stage: str  # understand, vision, search, generate, verify, safety, db
+    code: str  # 예: llm_timeout, db_disconnected
+    message: str
+
+
+class Trace(StrictModel):
+    queries_en: list[str] = []
+    hits: list[TraceHit] = []  # 리랭킹 후 상위 5개
+    top_score: float | None = None
+    threshold: float | None = None
+    # 키: understand, vision, search, generate, verify, safety, total
+    latency_ms: dict[str, int] = {}
+    # 키: input_tokens, output_tokens (llm.chat · vision의 usage와 같은 이름, 합계)
+    tokens: dict[str, int] = {}
+    schema_retries: int = 0
+    removed_cause_ids: list[str] = []
+    replaced_quote_refs: list[str] = []
+    error: TraceError | None = None
+
+
+class AnswerResponse(StrictModel):
+    """RagPipeline.answer가 돌려주는 채팅 응답 1건."""
+
+    schema_version: str = SCHEMA_VERSION
+    status: Status
+    message: str | None = None
+    input_type: InputType
+    question_type: QuestionType | None = None
+    equipment: Equipment | None = None
+    filter_released: bool = False
+    summary: str | None = None
+    safety: list[SafetyNote] = []
+    causes: list[Cause] = []
+    actions: list[ActionStep] = []
+    sources: list[Source] = []
+    figures: list[Figure] = []
+    kb_ids: list[str] = []
+    image: ImageResult | None = None
+    trace: Trace = Field(default_factory=Trace)
+
+    @model_validator(mode="after")
+    def check_status_fields(self) -> AnswerResponse:
+        """status마다 꼭 있어야 하는 필드를 확인한다 (응답 스키마 문서 5장)."""
+        if self.status == "answered":
+            if not self.summary or not self.sources:
+                raise ValueError("answered에는 summary와 sources가 필요합니다")
+            if not (self.causes or self.actions):
+                raise ValueError("answered에는 causes 또는 actions가 필요합니다")
+            if self.question_type == "troubleshooting" and self.actions:
+                raise ValueError("troubleshooting 답변의 actions는 비워야 합니다")
+        elif not self.message:
+            raise ValueError(f"{self.status}에는 message가 필요합니다")
+        return self
