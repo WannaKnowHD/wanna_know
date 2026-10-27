@@ -1,1 +1,8 @@
 model_name,aliases,doc_ids
+138-ACC,ACC,hytrol_138acc
+138-LRC,LRC,hytrol_138acc
+138-LRS,LRS,hytrol_138acc
+138-LRSS,LRSS,hytrol_138acc
+L400,,preco_l_series
+L500,,preco_l_series
+L650,,preco_l_series
