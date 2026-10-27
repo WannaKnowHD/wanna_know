@@ -1,1 +1,48 @@
 field_term,standard_ko,term_en
+벨트 쏠림,벨트 사행,Belt runs to one side;Belt runs off;Belt steers off;Belt misalignment;off-center
+사행,벨트 사행,Belt runs to one side;Belt runs off;Belt steers off;Belt misalignment
+벨트 미끄러짐,벨트 슬립,Belt slips;Slippage on drive pulley;Insufficient traction between belt and pulley
+슬립,벨트 슬립,Belt slips;Slippage
+벨트가 안 돎,벨트 정지,"Belt slips or won’t move;Drive pulley is turning, but the belt is not"
+모터 안 켜짐,모터 기동 불량,Motor does not turn on;Conveyor will not start
+자꾸 멈춤,간헐 정지,"motor quits frequently;Conveyor runs for a while, then stops"
+모터 과열,모터 과열,Motor is overheating;Motor or reducer overheating
+감속기,감속기,reducer;gear unit
+기어박스,감속기,reducer;gear unit
+과부하,과부하,overloaded;Thermal overload tripped
+차단기 떨어짐,과부하 트립,Thermal overload tripped;circuit breaker
+퓨즈 나감,퓨즈 단선,Blown fuse
+전압 낮음,저전압,Low voltage to motor
+이상 소음,이상 소음,Excessive noise;Loud popping or grinding noise;Check Noise
+베어링 불량,베어링 불량,Defective bearing
+체인 늘어남,체인 늘어짐,chain stretch;Loose chain
+체인 마모,체인 마모,Drive chain and sprockets wear excessively
+스프라켓,스프로킷,sprockets
+벨트 처짐,벨트 처짐,Belt too loose;Excessive sag between idlers;Excessive belt stretch
+벨트 너무 팽팽,과장력,Belt is over tensioned;Tension too high
+장력 조정,장력 조정,Tension the belt;Adjust belt tension;Check Tension
+캐리어 롤러,캐리어 아이들러,carrying idlers
+리턴 롤러,리턴 아이들러,return rolls;reverse idlers;return run
+아이들러,아이들러,idlers
+구동 풀리,구동 풀리,drive pulley;head pulley
+테일 풀리,테일 풀리,tail pulley
+라깅,풀리 라깅,lagging;Pulley lagging worn
+벨트 이음부,벨트 이음부,splice;fasteners
+이음부 벌어짐,이음부 분리,Vulcanized splice separation;Belt breaks at or behind fasteners
+벨트 가장자리 마모,벨트 에지 마모,Excessive edge wear;Worn edge
+커버 마모,커버 마모,"top cover wear;Grooving, gouging or stripping of top cover"
+커버 갈라짐,커버 경화·균열,Covers harden or crack
+자재 흘림,낙하물,Material spillage;spillage
+스커트,스커트 보드,Skirt boards
+벨트 클리너,벨트 클리너,scrapers;belt cleaning devices
+슈트,슈트,chute
+카운터웨이트,카운터웨이트,counterweight
+텐셔너,테이크업,take-up
+구리스 주유,윤활,Lubricate;lubrication;Re-grease;Re-lubricate
+오일 교환,오일 교환,Change the oil
+오일 레벨,유면 점검,Check Oil Level;Check the oil level
+V벨트,V벨트,V-BELTS
+시브 정렬,시브 정렬,Sheave Alignment
+처리량 부족,이송 능력 부족,The specified capacity has not been reached
+트레드 롤러 안 돎,트레드 롤러 정지,tread rollers not turning
+압력 롤러,압력 롤러,pressure rollers
