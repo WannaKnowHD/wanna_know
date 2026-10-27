@@ -183,9 +183,11 @@ class MaintenanceKB(_KbBase):
     type: Literal["maintenance"]
     task: str
     interval: Literal["daily", "weekly", "monthly", "quarterly", "yearly", "operating_hours"]
-    interval_hours: int | None = None        # interval = operating_hours일 때만
+    interval_hours: int | None = None        # interval = operating_hours일 때만. 범위면 아래쪽 값 (1000-1500 → 1000)
+    interval_hours_max: int | None = None    # 원문이 범위일 때 위쪽 값 (1000-1500 → 1500). 한 값이면 비움
     first_interval_hours: int | None = None  # 첫 주기가 다른 경우 (예: 첫 500 h)
-    interval_note: str | None = None         # 원문 그대로의 보충 (예: "or 12 months")
+    interval_note: str | None = None         # 원문 그대로의 보충 (예: "or 12 months", "1000-1500 hours")
+
     criteria: str | None = None              # 판정 기준 (예: "Replace at 3 mm wear")
     details: list[str] = []                  # 윤활유 종류·양 등
     lockout_required: bool
@@ -196,6 +198,11 @@ class MaintenanceKB(_KbBase):
             raise ValueError("점검 KB의 kb_id는 MT-로 시작해야 함")
         if (self.interval == "operating_hours") != (self.interval_hours is not None):
             raise ValueError("interval_hours는 interval이 operating_hours일 때만, 그리고 반드시 적어야 함")
+        # 범위는 "아래쪽 값 + 위쪽 값"으로 나눠 적는다. 한 칸에 대표값만 두면 LLM이 범위를 한 값으로 단정할 수 있음
+        if self.interval_hours_max is not None:
+            if self.interval_hours is None or self.interval_hours_max <= self.interval_hours:
+                raise ValueError("interval_hours_max는 interval_hours와 함께 적고, interval_hours보다 커야 함")
+
         return self
 
 
