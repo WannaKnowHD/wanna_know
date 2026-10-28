@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from chatbot.db.db import Database
 
 MAX_HISTORY = 100   # load_history 한 번에 불러오는 최대 개수
+DEFAULT_HISTORY = 20   # limit 을 주지 않거나 숫자가 아닐 때
 
 
 def new_state() -> dict:
@@ -35,9 +36,6 @@ class ConversationState:
     """
 
     def __init__(self, db: Database | None = None):
-        self._db = db
-
-    def __init__(self, db: Database | None = None):
         self._db = db   # save_history · load_history 가 chat_history 테이블을 쓸 때 필요
 
     def set_equipment(self, state: dict, model: Model):
@@ -47,11 +45,16 @@ class ConversationState:
         Returns: dict
         """
         state = {**new_state(), **(state or {})}
-        state["equipment"] = {
-            "model_name": model.model_name,
-            "aliases": list(model.aliases),
-            "doc_ids": list(model.doc_ids),
-        }
+        if model is None:                 # match_model 이 못 찾으면 None → 설비 필터를 건드리지 않고 그대로 둠
+            return state
+        if isinstance(model, dict):       # 파이프라인이 읽는 모양({"model_name", ...})으로 이미 만든 값도 받음
+            get = model.get
+            name, aliases, doc_ids = get("model_name"), get("aliases"), get("doc_ids")
+        else:
+            name, aliases, doc_ids = model.model_name, model.aliases, model.doc_ids
+        if not name:
+            return state
+        state["equipment"] = {"model_name": name, "aliases": list(aliases or []), "doc_ids": list(doc_ids or [])}
         return state
 
     def set_user(self, state: dict, user: User):
@@ -85,7 +88,10 @@ class ConversationState:
         Returns: dict
         """
         state = {**new_state(), **(state or {})}
-        question = (turn.get("question") or "").strip()
+        if not isinstance(turn, dict):
+            return state
+        question = turn.get("question")
+        question = question.strip() if isinstance(question, str) else ""
         answer = turn.get("answer") or {}
         user = state.get("user")
         if not question or user is None:  # 빈 질문·로그인 전에는 저장하지 않음
@@ -109,7 +115,7 @@ class ConversationState:
         """
         return new_state()
 
-    def load_history(self, employee_id: str, limit: int = 20):
+    def load_history(self, employee_id: str, limit: int = DEFAULT_HISTORY):
         """
         로그인한 사원의 과거 대화 기록을 MySQL에서 최신순으로 불러옴 (로그창 출력용)
 
@@ -118,7 +124,10 @@ class ConversationState:
         employee_id = (employee_id or "").strip()
         if self._db is None or not employee_id:
             return []
-        limit = max(1, min(int(limit), MAX_HISTORY))
+        try:
+            limit = max(1, min(int(limit), MAX_HISTORY))
+        except (TypeError, ValueError):   # None·문자열 등 숫자가 아니면 기본값
+            limit = DEFAULT_HISTORY
         try:
             rows = self._db.fetch(
                 "SELECT created_at, question, answer FROM chat_history "

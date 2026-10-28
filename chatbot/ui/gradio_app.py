@@ -148,7 +148,8 @@ class ChatApp:
         state: dict = {}
         user = self._auth.restore_session(token) if self._auth is not None and token else None
         if user is not None:
-            self._conversation.set_user(state, user)   # 권한은 restore_session 이 DB 에서 다시 읽은 값
+            # ConversationState 는 받은 dict 를 고치지 않고 새 dict 를 돌려주므로 반환값을 받아 쓴다. 권한은 restore_session 이 DB 에서 다시 읽은 값
+            state = self._conversation.set_user(state, user)
         return user, state
 
     def on_login(self, employee_id: str, password: str, state: dict):
@@ -170,7 +171,7 @@ class ChatApp:
             state["login_error"] = MSG_INVALID        # 사원번호 없음·비밀번호 불일치는 같은 문구 (어느 쪽이 틀렸는지 알려 주지 않음)
             return None, state
         token = self._auth.create_session(user)
-        self._conversation.set_user(state, user)
+        state = self._conversation.set_user(state, user)   # 새 dict 를 돌려줌 (반환값을 써야 사원 정보가 담김)
         return token, state
 
     def on_logout(self, token: str, state: dict):
@@ -185,7 +186,7 @@ class ChatApp:
             self._auth.delete_session(token)
         except Exception as e:  # DB 오류여도 이 화면은 로그아웃함. 남은 세션은 만료 시각(8시간)에 정리됨
             print(f"[gradio_app] 세션 삭제 실패: {type(e).__name__}: {e}")
-        self._conversation.clear_user(state)
+        state = self._conversation.clear_user(state)   # 새 dict 를 돌려줌 (사원 정보·관리자 모드·설비 필터 모두 비움)
         return True, state
 
     def on_submit(self, message: str, history: list, state: dict):
