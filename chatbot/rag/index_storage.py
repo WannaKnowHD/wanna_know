@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 import pickle
 import tempfile
@@ -18,6 +19,7 @@ from chatbot.rag.retriever import COLLECTION_NAME, load_bm25_items
 
 if TYPE_CHECKING:
     from chatbot.rag.llm import LLMClient
+    from chatbot.core.config import Settings
 
 
 class StorageContext(Protocol):
@@ -171,3 +173,59 @@ def rebuild_lock(lock_path: Path) -> Iterator[None]:
 
     with lock:
         yield
+
+
+def _staged_index_worker(
+    items: list[dict],
+    settings: Settings,
+    chroma_dir: Path,
+    bm25_path: Path,
+) -> None:
+    """별도 프로세스 안에서 임시 색인을 생성·검증한다."""
+    from build_index import IndexBuilder
+    from chatbot.rag.llm import LLMClient
+
+    llm = LLMClient(settings, cache_path="")
+
+    builder = IndexBuilder(
+        embedding_model=settings.embedding_model,
+        chroma_dir=chroma_dir,
+        bm25_path=bm25_path,
+        llm=llm,
+    )
+
+    builder._build_indexes_at(
+        items,
+        chroma_dir,
+        bm25_path,
+    )
+
+
+def run_staged_index_worker(
+    items: list[dict],
+    settings: Settings,
+    chroma_dir: Path,
+    bm25_path: Path,
+) -> None:
+    """임시 색인 프로세스가 종료될 때까지 기다리고 실패를 전달한다."""
+    context = multiprocessing.get_context("spawn")
+    process = context.Process(
+        target=_staged_index_worker,
+        args=(items, settings, chroma_dir, bm25_path),
+    )
+
+    process.start()
+
+    try:
+        process.join()
+        exit_code = process.exitcode
+    finally:
+        if process.is_alive():
+            process.terminate()
+            process.join()
+        process.close()
+
+    if exit_code != 0:
+        raise RuntimeError(
+            f"임시 색인 생성·검증에 실패했습니다. 종료 코드: {exit_code}"
+        )
