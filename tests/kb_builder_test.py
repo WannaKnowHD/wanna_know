@@ -259,27 +259,38 @@ def test_validate_all(kb):
 # merge_applies_to
 # ------------------------------------------------------------------------------
 def test_merge_same_content(kb):
-    # 두 매뉴얼에 같은 표 → 먼저 나온 KB 를 남기고 적용 모델·출처를 합친다
+    # 한 매뉴얼 안에서 모델마다 같은 표가 반복 → 먼저 나온 KB 를 남기고 출처를 합친다
+    rows = [["Belt slips", "Belt too loose", "Tension the belt"]]
+    first = kb.to_troubleshooting_kb(rows, "hytrol_138acc", 22, 1, "T")[0]
+    first["applies_to"] = ["138-ACC"]
+    again = kb.to_troubleshooting_kb([["Belt  slips", "Belt too\nloose", "Tension the belt"]],  # 공백만 다름
+                                     "hytrol_138acc", 40, 4, "T")[0]
+    again["applies_to"] = ["138-LRC"]
+    other = kb.to_troubleshooting_kb([["Belt slips", "Belt too loose", "Replace the belt"]],    # 조치가 다름
+                                     "hytrol_138acc", 41, 5, "T")[0]
+    other["related_kb"] = [again["kb_id"]]
+    merged = kb.merge_applies_to([first, again, other])
+    assert [m["kb_id"] for m in merged] == [first["kb_id"], other["kb_id"]]
+    assert merged[0]["applies_to"] == ["138-ACC", "138-LRC"]
+    assert [s["page"] for s in merged[0]["sources"]] == [22, 40]
+    assert merged[1]["related_kb"] == [first["kb_id"]]           # 사라진 KB → 남은 KB 로
+    assert first["applies_to"] == ["138-ACC"]                    # 입력은 그대로
+
+
+def test_merge_keeps_other_documents(kb):
+    # 다른 매뉴얼의 같은 표는 합치지 않는다 (색인 doc_id 가 값 하나라 한쪽 설비 필터에서 빠지므로)
     rows = [["Belt slips", "Belt too loose", "Tension the belt"]]
     hytrol = kb.to_troubleshooting_kb(rows, "hytrol_138acc", 22, 1, "T")[0]
-    preco = kb.to_troubleshooting_kb([["Belt  slips", "Belt too\nloose", "Tension the belt"]],  # 공백만 다름
-                                     "preco_l_series", 57, 4, "TROUBLESHOOTING")[0]
-    other = kb.to_troubleshooting_kb([["Belt slips", "Belt too loose", "Replace the belt"]],    # 조치가 다름
-                                     "preco_l_series", 57, 5, "T")[0]
-    other["related_kb"] = [preco["kb_id"]]
-    merged = kb.merge_applies_to([hytrol, preco, other])
-    assert [m["kb_id"] for m in merged] == [hytrol["kb_id"], other["kb_id"]]
-    assert merged[0]["applies_to"] == HYTROL_MODELS + ["L400", "L500", "L650"]
-    assert [s["doc_id"] for s in merged[0]["sources"]] == ["hytrol_138acc", "preco_l_series"]
-    assert merged[1]["related_kb"] == [hytrol["kb_id"]]          # 사라진 KB → 남은 KB 로
-    assert hytrol["applies_to"] == HYTROL_MODELS                 # 입력은 그대로
+    preco = kb.to_troubleshooting_kb(rows, "preco_l_series", 57, 4, "T")[0]
+    assert [m["kb_id"] for m in kb.merge_applies_to([hytrol, preco])] == [hytrol["kb_id"], preco["kb_id"]]
 
 
 def test_merge_all_models_wins(kb):
     rows = [["Belt slips.", "Pulley lagging worn", ["replace pulley lagging."]]]
-    fenner = kb.to_troubleshooting_kb(rows, "fenner_belt", 27, 1, "T")[0]
-    hytrol = kb.to_troubleshooting_kb(rows, "hytrol_138acc", 22, 1, "T")[0]
-    (merged,) = kb.merge_applies_to([hytrol, fenner])
+    a = kb.to_troubleshooting_kb(rows, "hytrol_138acc", 22, 1, "T")[0]
+    b = kb.to_troubleshooting_kb(rows, "hytrol_138acc", 40, 2, "T")[0]
+    b["applies_to"] = ["*"]
+    (merged,) = kb.merge_applies_to([a, b])
     assert merged["applies_to"] == ["*"]                         # "*" 와 모델명은 섞어 쓸 수 없음
 
 

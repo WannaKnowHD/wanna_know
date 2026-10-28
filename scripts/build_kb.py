@@ -8,7 +8,7 @@
      모델이 다시 쓴 글자라 원문과 달라질 수 있는데, KB 문장은 원문 그대로여야 하기 때문)
   2) 표 모양이 매뉴얼마다 달라서, 매뉴얼마다 표 찾기·행 정리 함수(hytrol·preco·fenner)가 따로 있다.
      정리한 행을 KbBuilder.to_troubleshooting_kb / to_maintenance_kb 에 넘긴다.
-  3) 내용이 완전히 같은 KB 는 1건으로 합친다. (KbBuilder.merge_applies_to)
+  3) 같은 매뉴얼 안에서 내용이 완전히 같은 KB 는 1건으로 합친다. (KbBuilder.merge_applies_to)
      저장 전에 모든 KB를 확인한다. (KbBuilder.validate_kb · _validate_all)
        - KbEntry 스키마, kb_id 중복, related_kb, applies_to 가 models.csv 모델명인지
        - 증상·원인·조치·작업·보충 문장이 원본 PDF 그 쪽에 글자 그대로 있는지
@@ -246,7 +246,7 @@ def save(kbs):
 def main():
     ex = PdfExtractor(str(PROJECT_ROOT / "data" / "sources.csv"))
     kb = KbBuilder(str(PROJECT_ROOT / "data" / "models.csv"))
-    # 내용이 완전히 같은 KB(여러 매뉴얼·모델에 반복된 표)는 1건으로 합친다. 지금 3종에는 없어서 82건 그대로
+    # 같은 매뉴얼 안에서 내용이 완전히 같은 KB(모델마다 반복된 표)는 1건으로 합친다. 지금 3종에는 없어서 82건 그대로
     kbs = kb.merge_applies_to(hytrol(ex, kb) + preco(ex, kb) + fenner(ex, kb))
 
     # KB마다 검사(스키마·원문 대조·적용 모델) + 목록 전체 검사(kb_id 중복·related_kb)

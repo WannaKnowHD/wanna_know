@@ -1077,8 +1077,11 @@ class KbBuilder:
 
         받는 것:
           kbs : KB 목록 (여러 매뉴얼 것이 섞여 있어도 됨)
-        같은 KB = id·적용 모델·출처·그림·관련 KB 를 뺀 내용이 공백 차이 말고 글자까지 같은 KB.
-          비슷한 것까지 합치면 원인·조치가 조금 다른 KB가 섞여 틀린 조치를 안내할 수 있어서 완전히 같을 때만 합친다.
+        같은 KB = 같은 문서(첫 출처의 doc_id)에서 나왔고, id·적용 모델·출처·그림·관련 KB 를 뺀 내용이
+          공백 차이 말고 글자까지 같은 KB.
+          - 비슷한 것까지 합치면 원인·조치가 조금 다른 KB가 섞여 틀린 조치를 안내할 수 있어서 완전히 같을 때만 합친다.
+          - 다른 문서끼리는 합치지 않는다. 검색 색인의 doc_id 는 값 하나라서, 합치면 한쪽 문서의 설비를
+            골랐을 때 설비 필터에 걸리지 않는다. 따로 두면 각자 자기 doc_id 로 필터에 걸린다.
         합치는 방법:
           - 먼저 나온 KB 를 남긴다 (kb_id·cause_id 가 바뀌지 않게)
           - applies_to · sources · figures · related_kb 는 합집합. applies_to 에 "*" 가 있으면 ["*"]
@@ -1105,9 +1108,10 @@ class KbBuilder:
         return merged
 
     def _content_key(self, kb):
-        """같은 KB 인지 비교할 열쇠: id·적용 모델·출처·그림·관련 KB 를 빼고 공백만 맞춘 내용"""
+        """같은 KB 인지 비교할 열쇠: 문서(첫 출처의 doc_id) + id·적용 모델·출처·그림·관련 KB 를 빼고 공백만 맞춘 내용"""
         content = {k: v for k, v in kb.items()
                    if k not in ("kb_id", "applies_to", "sources", "figures", "related_kb")}
+        content["doc_id"] = kb["sources"][0]["doc_id"]  # 같은 문서 안에서만 합치기
         if "causes" in content:  # cause_id 는 kb_id 가 들어 있어 KB 마다 다르므로 뺀다
             content["causes"] = [{k: v for k, v in c.items() if k != "cause_id"} for c in content["causes"]]
 
