@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
+from uuid import uuid4
 
 import chromadb
 from filelock import FileLock
@@ -229,3 +230,49 @@ def run_staged_index_worker(
         raise RuntimeError(
             f"임시 색인 생성·검증에 실패했습니다. 종료 코드: {exit_code}"
         )
+
+
+def replace_staged_indexes(
+    staged_dir: Path,
+    target_dir: Path,
+) -> Path | None:
+    """검증된 새 색인으로 교체하고 기존 색인은 백업으로 보관한다."""
+    if staged_dir.is_symlink() or target_dir.is_symlink():
+        raise ValueError("색인 교체 경로에는 심볼릭 링크를 사용하지 않습니다.")
+
+    staged_dir = staged_dir.resolve()
+    target_dir = target_dir.resolve()
+
+    if staged_dir == target_dir:
+        raise ValueError("임시 색인과 기존 색인 경로가 같습니다.")
+
+    if staged_dir.parent != target_dir.parent:
+        raise ValueError("임시 색인은 기존 색인과 같은 상위 폴더에 만드세요.")
+
+    if not staged_dir.is_dir():
+        raise ValueError("임시 색인 폴더가 없습니다.")
+
+    if target_dir.exists() and not target_dir.is_dir():
+        raise ValueError("기존 색인 경로가 폴더가 아닙니다.")
+
+    backup_dir = None
+
+    if target_dir.exists():
+        backup_dir = target_dir.with_name(f".{target_dir.name}.backup-{uuid4().hex}")
+        target_dir.rename(backup_dir)
+
+    try:
+        staged_dir.rename(target_dir)
+
+    except OSError:
+        if backup_dir is not None:
+            try:
+                backup_dir.rename(target_dir)
+            except OSError as recovery_error:
+                raise RuntimeError(
+                    f"색인 교체와 복구에 실패했습니다. "
+                    f"기존 색인 백업을 보존했습니다: {backup_dir}"
+                ) from recovery_error
+        raise
+
+    return backup_dir
