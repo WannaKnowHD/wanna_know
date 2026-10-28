@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 import pickle
 import tempfile
@@ -11,8 +12,9 @@ from typing import TYPE_CHECKING
 
 import chromadb
 import tiktoken
+from pydantic import TypeAdapter
 
-from chatbot.core.schemas import ALL_MODELS, Chunk, Section
+from chatbot.core.schemas import ALL_MODELS, Chunk, KbEntry, Section
 from chatbot.rag import prompts
 from chatbot.rag.glossary import Glossary
 from chatbot.rag.retriever import COLLECTION_NAME
@@ -35,6 +37,7 @@ class IndexBuilder:
         bm25_path: str | Path | None = None,
         chroma_dir: str | Path | None = None,
         llm: LLMClient | None = None,
+        common_doc_ids: set[str] | None = None,
     ):
         self.tokenizer = tiktoken.encoding_for_model(embedding_model)
         self.root_dir = Path(__file__).resolve().parent
@@ -43,6 +46,7 @@ class IndexBuilder:
         self.llm = llm
         self.document_names = {}
         self.document_models = {}
+        self.common_doc_ids = set(common_doc_ids or ())
 
         sources_path = self.root_dir / "data" / "sources.csv"
         with sources_path.open(encoding="utf-8-sig", newline="") as file:
@@ -62,7 +66,10 @@ class IndexBuilder:
         # 청크 앞에 붙일 문서명, 연결 모델명 생성
         document_name = self.document_names.get(section.doc_id, section.doc_id)
         models = self.document_models.get(section.doc_id, [])
-        model_text = ",".join(models) if models else "미지정"
+        if section.doc_id in self.common_doc_ids:
+            model_text = prompts.ALL_MODELS_TEXT
+        else:
+            model_text = ", ".join(models) if models else "미지정"
 
         return f"Document: {document_name}\nModels: {model_text}\n\n"
 
@@ -75,7 +82,12 @@ class IndexBuilder:
     ) -> Chunk:
         # 섹션의 출처 정보를 유지하면서 청크를 생성
         models = self.document_models.get(section.doc_id, [])
-        equipment_model = models[0] if len(models) == 1 else None
+        if section.doc_id in self.common_doc_ids:
+            equipment_model = ALL_MODELS
+        elif len(models) == 1:
+            equipment_model = models[0]
+        else:
+            equipment_model = None
 
         chunk_id = f"{section.doc_id}:p{section.page}:s{section_index}:c{part_index}"
 
@@ -340,6 +352,32 @@ class IndexBuilder:
             "text": text,
             "metadata": metadata,
         }
+
+    def _load_initial_kbs(self, kb_dir: Path) -> list[dict]:
+        """기존 초기 KB JSON을 읽고 공통 스키마로 검사한다."""
+        paths = sorted(kb_dir.rglob("*.json"))
+
+        if not paths:
+            raise ValueError(f"초기 KB JSON을 찾을 수 없습니다: {kb_dir}")
+
+        adapter = TypeAdapter(KbEntry)
+        kbs = []
+        seen_ids = set()
+
+        for path in paths:
+            with path.open(encoding="utf-8-sig") as file:
+                raw = json.load(file)
+
+            kb = adapter.validate_python(raw).model_dump()
+            kb_id = kb["kb_id"]
+
+            if kb_id in seen_ids:
+                raise ValueError(f"초기 KB ID가 중복됩니다: {kb_id}")
+
+            seen_ids.add(kb_id)
+            kbs.append(kb)
+
+        return kbs
 
     def _prepare_items(self, items: list[Chunk | dict]) -> list[dict]:
         """청크·KB를 변환하고 중복 ID와 필수 항목을 검사한다."""
