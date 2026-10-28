@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 import csv
+import os
+import pickle
+import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+import chromadb
 import tiktoken
 
 from chatbot.core.schemas import ALL_MODELS, Chunk, Section
 from chatbot.rag import prompts
 from chatbot.rag.glossary import Glossary
+from chatbot.rag.retriever import COLLECTION_NAME
+
+if TYPE_CHECKING:
+    from chatbot.rag.llm import LLMClient
 
 CHUNK_TARGET_TOKENS = 600
 CHUNK_MAX_TOKENS = 800
@@ -19,9 +28,19 @@ CHUNK_OVERLAP_TOKENS = 80
 class IndexBuilder:
     """IndexBuilder (기능명세서 기준 뼈대)."""
 
-    def __init__(self, embedding_model: str):
+    def __init__(
+        self,
+        embedding_model: str,
+        *,
+        bm25_path: str | Path | None = None,
+        chroma_dir: str | Path | None = None,
+        llm: LLMClient | None = None,
+    ):
         self.tokenizer = tiktoken.encoding_for_model(embedding_model)
         self.root_dir = Path(__file__).resolve().parent
+        self.bm25_path = Path(bm25_path) if bm25_path is not None else None
+        self.chroma_dir = Path(chroma_dir) if chroma_dir is not None else None
+        self.llm = llm
         self.document_names = {}
         self.document_models = {}
 
@@ -322,21 +341,144 @@ class IndexBuilder:
             "metadata": metadata,
         }
 
+    def _prepare_items(self, items: list[Chunk | dict]) -> list[dict]:
+        """청크·KB를 변환하고 중복 ID와 필수 항목을 검사한다."""
+        prepared = []
+        seen_ids = set()
+
+        for value in items:
+            if isinstance(value, Chunk):
+                item = self._chunk_to_item(value)
+            elif isinstance(value, dict) and "kb_id" in value:
+                item = self._kb_to_item(value)
+            elif isinstance(value, dict):
+                item = value
+            else:
+                raise TypeError("색인 입력은 Chunk 또는 dict여야 합니다.")
+
+            item_id = item["id"]
+            text = item["text"]
+            metadata = item["metadata"]
+
+            if not isinstance(item_id, str) or not item_id.strip():
+                raise ValueError("색인 항목 ID가 비어 있거나 문자열이 아닙니다.")
+
+            if item_id in seen_ids:
+                raise ValueError(f"색인 항목 ID가 중복됩니다: {item_id}")
+
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError(f"검색 본문이 비어 있습니다: {item_id}")
+
+            for key in ("doc_id", "page", "chunk_type", "all_models"):
+                if key not in metadata:
+                    raise ValueError(f"필수 메타데이터가 없습니다: {item_id}, {key}")
+
+            if metadata["chunk_type"] == "kb" and metadata.get("kb_type") not in {
+                "troubleshooting",
+                "maintenance",
+            }:
+                raise ValueError(f"KB 종류가 잘못되었습니다: {item_id}")
+
+            seen_ids.add(item_id)
+            prepared.append(
+                {
+                    "id": item_id,
+                    "text": text,
+                    "metadata": dict(metadata),
+                }
+            )
+
+        return prepared
+
     def build_vector_index(self, items: list[Chunk | dict]):
         """
         KB·청크를 임베딩해 Chroma에 저장
 
         Returns: None
+
+        공통 검색 항목을 임베딩해 새 Chroma 컬렉션에 저장한다.
         """
-        raise NotImplementedError("IndexBuilder.build_vector_index")
+        if self.chroma_dir is None:
+            raise ValueError("Chroma 저장 경로를 지정해야 합니다.")
+
+        if self.llm is None:
+            raise ValueError("임베딩에 사용할 LLMClient가 필요합니다.")
+
+        prepared = self._prepare_items(items)
+        if not prepared:
+            raise ValueError("빈 항목 목록으로 색인을 만들지 않습니다.")
+
+        client = chromadb.PersistentClient(
+            path=str(self.chroma_dir),
+        )
+
+        collection = client.create_collection(
+            name=COLLECTION_NAME,
+            embedding_function=None,
+            configuration={
+                "hnsw": {
+                    "space": "cosine",
+                },
+            },
+        )
+
+        batch_size = min(32, client.get_max_batch_size())
+
+        for start in range(0, len(prepared), batch_size):
+            batch = prepared[start : start + batch_size]
+            texts = [item["text"] for item in batch]
+
+            embeddings = self.llm.embed(texts)
+
+            if len(embeddings) != len(batch):
+                raise ValueError("임베딩 개수와 색인 항목 개수가 일치하지 않습니다.")
+
+            collection.add(
+                ids=[item["id"] for item in batch],
+                documents=texts,
+                metadatas=[item["metadata"] for item in batch],
+                embeddings=embeddings,
+            )
+
+        if collection.count() != len(prepared):
+            raise ValueError("Chroma에 저장된 항목 개수가 일치하지 않습니다.")
 
     def build_bm25_index(self, items: list[Chunk | dict]):
-        """
-        KB·청크로 BM25 색인 생성 후 파일로 저장
+        """검색 담당자가 읽을 항목 목록을 pickle 파일로 저장한다."""
+        if self.bm25_path is None:
+            raise ValueError("BM25 저장 경로를 지정해야 합니다.")
 
-        Returns: None
-        """
-        raise NotImplementedError("IndexBuilder.build_bm25_index")
+        prepared = self._prepare_items(items)
+        if not prepared:
+            raise ValueError("빈 항목 목록으로 기존 색인을 교체하지 않습니다.")
+
+        output_path = self.bm25_path
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        temporary_path = None
+
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=output_path.parent,
+                prefix=f".{output_path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as file:
+                temporary_path = Path(file.name)
+                pickle.dump(
+                    prepared,
+                    file,
+                    protocol=pickle.HIGHEST_PROTOCOL,
+                )
+                file.flush()
+                os.fsync(file.fileno())
+
+            os.replace(temporary_path, output_path)
+
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
     def main(self):
         """
