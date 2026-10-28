@@ -1,0 +1,61 @@
+/* 채팅 화면 틀 (사원 정보·대화 기록·관리자 전환·로그아웃). 색은 theme.css 의 변수 */
+#chat-root {
+  font-family: "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+}
+
+.gradio-container:has(#chat-root) { background: var(--wk-body-bg) !important; }
+
+#chat-root {
+  background: var(--wk-body-bg);
+  min-height: 100vh;
+  gap: 0 !important;
+}
+#chat-header {
+  background: var(--wk-header-bg);
+  align-items: center;
+  gap: 0.75rem !important;
+  padding: 0.75rem 2rem;
+  flex-wrap: nowrap !important;
+}
+#chat-header .block { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; }
+.chat-brand { color: var(--wk-header-text); font-size: 1.125rem; font-weight: 700; }
+.chat-user-box { margin-left: auto; }
+.chat-user { display: flex; gap: 0.5rem; align-items: baseline; color: var(--wk-header-text); font-size: 0.8125rem; }
+.chat-user-name { font-weight: 600; }
+.chat-user-id { opacity: 0.7; }
+.chat-header-button {
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+  width: auto !important;
+  background: transparent !important;
+  color: var(--wk-header-text) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  border-radius: 0.5rem !important;
+  box-shadow: none !important;
+  font-size: 0.8125rem;
+}
+
+#chat-body { gap: 1rem !important; padding: 1.25rem 2rem; align-items: stretch; }
+#chat-history,
+#chat-main {
+  background: var(--wk-panel-bg);
+  border: 1px solid var(--wk-panel-border);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  min-height: 30rem;
+}
+#chat-history .block,
+#chat-main .block { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; }
+.chat-history-title { color: var(--wk-text); font-size: 0.9375rem; font-weight: 700; margin: 0 0 0.5rem; }
+.history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.history-list li { display: flex; flex-direction: column; gap: 0.125rem; }
+.history-time { color: var(--wk-text-muted); font-size: 0.6875rem; }
+.history-question { color: var(--wk-text); font-size: 0.8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-empty,
+.chat-placeholder { color: var(--wk-text-muted); font-size: 0.8125rem; margin: 0; }
+
+/* gr.HTML 이 글자색을 따로 넣어서 헤더 글자색을 다시 맞춤 */
+.chat-user-box,
+.chat-user-box * { color: var(--wk-header-text) !important; }
+.chat-brand-box,
+.chat-brand-box * { color: var(--wk-header-text) !important; }
