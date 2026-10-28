@@ -1,9 +1,12 @@
 """사진 판별, 명판 판독, 손상 분석"""
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
+
+from chatbot.rag.prompts import NAMEPLATE
 
 if TYPE_CHECKING:
     from chatbot.rag.llm import LLMClient
@@ -57,32 +60,90 @@ class ImageRouter:
         return classification.label, classification.confidence
 
 
+class NameplateReading(BaseModel):
+    # 비전 모델이 명판에서 읽은 값 (matched_model · match 는 코드가 match_model 로 채우므로 여기 없음)
+    # description 은 JSON 스키마에 실려 모델에게 전달된다 (prompts.NAMEPLATE 에 없는 confidence 설명)
+
+    raw_text: str | None = Field(description="model name exactly as printed, or null if unreadable")
+    serial: str | None
+    maker: str | None
+    confidence: float = Field(ge=0.0, le=1.0, description="how sure you are that raw_text is read correctly (0-1)")
+
+
 class NameplateReader:
-    """NameplateReader (기능명세서 기준 뼈대)."""
+    """명판 사진 → 모델명 판독 → models.csv 모델과 매칭 (담당: 김민재)"""
+
+    # 이 확신도 미만이면 재촬영 요청. 손상 분석(I-03)과 같은 기준이라 사용자 안내가 일관된다
+    MIN_CONFIDENCE = 0.6
+    # 정리할 때 빼는 글자: 공백, 하이픈, 점, OCR 에서 자주 나오는 긴 대시(– —)·밑줄
+    MODEL_SEPARATORS = re.compile(r"[\s\-.–—_]+")
+
+    def __init__(self, llm_client: LLMClient):
+        self.llm_client = llm_client
 
     def read_nameplate(self, image: bytes):
         """
         명판에서 모델명·시리얼·제조사 판독. 판독 실패 시 재촬영 요청
 
+        돌려주는 것: {"raw_text", "serial", "maker", "confidence", "retake"}
+          - raw_text 는 명판에 적힌 그대로 ("138 ACC"). 표기 정리는 normalize_model 이 한다
+          - retake=True : 모델명을 못 읽었거나 확신도가 MIN_CONFIDENCE 미만 → 화면에서 재촬영 요청
         Returns: dict
         """
-        raise NotImplementedError("NameplateReader.read_nameplate")
+        result = self.llm_client.vision(image=image, prompt=NAMEPLATE, json_schema=NameplateReading)
+        if result["parsed"] is None:
+            # 형식이 깨진 응답이면 읽은 값을 믿을 수 없으므로 판독 실패로 처리한다
+            reading = NameplateReading(raw_text=None, serial=None, maker=None, confidence=0.0)
+        else:
+            reading = NameplateReading.model_validate(result["parsed"])
+        raw_text = (reading.raw_text or "").strip() or None
+        retake = raw_text is None or reading.confidence < self.MIN_CONFIDENCE
+        return {"raw_text": raw_text, "serial": reading.serial, "maker": reading.maker,
+                "confidence": reading.confidence, "retake": retake}
 
     def normalize_model(self, text: str):
         """
         대문자 변환, 공백·하이픈·점 제거 (예: "138 ACC" → 138ACC)
 
+        명판·질문·models.csv 표기가 달라도("138-ACC", "138 ACC", "138acc") 같은 글자로 비교하려는 것.
         Returns: str
         """
-        raise NotImplementedError("NameplateReader.normalize_model")
+        return self.MODEL_SEPARATORS.sub("", text or "").upper()
 
     def match_model(self, model: str, models: dict):
         """
         models.csv와 비교: 일치 → 설비 설정 후 화면에 설비 표시 / 한 글자 차이 → 확인 질문 / 없음 → 목록에 없는 모델 안내
 
+        받는 것:
+          model  : 판독한 모델명 (raw_text)
+          models : Glossary.load_models 결과 {모델명·별칭: Model}
+        돌려주는 것: (Model 또는 None, "exact" | "near" | "none")
+          - exact : 정리한 글자가 모델명·별칭과 같음
+          - near  : 한 글자 차이인 모델이 딱 하나 → 그 모델을 후보로 돌려준다 (화면에서 확인 후 설비 설정)
+          - none  : 없거나, 한 글자 차이 후보가 여럿이라 하나로 정할 수 없음 (예: L600 → L400·L500)
         Returns: Model | None, str
         """
-        raise NotImplementedError("NameplateReader.match_model")
+        target = self.normalize_model(model)
+        if not target:
+            return None, "none"
+        # 별칭도 키로 들어 있으므로 키마다 정리해서 비교한다 ("ACC" → 138-ACC 의 Model)
+        normalized = {self.normalize_model(key): m for key, m in models.items()}
+        if target in normalized:
+            return normalized[target], "exact"
+        near = {m.model_name: m for key, m in normalized.items() if self._one_char_apart(target, key)}
+        if len(near) == 1:
+            return next(iter(near.values())), "near"
+        return None, "none"
+
+    def _one_char_apart(self, a, b):
+        """한 글자만 다른지 (바뀜·빠짐·더해짐 1번). OCR 이 "138-ACC" 를 "138-AC" · "I38-ACC" 로 읽는 경우."""
+        if abs(len(a) - len(b)) > 1 or a == b:
+            return False
+        if len(a) == len(b):
+            return sum(x != y for x, y in zip(a, b)) == 1
+        short, long_ = (a, b) if len(a) < len(b) else (b, a)
+        # 긴 쪽에서 한 글자를 빼서 짧은 쪽과 같아지는지
+        return any(long_[:i] + long_[i + 1:] == short for i in range(len(long_)))
 
 
 class DamageAnalyzer:
