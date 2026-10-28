@@ -37,7 +37,9 @@ from collections import Counter
 import openai
 import pymupdf
 
-from chatbot.core.schemas import Page, Section, StrictModel
+from chatbot.core.schemas import (ALL_MODELS, KbCause, MaintenanceKB, Page, Section, SourceRef, StrictModel,
+                                  TroubleshootingKB)
+from chatbot.rag.glossary import Glossary
 from chatbot.rag.prompts import FIGURE_DESCRIBE, PROMPT_VERSION, TABLE_TO_MARKDOWN
 
 # 스페인어 줄인지 판단할 때 쓰는 말 (영어에는 거의 안 나오는 짧은 단어)
@@ -758,23 +760,259 @@ class PdfExtractor:
 
 
 class KbBuilder:
-    """KbBuilder (기능명세서 기준 뼈대)."""
+    """매뉴얼의 트러블슈팅 표·점검표를 KB(dict)로 바꾼다. (담당: 김민재)
 
-    def to_troubleshooting_kb(self, rows: list, doc_id: str, page: int):
+    [규칙]
+      - 문장은 매뉴얼 원문 그대로 쓴다 (요약·번역 금지). 답변 검증이 원문 부분 문자열인지로 확인하기 때문.
+      - 표 모양이 매뉴얼마다 달라서, 매뉴얼별로 다른 부분은 호출하는 쪽(scripts/build_kb.py)이
+        표준 행 모양으로 바꿔서 넘긴다. 이 클래스는 표준 행 → KB 변환만 한다.
+      - kb_id = {TS|MT}-{문서 코드}-T{표 번호 2자리}-{표 안 순번 2자리} (예: TS-HYTROL138ACC-T01-01)
+    """
+
+    # 표 칸 안의 번호 목록 "1) ..." / "1. ..." 의 번호 자리
+    NUMBER_MARK = re.compile(r"(?:^|\s)(\d+)[.)]\s+")
+    # "1500 to 3000 Operating hours", "every 10000 operating hours" 의 시간 부분
+    HOURS = re.compile(r"(\d[\d,]*)(?:\s*(?:to|-)\s*(\d[\d,]*))?\s*(?:operating\s+)?hours?\b", re.I)
+    INTERVAL_WORDS = ("daily", "weekly", "monthly", "quarterly", "yearly")
+    MAINTENANCE_KEYS = {"task", "interval", "interval_note", "criteria", "details", "lockout_required"}
+    # from_sections 가 트러블슈팅 표로 알아보는 3칸 머리글 (증상 | 원인 | 조치)
+    TROUBLE_HEADER = (re.compile(r"TROUBLE|PROBLEM|SYMPTOM|FAULT", re.I),
+                      re.compile(r"CAUSE", re.I),
+                      re.compile(r"SOLUTION|REMEDY|ACTION|CORRECTIVE", re.I))
+    CHECK_MARKS = {"X", "x", "✓", "✔", "●"}  # 점검표에서 "이 주기에 한다" 표시
+
+    def __init__(self, models_path: str = "data/models.csv"):
+        """
+        받는 것:
+          models_path : models.csv 경로. doc_id 로 그 매뉴얼의 모델 목록(applies_to)을 찾는다.
+        """
+        # {doc_id: [모델명, ...]}. load_models 는 별칭도 키로 넣으므로 모델명 기준으로 한 번씩만 담는다.
+        self.doc_models: dict[str, list[str]] = {}
+        for model in Glossary().load_models(models_path).values():
+            for doc_id in model.doc_ids:
+                names = self.doc_models.setdefault(doc_id, [])
+                if model.model_name not in names:
+                    names.append(model.model_name)
+
+    def to_troubleshooting_kb(self, rows: list, doc_id: str, page: int, table_no: int, ref: str):
         """
         트러블슈팅 표(증상 → 원인 → 조치)를 KB JSON으로 변환하고 원인마다 id(kb_id#c1…) 부여
 
+        받는 것:
+          rows     : 표의 데이터 행 [증상, 원인, 조치] 목록 (머리글 행은 빼고)
+                     - 증상·조치 칸이 비어 있으면 병합 칸으로 보고 위 행 값을 이어받는다
+                     - 원인 칸이 "1) A 2) B" 처럼 번호 목록이면 원인을 나누고, 조치도 같은 번호끼리 짝짓는다
+                     - 조치 칸에 list[str] 를 넣으면 이미 나눈 조치 목록으로 그대로 쓴다
+          doc_id   : sources.csv 의 doc_id
+          page     : 원본 매뉴얼 쪽 (PdfExtractor.to_original_page 로 바꾼 값)
+          table_no : 이 매뉴얼에서 KB로 만드는 표의 순번 (kb_id 의 T{nn})
+          ref      : 출처 이름 (표 제목 등. 예: "TROUBLE SHOOTING DRIVES")
+        증상 1개 = KB 1건.
         Returns: list[dict]
         """
-        raise NotImplementedError("KbBuilder.to_troubleshooting_kb")
+        groups: list[tuple[str, list]] = []  # [(증상, [(원인, [조치, ...]), ...]), ...]
+        solution = None
+        for row_no, row in enumerate(rows, start=1):
+            symptom, cause, sol = (c.strip() if isinstance(c, str) else c for c in row)
+            if symptom:
+                groups.append((symptom, []))
+            elif not groups:
+                raise ValueError(f"{ref} {row_no}행: 첫 행의 증상이 비어 있음")
+            if not cause:
+                raise ValueError(f"{ref} {row_no}행: 원인이 비어 있음")
+            if sol:
+                solution = sol
+            elif symptom:
+                # 조치를 이어받는 것은 같은 증상 안에서만 (다른 증상의 조치가 섞이지 않게)
+                raise ValueError(f"{ref} {row_no}행: 조치가 비어 있음")
+            groups[-1][1].extend(self._pair_causes(cause, solution, f"{ref} {row_no}행"))
 
-    def to_maintenance_kb(self, rows: list, doc_id: str, page: int):
+        kbs = []
+        for n, (symptom, pairs) in enumerate(groups, start=1):
+            kb_id = self._kb_id("TS", doc_id, table_no, n)
+            kb = TroubleshootingKB(
+                type="troubleshooting", kb_id=kb_id, applies_to=self._applies_to(doc_id),
+                sources=[SourceRef(doc_id=doc_id, page=page, ref=ref)], symptom=symptom,
+                causes=[KbCause(cause_id=f"{kb_id}#c{i}", cause=c, actions=a)
+                        for i, (c, a) in enumerate(pairs, start=1)])
+            # pydantic 모델로 한 번 만들어서 스키마에 안 맞으면 여기서 바로 오류가 나게 한다
+            kbs.append(kb.model_dump(mode="json", exclude_none=True))
+        return kbs
+
+    def to_maintenance_kb(self, rows: list, doc_id: str, page: int, table_no: int, ref: str):
         """
         점검표(일간·주간·월간·분기 또는 운전 시간)를 점검 KB로 변환
 
+        받는 것:
+          rows : 점검 항목 dict 목록. 행 1개 = KB 1건
+                 {"task": 작업(원문),
+                  "interval": 주기 원문 ("Weekly", "1500 to 3000 Operating hours", "At least every 10 years" ...),
+                  "interval_note": 주기 보충 원문 (선택),
+                  "criteria": 판정 기준 (선택), "details": [보충 정보] (선택),
+                  "lockout_required": 작업 전 전원 잠금 필요 여부 (선택, 기본 True)}
+          doc_id · page · table_no · ref : to_troubleshooting_kb 와 같음
         Returns: list[dict]
         """
-        raise NotImplementedError("KbBuilder.to_maintenance_kb")
+        kbs = []
+        for n, row in enumerate(rows, start=1):
+            unknown = set(row) - self.MAINTENANCE_KEYS
+            if unknown:  # 키 오타가 조용히 무시되지 않게
+                raise ValueError(f"{ref} {n}행: 모르는 키 {sorted(unknown)}")
+            kb = MaintenanceKB(
+                type="maintenance", kb_id=self._kb_id("MT", doc_id, table_no, n),
+                applies_to=self._applies_to(doc_id),
+                sources=[SourceRef(doc_id=doc_id, page=page, ref=ref)], task=row["task"].strip(),
+                **self._parse_interval(row["interval"], row.get("interval_note")),
+                criteria=row.get("criteria"), details=row.get("details", []),
+                # 매뉴얼 점검 절의 안전 규칙(전원 차단 후 작업)을 따라 기본은 True. 운전 중 점검만 False 로 넘긴다
+                lockout_required=row.get("lockout_required", True))
+            kbs.append(kb.model_dump(mode="json", exclude_none=True))
+        return kbs
+
+    def from_sections(self, sections: list[Section]):
+        """
+        새 PDF(관리자 추가)의 표 섹션 중 형식을 알아볼 수 있는 표만 자동으로 KB 변환
+
+        받는 것:
+          sections : PdfExtractor.split_sections 결과. crop_regions 를 거치기 전 것이어야 한다
+                     (비전 모델이 다시 쓴 표 글자는 원문과 달라질 수 있는데, KB 문장은 원문 그대로여야 하므로)
+        자동 변환하는 표:
+          - 트러블슈팅 : 머리글 3칸 (TROUBLE·PROBLEM·SYMPTOM·FAULT | …CAUSE… | SOLUTION·REMEDY·ACTION·CORRECTIVE)
+          - 점검표     : 주기 머리글(Daily~Yearly) 칸에 "X" 표시. lockout_required 는 모두 True (안전한 쪽)
+        정할 값:
+          - table_no : KB로 바뀐 표만 문서마다 순서대로 1, 2, 3 …
+          - ref      : 표 제목 → 없으면 절 제목 → 없으면 머리글 행 (그 쪽에 실제로 적힌 글자만)
+        변환하지 못한 표는 건너뛴다 (표 청크로 검색은 됨). 표 하나 때문에 색인 전체가 실패하지 않게.
+        Fenner 처럼 답이 다른 쪽에 있는 표·글 목록은 못 바꾸므로 scripts/build_kb.py 에 추가해야 한다.
+        Returns: list[dict]
+        """
+        kbs, table_no = [], {}  # table_no = {doc_id: 마지막 표 번호}
+        for section in sections:
+            if section.type != "table":
+                continue
+            title, rows = self._table_of(section.text)
+            if len(rows) < 2:
+                continue
+            heading = section.section_path.split(" > ")[-1]
+            ref = title or heading or " / ".join(c for c in rows[0] if c)
+            n = table_no.get(section.doc_id, 0) + 1
+            try:
+                if self._is_trouble_header(rows[0]):
+                    new = self.to_troubleshooting_kb(rows[1:], section.doc_id, section.page, n, ref)
+                else:
+                    checklist = self._checklist_rows(rows)
+                    if not checklist:
+                        continue
+                    new = self.to_maintenance_kb(checklist, section.doc_id, section.page, n, ref)
+            except ValueError as e:  # pydantic ValidationError 도 ValueError 의 한 종류
+                print(f"[KbBuilder] KB 변환 건너뜀 ({section.doc_id} p{section.page} {ref}): {e}")
+                continue
+            table_no[section.doc_id] = n
+            kbs += new
+        return kbs
+
+    def _table_of(self, text):
+        """표 섹션 글자 → (표 제목 또는 "", 칸 목록의 목록).
+        split_sections 는 표 제목을 "제목\\n| … |" 처럼 첫 줄에 붙인다. 칸 안의 "|" 는 "/" 로 바뀌어 있다."""
+        title, rows = "", []
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("|"):
+                if not line.startswith("|---"):
+                    rows.append([c.strip() for c in line[1:-1].split("|")])
+            elif not rows and line:
+                title = line
+        return title, rows
+
+    def _is_trouble_header(self, header):
+        cells = [c for c in header if c]
+        return len(header) == 3 and len(cells) == 3 and all(p.search(c) for p, c in zip(self.TROUBLE_HEADER, cells))
+
+    def _checklist_rows(self, rows):
+        """주기 칸에 X 표시가 있는 점검표 → to_maintenance_kb 행 목록. 점검표가 아니면 [].
+
+        Hytrol 점검표처럼 머리글이 2줄(SCHEDULE 아래 Weekly·Monthly…)일 수 있어서 위 2줄에서 주기 머리글을 찾는다.
+        주기 칸 왼쪽 칸들이 작업이고, 여러 칸이면 ": " 로 잇는다 ("MOTOR: Check Noise").
+        첫 칸이 비어 있으면 병합 칸으로 보고 위 행 값을 이어받는다.
+        """
+        for head_no, header in enumerate(rows[:2]):
+            columns = {i: c for i, c in enumerate(header) if c.strip().lower() in self.INTERVAL_WORDS}
+            if columns:
+                break
+        else:
+            return []
+        first = min(columns)
+        if first == 0:
+            return []
+        result, above = [], ""
+        for cells in rows[head_no + 1:]:
+            task_cells = cells[:first]
+            above = task_cells[0] or above
+            task = ": ".join(c for c in [above, *task_cells[1:]] if c)
+            for i, word in columns.items():
+                if i < len(cells) and cells[i] in self.CHECK_MARKS and task:
+                    result.append({"task": task, "interval": word})
+        return result
+
+    def _kb_id(self, prefix, doc_id, table_no, n):
+        # 문서 코드 = doc_id 를 대문자로, 영문·숫자만 (hytrol_138acc → HYTROL138ACC)
+        code = re.sub(r"[^A-Z0-9]", "", doc_id.upper())
+        return f"{prefix}-{code}-T{table_no:02d}-{n:02d}"
+
+    def _applies_to(self, doc_id):
+        # models.csv 에 이 문서의 모델이 없으면 특정 모델용이 아닌 공통 매뉴얼(예: Fenner 벨트 매뉴얼)로 보고 "*".
+        # 설비 필터를 걸어도 공통 매뉴얼 KB는 항상 검색되게 하려는 것.
+        return list(self.doc_models.get(doc_id) or [ALL_MODELS])
+
+    def _split_numbered(self, text):
+        """ "1) A 2) B" · "1. A; 2. B" → ["A", "B"]. 번호 목록이 아니면 [text].
+
+        1 로 시작해서 1, 2, 3 … 차례로 이어지는 번호만 나눈다.
+        글 중간의 다른 숫자("See section 13. page")에서 잘못 나누지 않게 하려는 것.
+        """
+        marks, expected = [], 1
+        for m in self.NUMBER_MARK.finditer(text):
+            if int(m.group(1)) == expected and (marks or m.start() == 0):
+                marks.append(m)
+                expected += 1
+        if not marks:
+            return [text]
+        ends = [m.start() for m in marks[1:]] + [len(text)]
+        # 끝의 ";" 는 목록 구분자라 뺀다 (남은 글자는 원문의 부분 문자열 그대로)
+        return [text[m.end():end].strip().rstrip(";").strip() for m, end in zip(marks, ends)]
+
+    def _pair_causes(self, cause, solution, where):
+        """원인 칸·조치 칸 → [(원인, [조치, ...]), ...]"""
+        causes = self._split_numbered(cause)
+        if isinstance(solution, list):  # 호출하는 쪽에서 이미 나눈 조치 목록
+            if len(causes) != 1:
+                raise ValueError(f"{where}: 조치를 목록으로 넘길 때는 원인이 1개여야 함")
+            return [(causes[0], solution)]
+        actions = self._split_numbered(solution)
+        if len(causes) == 1:
+            # 원인 1개에 번호 붙은 조치 여러 개 = 차례로 할 조치 단계 (PRECO "1. Check …; 2. If necessary …")
+            return [(causes[0], actions)]
+        if len(actions) != len(causes):
+            # Hytrol 표는 원인 n) 과 조치 n) 이 짝. 개수가 다르면 어느 조치가 어느 원인 것인지 알 수 없다
+            raise ValueError(f"{where}: 원인 {len(causes)}개, 조치 {len(actions)}개로 번호가 맞지 않음")
+        return [(c, [a]) for c, a in zip(causes, actions)]
+
+    def _parse_interval(self, text, note=None):
+        """주기 원문 → MaintenanceKB 의 interval 필드들"""
+        text = text.strip()
+        if text.lower() in self.INTERVAL_WORDS:  # "Weekly", "DAILY"
+            return {"interval": text.lower(), "interval_note": note}
+        m = self.HOURS.search(text)
+        if m:
+            low = int(m.group(1).replace(",", ""))
+            high = int(m.group(2).replace(",", "")) if m.group(2) else None
+            if note is None and m.group(0) != text:
+                # 시간 말고 다른 조건이 함께 있으면 (예: "…, at least every 2 years") 원문 전체를 보충으로 남긴다
+                note = text
+            return {"interval": "operating_hours", "interval_hours": low, "interval_hours_max": high,
+                    "interval_note": note}
+        # daily~yearly·운전 시간으로 나타낼 수 없는 주기는 비슷한 값으로 바꾸지 않고 원문을 남긴다
+        return {"interval": "other", "interval_note": note or text}
 
     def merge_applies_to(self, kbs: list[dict]):
         """
