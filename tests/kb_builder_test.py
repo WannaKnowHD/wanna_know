@@ -161,6 +161,32 @@ def test_from_sections(kb):
     assert trouble["applies_to"] == ["*"]
 
 
+def test_from_sections_hours_column_and_note(kb):
+    # "Every 2,000 h" 도 주기 칸, 오른쪽 Note 칸은 details 로
+    table = ("| Task | Monthly | Every 2,000 h | Note |\n|---|---|---|---|\n"
+             "| Check wearstrip thickness | X |  | Replace at 3 mm wear |\n"
+             "| Change gear motor oil |  | X | First change after 500 h |")
+    wear, oil = kb.from_sections([Section("new_doc", "5. Maintenance", 6, "table", table)])
+    assert (wear["interval"], wear["details"]) == ("monthly", ["Note: Replace at 3 mm wear"])
+    assert (oil["interval"], oil["interval_hours"]) == ("operating_hours", 2000)
+    assert "interval_note" not in oil                     # "Every" 말고 다른 조건이 없으므로
+    assert oil["details"] == ["Note: First change after 500 h"]
+
+
+def test_from_sections_caption_table_number(kb):
+    # 표 제목이 표 아래에 붙는 매뉴얼: 연달아 있는 두 표 사이의 "Table 8. …" 는 위 표(트러블슈팅) 것
+    sections = [
+        Section("new_doc", "6. Troubleshooting", 7, "text", "DANGER: Lock out the conveyor."),
+        Section("new_doc", "6. Troubleshooting", 7, "table", TROUBLE_TABLE.split("\n", 1)[1]),  # 대문자 제목 없이
+        Section("new_doc", "6. Troubleshooting", 7, "text", "Table 8. Troubleshooting chart 6.1 VFD alarm codes"),
+        Section("new_doc", "6. Troubleshooting", 7, "table", "| Code | Meaning | Action |\n|---|---|---|\n| E01 | Overcurrent | Restart. |"),
+        Section("new_doc", "6. Troubleshooting", 7, "text", "Table 9. VFD alarm codes"),
+    ]
+    assert kb._captions(sections) == {1: "Table 8", 3: "Table 9"}
+    (item,) = kb.from_sections(sections)
+    assert item["sources"][0]["ref"] == "Table 8"
+
+
 def test_from_sections_ref_falls_back_to_header(kb):
     # 표 제목도 절 제목도 없으면 머리글 행
     table = "| PROBLEM | POTENTIAL CAUSE | SOLUTION |\n|---|---|---|\n| Belt slips | Belt too loose | Tension the belt |"

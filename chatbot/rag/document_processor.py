@@ -771,8 +771,10 @@ class KbBuilder:
 
     # 표 칸 안의 번호 목록 "1) ..." / "1. ..." 의 번호 자리
     NUMBER_MARK = re.compile(r"(?:^|\s)(\d+)[.)]\s+")
-    # "1500 to 3000 Operating hours", "every 10000 operating hours" 의 시간 부분
-    HOURS = re.compile(r"(\d[\d,]*)(?:\s*(?:to|-)\s*(\d[\d,]*))?\s*(?:operating\s+)?hours?\b", re.I)
+    # "1500 to 3000 Operating hours", "every 10000 operating hours", "Every 2,000 h" 의 시간 부분
+    HOURS = re.compile(r"(\d[\d,]*)(?:\s*(?:to|-)\s*(\d[\d,]*))?\s*(?:operating\s+)?(?:hours?|h)\b", re.I)
+    # 표 제목 줄 "Table 8. Troubleshooting chart" 의 표 번호 부분 ("Table 8")
+    CAPTION = re.compile(r"((?:Table|Tab\.)\s*\d+)(?:\s*[.:]|\s+(?=[A-Z]))")
     INTERVAL_WORDS = ("daily", "weekly", "monthly", "quarterly", "yearly")
     MAINTENANCE_KEYS = {"task", "interval", "interval_note", "criteria", "details", "lockout_required"}
     # from_sections 가 트러블슈팅 표로 알아보는 3칸 머리글 (증상 | 원인 | 조치)
@@ -878,23 +880,25 @@ class KbBuilder:
                      (비전 모델이 다시 쓴 표 글자는 원문과 달라질 수 있는데, KB 문장은 원문 그대로여야 하므로)
         자동 변환하는 표:
           - 트러블슈팅 : 머리글 3칸 (TROUBLE·PROBLEM·SYMPTOM·FAULT | …CAUSE… | SOLUTION·REMEDY·ACTION·CORRECTIVE)
-          - 점검표     : 주기 머리글(Daily~Yearly) 칸에 "X" 표시. lockout_required 는 모두 True (안전한 쪽)
+          - 점검표     : 주기 머리글(Daily~Yearly, "Every 2,000 h") 칸에 "X" 표시.
+                         lockout_required 는 모두 True (안전한 쪽). 오른쪽 Note 같은 칸은 details 로
         정할 값:
           - table_no : KB로 바뀐 표만 문서마다 순서대로 1, 2, 3 …
-          - ref      : 표 제목 → 없으면 절 제목 → 없으면 머리글 행 (그 쪽에 실제로 적힌 글자만)
+          - ref      : 표 위 대문자 제목 → "Table 8" 같은 표 번호 → 절 제목 → 머리글 행 (그 쪽에 실제로 적힌 글자만)
         변환하지 못한 표는 건너뛴다 (표 청크로 검색은 됨). 표 하나 때문에 색인 전체가 실패하지 않게.
         Fenner 처럼 답이 다른 쪽에 있는 표·글 목록은 못 바꾸므로 scripts/build_kb.py 에 추가해야 한다.
         Returns: list[dict]
         """
         kbs, table_no = [], {}  # table_no = {doc_id: 마지막 표 번호}
-        for section in sections:
+        captions = self._captions(sections)
+        for i, section in enumerate(sections):
             if section.type != "table":
                 continue
             title, rows = self._table_of(section.text)
             if len(rows) < 2:
                 continue
             heading = section.section_path.split(" > ")[-1]
-            ref = title or heading or " / ".join(c for c in rows[0] if c)
+            ref = title or captions.get(i) or heading or " / ".join(c for c in rows[0] if c)
             n = table_no.get(section.doc_id, 0) + 1
             try:
                 if self._is_trouble_header(rows[0]):
@@ -924,6 +928,41 @@ class KbBuilder:
                 title = line
         return title, rows
 
+    def _captions(self, sections):
+        """{표 섹션 위치: "Table 8"} — 매뉴얼의 "Table 8. Troubleshooting chart" 같은 표 제목에서 표 번호 부분
+
+        split_sections 는 표 바로 위의 대문자 제목만 표에 붙이므로, "Table N. …" 형식 제목은 여기서 찾는다.
+        - 본문 섹션은 가까운 줄을 한 줄로 이어 붙여서 제목이 어디서 끝나는지 알 수 없다
+          ("Table 8. Troubleshooting chart 6.1 VFD alarm codes"). 그래서 표 번호 부분만 쓴다.
+          매뉴얼 본문도 "follow Table 9" 처럼 표 번호로 가리키므로 찾기에 충분하다.
+        - 표가 연달아 있으면 두 표 사이의 "Table 5. …" 가 위 표 것(아래 붙는 제목)인지
+          아래 표 것(위에 붙는 제목)인지 그 자리만 봐서는 알 수 없다.
+          그래서 문서마다 두 방식으로 다 찾아보고, 더 많이 들어맞는 방식 하나로 정한다.
+        """
+        def caption(j, para_no):  # j번 본문 섹션의 첫 문단(0)/끝 문단(-1)이 표 제목으로 시작하면 "Table N"
+            if sections[j].type == "text":
+                paragraphs = sections[j].text.strip().split("\n")
+                m = self.CAPTION.match(paragraphs[para_no].strip())
+                if m:
+                    return m.group(1)
+            return None
+
+        below, above = {}, {}
+        for i, s in enumerate(sections):
+            if s.type != "table":
+                continue
+            for j, line_no, found in ((i + 1, 0, below), (i - 1, -1, above)):
+                if 0 <= j < len(sections) and (sections[j].doc_id, sections[j].page) == (s.doc_id, s.page):
+                    text = caption(j, line_no)
+                    if text:
+                        found[i] = text
+        result = {}
+        for doc_id in {s.doc_id for s in sections}:
+            b = {i: c for i, c in below.items() if sections[i].doc_id == doc_id}
+            a = {i: c for i, c in above.items() if sections[i].doc_id == doc_id}
+            result.update(b if len(b) >= len(a) else a)
+        return result
+
     def _is_trouble_header(self, header):
         cells = [c for c in header if c]
         return len(header) == 3 and len(cells) == 3 and all(p.search(c) for p, c in zip(self.TROUBLE_HEADER, cells))
@@ -932,27 +971,37 @@ class KbBuilder:
         """주기 칸에 X 표시가 있는 점검표 → to_maintenance_kb 행 목록. 점검표가 아니면 [].
 
         Hytrol 점검표처럼 머리글이 2줄(SCHEDULE 아래 Weekly·Monthly…)일 수 있어서 위 2줄에서 주기 머리글을 찾는다.
+        주기 머리글 = Daily~Yearly 또는 운전 시간("Every 2,000 h").
         주기 칸 왼쪽 칸들이 작업이고, 여러 칸이면 ": " 로 잇는다 ("MOTOR: Check Noise").
         첫 칸이 비어 있으면 병합 칸으로 보고 위 행 값을 이어받는다.
+        주기 칸 오른쪽 칸(Note 등)은 버리지 않고 "칸 이름: 값" 으로 details 에 넣는다 (판정 기준이 들어 있는 경우가 많음).
         """
         for head_no, header in enumerate(rows[:2]):
-            columns = {i: c for i, c in enumerate(header) if c.strip().lower() in self.INTERVAL_WORDS}
+            columns = {i: c for i, c in enumerate(header) if self._is_interval_header(c)}
             if columns:
                 break
         else:
             return []
-        first = min(columns)
+        first, last = min(columns), max(columns)
         if first == 0:
             return []
+        # 오른쪽 칸 이름: 그 줄이 비어 있으면 첫 머리글 줄에서 (2줄 머리글)
+        extra = {i: header[i] or rows[0][i] for i in range(last + 1, len(header))}
         result, above = [], ""
         for cells in rows[head_no + 1:]:
             task_cells = cells[:first]
             above = task_cells[0] or above
             task = ": ".join(c for c in [above, *task_cells[1:]] if c)
+            details = [f"{name}: {cells[i]}" if name else cells[i]
+                       for i, name in extra.items() if i < len(cells) and cells[i]]
             for i, word in columns.items():
                 if i < len(cells) and cells[i] in self.CHECK_MARKS and task:
-                    result.append({"task": task, "interval": word})
+                    result.append({"task": task, "interval": word, "details": details})
         return result
+
+    def _is_interval_header(self, cell):
+        cell = cell.strip()
+        return cell.lower() in self.INTERVAL_WORDS or bool(re.fullmatch(r"(?:every\s+)?" + self.HOURS.pattern, cell, re.I))
 
     def _kb_id(self, prefix, doc_id, table_no, n):
         # 문서 코드 = doc_id 를 대문자로, 영문·숫자만 (hytrol_138acc → HYTROL138ACC)
@@ -1006,7 +1055,8 @@ class KbBuilder:
         if m:
             low = int(m.group(1).replace(",", ""))
             high = int(m.group(2).replace(",", "")) if m.group(2) else None
-            if note is None and m.group(0) != text:
+            rest = text.replace(m.group(0), "").strip(" ,").lower()
+            if note is None and rest not in ("", "every"):
                 # 시간 말고 다른 조건이 함께 있으면 (예: "…, at least every 2 years") 원문 전체를 보충으로 남긴다
                 note = text
             return {"interval": "operating_hours", "interval_hours": low, "interval_hours_max": high,
