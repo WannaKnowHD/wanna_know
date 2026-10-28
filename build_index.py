@@ -248,6 +248,68 @@ class IndexBuilder:
 
         return kbs
 
+    def _collect_items(
+        self,
+        raw_dir: Path,
+        kb_dir: Path,
+        cache_root: Path,
+        vision_model: str,
+    ) -> list[dict]:
+        """전체 PDF의 검색 항목과 기존 초기 KB를 모은다."""
+        raw_dir = raw_dir.resolve()
+        initial_dir = raw_dir / "initial"
+        admin_dir = raw_dir / "admin_add"
+
+        pdf_paths = sorted(
+            path
+            for path in raw_dir.rglob("*")
+            if path.is_file() and path.suffix.lower() == ".pdf"
+        )
+
+        if not pdf_paths:
+            raise ValueError(f"색인할 PDF가 없습니다: {raw_dir}")
+
+        items = []
+        initial_doc_ids = set()
+        seen_doc_ids = set()
+
+        for pdf_path in pdf_paths:
+            is_initial = pdf_path.is_relative_to(initial_dir)
+
+            if not is_initial and not pdf_path.is_relative_to(admin_dir):
+                raise ValueError(f"초기·관리자 폴더 밖의 PDF입니다: {pdf_path}")
+
+            document_items = self._process_pdf(
+                pdf_path,
+                cache_root,
+                vision_model,
+                is_initial=is_initial,
+            )
+
+            doc_ids = {item["metadata"]["doc_id"] for item in document_items}
+
+            if seen_doc_ids & doc_ids:
+                raise ValueError(f"PDF 사이에 문서 ID가 중복됩니다: {pdf_path.name}")
+
+            seen_doc_ids.update(doc_ids)
+
+            if is_initial:
+                initial_doc_ids.update(doc_ids)
+
+            items.extend(document_items)
+
+        if initial_doc_ids:
+            initial_kbs = self._load_initial_kbs(kb_dir)
+
+            for kb in initial_kbs:
+                source_ids = {source["doc_id"] for source in kb["sources"]}
+                if not source_ids <= initial_doc_ids:
+                    raise ValueError(f"초기 KB의 원본 PDF가 없습니다: {kb['kb_id']}")
+
+            items.extend(initial_kbs)
+
+        return self._prepare_items(items)
+
     def _prepare_items(self, items: list[Chunk | dict]) -> list[dict]:
         """기존 호출 형식을 유지하며 검색 항목 준비를 위임한다."""
         return prepare_items(
