@@ -5,10 +5,13 @@ from __future__ import annotations
 import os
 import pickle
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 import chromadb
+from filelock import FileLock
 
 from chatbot.core.schemas import Chunk
 from chatbot.rag.retriever import COLLECTION_NAME, load_bm25_items
@@ -156,3 +159,15 @@ def validate_indexes(chroma_dir: Path, bm25_path: Path) -> None:
 
     if actual != expected:
         raise ValueError("Chroma와 BM25의 ID·본문·메타데이터가 일치하지 않습니다.")
+
+
+@contextmanager
+def rebuild_lock(lock_path: Path) -> Iterator[None]:
+    """다른 색인 재생성이 끝날 때까지 기다린 뒤 실행한다."""
+    lock_path = lock_path.resolve()
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lock = FileLock(str(lock_path), timeout=-1)
+
+    with lock:
+        yield
