@@ -1,0 +1,42 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-24",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 29,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Belt Cupping-Old Belt (was OK when new).",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-24#c1",
+      "cause": "Spilled oil or grease/over-lubrication of idlers",
+      "actions": [
+        "improve housekeeping",
+        "reduce quantity of grease used",
+        "check grease seals"
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-24#c2",
+      "cause": "Heat or chemical damage",
+      "actions": [
+        "use belt designed for specific condition."
+      ]
+    }
+  ],
+  "safety": []
+}

@@ -1,0 +1,23 @@
+{
+  "kb_id": "MT-PRECOLSERIES-T03-05",
+  "applies_to": [
+    "L400",
+    "L500",
+    "L650"
+  ],
+  "sources": [
+    {
+      "doc_id": "preco_l_series",
+      "page": 55,
+      "ref": "Gear motor maintenance"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "maintenance",
+  "task": "Re-grease/remove excess grease (only applicable for free drive shaft/option W, for agitator bearings/option VL2/ VL3 and for AI.../AN... adapter with option BRG1)",
+  "interval": "other",
+  "interval_note": "At least every six months",
+  "details": [],
+  "lockout_required": true
+}

@@ -1,0 +1,83 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-18",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 28,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 29,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 30,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Excessive edge wear, broken edges.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-18#c1",
+      "cause": "Off-center loading or poor loading",
+      "actions": [
+        "adjust chute to place load on center of belt",
+        "discharge material in direction of belt travel at or near belt speed."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-18#c2",
+      "cause": "Material spillage and build-up",
+      "actions": [
+        "improve loading and transfer conditions",
+        "install cleaning devices",
+        "improve maintenance."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-18#c3",
+      "cause": "Belt hitting structure",
+      "actions": [
+        "install training idlers on carrying and return run."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-18#c4",
+      "cause": "Bowed belt",
+      "actions": [
+        "for new belt this condition should disappear during break-in",
+        "in rare instances belt must be straightened or replaced",
+        "check storage and handling of belt rolls."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-18#c5",
+      "cause": "Belt misalignment",
+      "actions": [
+        "see training recommendations."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-18#c6",
+      "cause": "Belt improperly spliced",
+      "actions": [
+        "re-splice using proper method as recommended by Fenner Dunlop."
+      ]
+    }
+  ],
+  "safety": []
+}

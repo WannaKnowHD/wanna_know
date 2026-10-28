@@ -1,0 +1,47 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-23",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 29,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 30,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Cover blisters or sand blisters.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-23#c1",
+      "cause": "Cover cuts or very small cover punctures allow fines to work under cover and cut cover away from carcass",
+      "actions": [
+        "make spot repair with vulcanizer or self-curing repair material."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-23#c2",
+      "cause": "Spilled oil or grease/over-lubrication of idlers",
+      "actions": [
+        "improve housekeeping",
+        "reduce quantity of grease used",
+        "check grease seals"
+      ]
+    }
+  ],
+  "safety": []
+}

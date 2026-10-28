@@ -1,0 +1,45 @@
+{
+  "kb_id": "TS-HYTROL138ACC-T02-02",
+  "applies_to": [
+    "138-ACC",
+    "138-LRC",
+    "138-LRS",
+    "138-LRSS"
+  ],
+  "sources": [
+    {
+      "doc_id": "hytrol_138acc",
+      "page": 22,
+      "ref": "TROUBLE SHOOTING DRIVE BELT TRACKING"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Belt moving, but tread rollers not turning.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-HYTROL138ACC-T02-02#c1",
+      "cause": "Not enough pressure against belt from pressure rollers.",
+      "actions": [
+        "Tighten spring tension on pressure rollers in area of stalled rollers. See “Minimum Pressure Adjustment” in Operation section of this manual."
+      ]
+    },
+    {
+      "cause_id": "TS-HYTROL138ACC-T02-02#c2",
+      "cause": "Bolt in the pressure roller suspension angle binding will not allow adjustment of pressure rollers.",
+      "actions": [
+        "Loosen bolt and adjust spring tension as required. Check for burs or foreign material behind angles."
+      ]
+    },
+    {
+      "cause_id": "TS-HYTROL138ACC-T02-02#c3",
+      "cause": "Missing or broken springs or adjustment nuts.",
+      "actions": [
+        "Replace and re-adjust."
+      ]
+    }
+  ],
+  "safety": []
+}
