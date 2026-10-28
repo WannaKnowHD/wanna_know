@@ -3,24 +3,25 @@
 from __future__ import annotations
 
 import csv
-import hashlib
 import json
-import os
-import pickle
-import tempfile
-from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import chromadb
 import tiktoken
 from pydantic import TypeAdapter
 
-from chatbot.core.schemas import ALL_MODELS, Chunk, KbEntry, Section
-from chatbot.rag import prompts
+from chatbot.core.schemas import Chunk, KbEntry, Section
+from chatbot.rag import index_chunking, index_storage
 from chatbot.rag.document_processor import PdfExtractor
 from chatbot.rag.glossary import Glossary
-from chatbot.rag.retriever import COLLECTION_NAME
+from chatbot.rag.index_cache import document_cache_key, write_json_atomic
+from chatbot.rag.index_items import (
+    chunk_to_item,
+    format_maintenance_kb,
+    format_troubleshooting_kb,
+    kb_to_item,
+    prepare_items,
+)
 
 if TYPE_CHECKING:
     from chatbot.rag.llm import LLMClient
@@ -66,15 +67,8 @@ class IndexBuilder:
                     names.append(model.model_name)
 
     def _make_prefix(self, section: Section) -> str:
-        # 청크 앞에 붙일 문서명, 연결 모델명 생성
-        document_name = self.document_names.get(section.doc_id, section.doc_id)
-        models = self.document_models.get(section.doc_id, [])
-        if section.doc_id in self.common_doc_ids:
-            model_text = prompts.ALL_MODELS_TEXT
-        else:
-            model_text = ", ".join(models) if models else "미지정"
-
-        return f"Document: {document_name}\nModels: {model_text}\n\n"
+        """기존 호출 형식을 유지하며 청킹 모듈에 위임한다."""
+        return index_chunking.make_prefix(self, section)
 
     def _make_chunk(
         self,
@@ -83,350 +77,68 @@ class IndexBuilder:
         section_index: int,  # 입력 목록에서 섹션의 순번
         part_index: int,  # 해당 섹션에서 만들어진 청크의 순번
     ) -> Chunk:
-        # 섹션의 출처 정보를 유지하면서 청크를 생성
-        models = self.document_models.get(section.doc_id, [])
-        if section.doc_id in self.common_doc_ids:
-            equipment_model = ALL_MODELS
-        elif len(models) == 1:
-            equipment_model = models[0]
-        else:
-            equipment_model = None
-
-        chunk_id = f"{section.doc_id}:p{section.page}:s{section_index}:c{part_index}"
-
-        return Chunk(
-            chunk_id=chunk_id,
-            doc_id=section.doc_id,
-            text=text,
-            chunk_type=section.type,
-            section_path=section.section_path,
-            page=section.page,
-            equipment_model=equipment_model,
-            image_path=section.image_path,
+        """기존 호출 형식을 유지하며 청킹 모듈에 위임한다."""
+        return index_chunking.make_chunk(
+            self, section, text, section_index, part_index
         )
 
     def _count_tokens(self, text: str) -> int:
-        # 문자열의 토큰 수를 계산
-        return len(self.tokenizer.encode(text, disallowed_special=()))
+        """기존 호출 형식을 유지하며 청킹 모듈에 위임한다."""
+        return index_chunking.count_tokens(self, text)
 
     def _chunk_atomic_section(
         self,
         section: Section,
         section_index: int,
     ) -> Chunk:
-        # 표, 그림을 분할하지 않고 하나의 청크로 만듦
-        prefix = self._make_prefix(section)
-        text = prefix + section.text
-
-        return self._make_chunk(
-            section=section,
-            text=text,
-            section_index=section_index,
-            part_index=0,
-        )
+        """기존 호출 형식을 유지하며 청킹 모듈에 위임한다."""
+        return index_chunking.chunk_atomic_section(self, section, section_index)
 
     def _split_text(self, text: str, prefix: str) -> list[str]:
-        """문자 경계를 지키면서 본문을 80토큰씩 겹쳐 나눈다."""
-        if not text.strip():
-            return []
-
-        prefix_tokens = self._count_tokens(prefix)
-        body_limit = CHUNK_TARGET_TOKENS - prefix_tokens
-
-        if body_limit <= CHUNK_OVERLAP_TOKENS:
-            raise ValueError("문서·모델명 접두부가 너무 길어 본문을 나눌 수 없습니다.")
-
-        tokens = self.tokenizer.encode(
-            text,
-            disallowed_special=(),
+        """기존 호출 형식을 유지하며 청킹 모듈에 위임한다."""
+        return index_chunking.split_text(
+            self, text, prefix,
+            target_tokens=CHUNK_TARGET_TOKENS,
+            overlap_tokens=CHUNK_OVERLAP_TOKENS,
         )
-
-        parts = []
-        start = 0
-
-        while start < len(tokens):
-            end = min(start + body_limit, len(tokens))
-
-            while end > start + CHUNK_OVERLAP_TOKENS or end == len(tokens):
-                try:
-                    part = self.tokenizer.decode(
-                        tokens[start:end],
-                        errors="strict",
-                    )
-
-                    if end < len(tokens):
-                        self.tokenizer.decode(
-                            tokens[end - CHUNK_OVERLAP_TOKENS : end],
-                            errors="strict",
-                        )
-
-                    break
-
-                except UnicodeDecodeError:
-                    end -= 1
-
-            else:
-                raise ValueError(
-                    "문자 경계와 80토큰 겹침 조건을 "
-                    "만족하는 분할 위치를 찾을 수 없습니다."
-                )
-
-            parts.append(part)
-
-            if end == len(tokens):
-                break
-
-            start = end - CHUNK_OVERLAP_TOKENS
-
-        return parts
 
     def chunk_sections(self, sections: list[Section]) -> list[Chunk]:
-        """섹션을 본문·표·그림 종류에 맞게 청킹한다."""
-        chunks = []
-
-        for section_index, section in enumerate(sections):
-            if section.type not in {"text", "table", "figure"}:
-                raise ValueError(f"지원하지 않는 섹션 종류입니다: {section.type}")
-
-            if section.type in {"table", "figure"}:
-                chunk = self._chunk_atomic_section(
-                    section,
-                    section_index,
-                )
-                chunks.append(chunk)
-                continue
-
-            prefix = self._make_prefix(section)
-            parts = self._split_text(section.text, prefix)
-
-            for part_index, part in enumerate(parts):
-                text = prefix + part
-
-                if self._count_tokens(text) > CHUNK_MAX_TOKENS:
-                    raise ValueError(
-                        f"본문 청크가 최대 토큰 수를 초과했습니다: "
-                        f"{section.doc_id}, page={section.page}"
-                    )
-
-                chunk = self._make_chunk(
-                    section=section,
-                    text=text,
-                    section_index=section_index,
-                    part_index=part_index,
-                )
-                chunks.append(chunk)
-
-        return chunks
+        """기존 호출 형식을 유지하며 청킹 모듈에 위임한다."""
+        return index_chunking.chunk_sections(
+            self, sections, max_tokens=CHUNK_MAX_TOKENS
+        )
 
     def _chunk_to_item(self, chunk: Chunk) -> dict:
-        """매뉴얼 청크를 검색 코드가 읽는 공통 형식으로 변환한다."""
-        metadata = {
-            "doc_id": chunk.doc_id,
-            "page": chunk.page,
-            "chunk_type": chunk.chunk_type,
-            "section_path": chunk.section_path,
-            "safety_flag": chunk.safety_flag,
-            "all_models": chunk.equipment_model == ALL_MODELS,
-        }
-
-        if chunk.equipment_model is not None:
-            metadata["equipment_model"] = chunk.equipment_model
-
-        if chunk.image_path is not None:
-            metadata["image_path"] = chunk.image_path
-
-        return {
-            "id": chunk.chunk_id,
-            "text": chunk.text,
-            "metadata": metadata,
-        }
+        """검색 항목 변환 모듈에 위임한다."""
+        return chunk_to_item(chunk)
 
     def _format_troubleshooting_kb(self, kb: dict) -> str:
-        """기존 템플릿으로 고장 KB의 검색 본문을 만든다."""
-        applies_to = kb["applies_to"]
-        model_text = (
-            prompts.ALL_MODELS_TEXT
-            if applies_to == [ALL_MODELS]
-            else ", ".join(applies_to)
-        )
-
-        alarm_codes = ""
-        if kb.get("alarm_codes"):
-            alarm_codes = prompts.KB_ALARM_CODES.format(
-                codes=", ".join(kb["alarm_codes"]),
-            )
-
-        causes = []
-        for cause in kb["causes"]:
-            cause_text = prompts.KB_CAUSE.format(
-                cause_id=cause["cause_id"],
-                cause=cause["cause"],
-                actions=" → ".join(cause["actions"]),
-            )
-            causes.append(cause_text)
-
-        return prompts.KB_TROUBLESHOOTING.format(
-            applies_to=model_text,
-            symptom=kb["symptom"],
-            alarm_codes=alarm_codes,
-            causes="\n".join(causes),
-        )
+        """검색 항목 변환 모듈에 위임한다."""
+        return format_troubleshooting_kb(kb)
 
     def _format_maintenance_kb(self, kb: dict) -> str:
-        """기존 템플릿으로 점검 KB의 검색 본문을 만든다."""
-        applies_to = kb["applies_to"]
-        model_text = (
-            prompts.ALL_MODELS_TEXT
-            if applies_to == [ALL_MODELS]
-            else ", ".join(applies_to)
-        )
-
-        interval_parts = [kb["interval"]]
-
-        if kb.get("interval_hours") is not None:
-            hours = str(kb["interval_hours"])
-
-            if kb.get("interval_hours_max") is not None:
-                hours += f"-{kb['interval_hours_max']}"
-
-            interval_parts.append(f"{hours} hours")
-
-        if kb.get("first_interval_hours") is not None:
-            interval_parts.append(f"first: {kb['first_interval_hours']} hours")
-
-        if kb.get("interval_note"):
-            interval_parts.append(kb["interval_note"])
-
-        extra_parts = []
-
-        if kb.get("criteria"):
-            extra_parts.append(
-                prompts.KB_CRITERIA.format(
-                    criteria=kb["criteria"],
-                )
-            )
-
-        if kb.get("details"):
-            extra_parts.append(
-                prompts.KB_DETAILS.format(
-                    details="; ".join(kb["details"]),
-                )
-            )
-
-        return prompts.KB_MAINTENANCE.format(
-            applies_to=model_text,
-            task=kb["task"],
-            interval="; ".join(interval_parts),
-            extra="".join(extra_parts),
-        )
+        """검색 항목 변환 모듈에 위임한다."""
+        return format_maintenance_kb(kb)
 
     def _kb_to_item(self, kb: dict) -> dict:
-        """KB를 검색 코드가 읽는 공통 형식으로 변환한다."""
-        kb_type = kb["type"]
-
-        if kb_type == "troubleshooting":
-            text = self._format_troubleshooting_kb(kb)
-        elif kb_type == "maintenance":
-            text = self._format_maintenance_kb(kb)
-        else:
-            raise ValueError(f"지원하지 않는 KB 종류입니다: {kb_type}")
-
-        sources = kb["sources"]
-        if not sources:
-            raise ValueError(f"KB에 출처가 없습니다: {kb['kb_id']}")
-
-        source = sources[0]
-        if any(ref["doc_id"] != source["doc_id"] for ref in sources):
-            raise ValueError(f"KB에 여러 문서의 출처가 섞여 있습니다: {kb['kb_id']}")
-
-        metadata = {
-            "doc_id": source["doc_id"],
-            "page": source["page"],
-            "chunk_type": "kb",
-            "kb_type": kb_type,
-            "all_models": kb["applies_to"] == [ALL_MODELS],
-        }
-
-        if kb_type == "maintenance":
-            metadata["lockout_required"] = kb["lockout_required"]
-
-        return {
-            "id": kb["kb_id"],
-            "text": text,
-            "metadata": metadata,
-        }
+        """기존 호출 형식을 유지하며 KB 변환을 위임한다."""
+        return kb_to_item(
+            kb,
+            troubleshooting_formatter=self._format_troubleshooting_kb,
+            maintenance_formatter=self._format_maintenance_kb,
+        )
 
     def _write_json_atomic(self, path: Path, data: dict):
-        """JSON을 임시 파일에 완성한 뒤 최종 경로로 교체한다."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path = None
-
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=path.parent,
-                prefix=f".{path.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as file:
-                temporary_path = Path(file.name)
-                json.dump(
-                    data,
-                    file,
-                    ensure_ascii=False,
-                    indent=2,
-                )
-                file.flush()
-                os.fsync(file.fileno())
-
-            os.replace(temporary_path, path)
-
-        finally:
-            if temporary_path is not None:
-                temporary_path.unlink(missing_ok=True)
+        """JSON 저장을 캐시 모듈에 위임한다."""
+        write_json_atomic(path, data)
 
     def _document_cache_key(
         self,
         pdf_path: Path,
         vision_model: str,
     ) -> str:
-        # 문서와 추출 조건이 같을 때만 재사용할 캐시 키를 생성
-        pdf_hash = hashlib.sha256()
-
-        with pdf_path.open("rb") as file:
-            for block in iter(lambda: file.read(1024 * 1024), b""):
-                pdf_hash.update(block)
-
-        dependencies = [
-            "data/sources.csv",
-            "data/models.csv",
-            "chatbot/rag/document_processor.py",
-            "chatbot/rag/glossary.py",
-            "chatbot/core/schemas.py",
-            "chatbot/rag/prompts.py",
-        ]
-
-        fingerprints = {}
-        for relative_path in dependencies:
-            path = self.root_dir / relative_path
-            fingerprints[relative_path] = hashlib.sha256(path.read_bytes()).hexdigest()
-
-        conditions = {
-            "cache_version": 1,
-            "pdf_path": str(pdf_path.resolve()),
-            "pdf_hash": pdf_hash.hexdigest(),
-            "vision_model": vision_model,
-            "dependencies": fingerprints,
-        }
-
-        encoded = json.dumps(
-            conditions,
-            sort_keys=True,
-            ensure_ascii=False,
-        ).encode("utf-8")
-
-        return hashlib.sha256(encoded).hexdigest()
+        """기존 호출 형식을 유지하며 캐시 키 계산을 위임한다."""
+        return document_cache_key(self.root_dir, pdf_path, vision_model)
 
     def _extract_pdf_sections(
         self,
@@ -483,143 +195,20 @@ class IndexBuilder:
         return kbs
 
     def _prepare_items(self, items: list[Chunk | dict]) -> list[dict]:
-        """청크·KB를 변환하고 중복 ID와 필수 항목을 검사한다."""
-        prepared = []
-        seen_ids = set()
-
-        for value in items:
-            if isinstance(value, Chunk):
-                item = self._chunk_to_item(value)
-            elif isinstance(value, dict) and "kb_id" in value:
-                item = self._kb_to_item(value)
-            elif isinstance(value, dict):
-                item = value
-            else:
-                raise TypeError("색인 입력은 Chunk 또는 dict여야 합니다.")
-
-            item_id = item["id"]
-            text = item["text"]
-            metadata = item["metadata"]
-
-            if not isinstance(item_id, str) or not item_id.strip():
-                raise ValueError("색인 항목 ID가 비어 있거나 문자열이 아닙니다.")
-
-            if item_id in seen_ids:
-                raise ValueError(f"색인 항목 ID가 중복됩니다: {item_id}")
-
-            if not isinstance(text, str) or not text.strip():
-                raise ValueError(f"검색 본문이 비어 있습니다: {item_id}")
-
-            for key in ("doc_id", "page", "chunk_type", "all_models"):
-                if key not in metadata:
-                    raise ValueError(f"필수 메타데이터가 없습니다: {item_id}, {key}")
-
-            if metadata["chunk_type"] == "kb" and metadata.get("kb_type") not in {
-                "troubleshooting",
-                "maintenance",
-            }:
-                raise ValueError(f"KB 종류가 잘못되었습니다: {item_id}")
-
-            seen_ids.add(item_id)
-            prepared.append(
-                {
-                    "id": item_id,
-                    "text": text,
-                    "metadata": dict(metadata),
-                }
-            )
-
-        return prepared
+        """기존 호출 형식을 유지하며 검색 항목 준비를 위임한다."""
+        return prepare_items(
+            items,
+            chunk_converter=self._chunk_to_item,
+            kb_converter=self._kb_to_item,
+        )
 
     def build_vector_index(self, items: list[Chunk | dict]):
-        """
-        KB·청크를 임베딩해 Chroma에 저장
-
-        Returns: None
-
-        공통 검색 항목을 임베딩해 새 Chroma 컬렉션에 저장한다.
-        """
-        if self.chroma_dir is None:
-            raise ValueError("Chroma 저장 경로를 지정해야 합니다.")
-
-        if self.llm is None:
-            raise ValueError("임베딩에 사용할 LLMClient가 필요합니다.")
-
-        prepared = self._prepare_items(items)
-        if not prepared:
-            raise ValueError("빈 항목 목록으로 색인을 만들지 않습니다.")
-
-        client = chromadb.PersistentClient(
-            path=str(self.chroma_dir),
-        )
-
-        collection = client.create_collection(
-            name=COLLECTION_NAME,
-            embedding_function=None,
-            configuration={
-                "hnsw": {
-                    "space": "cosine",
-                },
-            },
-        )
-
-        batch_size = min(32, client.get_max_batch_size())
-
-        for start in range(0, len(prepared), batch_size):
-            batch = prepared[start : start + batch_size]
-            texts = [item["text"] for item in batch]
-
-            embeddings = self.llm.embed(texts)
-
-            if len(embeddings) != len(batch):
-                raise ValueError("임베딩 개수와 색인 항목 개수가 일치하지 않습니다.")
-
-            collection.add(
-                ids=[item["id"] for item in batch],
-                documents=texts,
-                metadatas=[item["metadata"] for item in batch],
-                embeddings=embeddings,
-            )
-
-        if collection.count() != len(prepared):
-            raise ValueError("Chroma에 저장된 항목 개수가 일치하지 않습니다.")
+        """기존 호출 형식을 유지하며 저장 모듈에 위임한다."""
+        return index_storage.build_vector_index(self, items)
 
     def build_bm25_index(self, items: list[Chunk | dict]):
-        """검색 담당자가 읽을 항목 목록을 pickle 파일로 저장한다."""
-        if self.bm25_path is None:
-            raise ValueError("BM25 저장 경로를 지정해야 합니다.")
-
-        prepared = self._prepare_items(items)
-        if not prepared:
-            raise ValueError("빈 항목 목록으로 기존 색인을 교체하지 않습니다.")
-
-        output_path = self.bm25_path
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        temporary_path = None
-
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="wb",
-                dir=output_path.parent,
-                prefix=f".{output_path.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as file:
-                temporary_path = Path(file.name)
-                pickle.dump(
-                    prepared,
-                    file,
-                    protocol=pickle.HIGHEST_PROTOCOL,
-                )
-                file.flush()
-                os.fsync(file.fileno())
-
-            os.replace(temporary_path, output_path)
-
-        finally:
-            if temporary_path is not None:
-                temporary_path.unlink(missing_ok=True)
+        """기존 호출 형식을 유지하며 저장 모듈에 위임한다."""
+        return index_storage.build_bm25_index(self, items)
 
     def main(self):
         """
