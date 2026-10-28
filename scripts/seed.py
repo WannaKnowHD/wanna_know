@@ -48,6 +48,7 @@ from pymysql.constants import CLIENT        # noqa: E402  접속 옵션 상수
  
 # ※ "from config import ..." 로 쓰면 가상환경에 설치된 다른 config 패키지를 가져온다. 전체 경로로 쓴다.
 from chatbot.core.config import BASE_DIR, ConfigError, Settings, load_seed_passwords   # noqa: E402
+from chatbot.db.db import TIME_ZONE                     # noqa: E402  시간대 기준 (db.py 와 같게)
  
  
 # ------------------------------------------------------------------------------
@@ -228,6 +229,8 @@ def connect(settings: Settings) -> pymysql.connections.Connection:
         # schema.sql 처럼 SQL 여러 개가 들어 있는 파일을 한 번에 실행하게 허용한다.
         # (주석·문자열 속 ; 를 파이썬이 직접 자르지 않고 MySQL 이 정확히 해석한다)
         client_flag=CLIENT.MULTI_STATEMENTS,
+        # Aiven 서버는 UTC 라 그대로 두면 계정 생성 시각(created_at)만 9시간 어긋난다. 앱(db.py)과 같은 한국 시간으로 맞춘다.
+        init_command=f"SET time_zone = '{TIME_ZONE}'",
     )
  
  
