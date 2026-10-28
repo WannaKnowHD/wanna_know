@@ -6,9 +6,10 @@ view_crops.py : crop_regions 결과를 눈으로 확인하는 HTML 을 만든다
 을 나란히 보여 준다. 이미지와 비전 결과를 비교해서 빠진 칸·틀린 숫자·없는 부품 이름이 없는지 보면 된다.
 
 실행 (프로젝트 맨 위 폴더에서):
-    python scripts/view_crops.py data/raw/initial/hytrol_138acc_p1-27.pdf            # 자르기만 (비용 0)
-    python scripts/view_crops.py data/raw/initial/hytrol_138acc_p1-27.pdf --vision   # 비전 모델까지 (OpenAI 호출)
-    python scripts/view_crops.py data/raw/initial/hytrol_138acc_p1-27.pdf --vision --pages 22 24
+    python tests/view_crops.py data/raw/initial/hytrol_138acc_p1-27.pdf            # 자르기만 (비용 0)
+    python tests/view_crops.py data/raw/initial/hytrol_138acc_p1-27.pdf --vision   # 비전 모델까지 (OpenAI 호출)
+    python tests/view_crops.py data/raw/initial/hytrol_138acc_p1-27.pdf --vision --pages 22 24
+터미널에 단계별 시간(extract_text · crop_regions · 가장 느린 쪽)도 출력한다.
 결과:
     data/interim/check/crops_<doc_id>.html  (data/interim 은 커밋하지 않는 폴더)
     --vision 결과는 data/interim/<doc_id>/*.json 에 캐시되어, 다시 실행하면 비전 호출 없이 바로 나온다.
@@ -80,13 +81,20 @@ def main():
     interim_dir = str(settings.interim_dir) if settings else "data/interim"
 
     ex = PdfExtractor("data/sources.csv", llm=llm, interim_dir=interim_dir)
+    t0 = time.perf_counter()
     pages = ex.extract_text(args.pdf, args.pages)
+    extract_sec = time.perf_counter() - t0
     doc_id = pages[0].doc_id
 
     rows, count, changed, start = [], 0, 0, time.time()
+    crop_sec, slowest = 0.0, (0.0, 0)
     for page in pages:
         before = page.regions
+        t0 = time.perf_counter()
         after = ex.crop_regions(args.pdf, page.page_no, before)
+        sec = time.perf_counter() - t0
+        crop_sec += sec
+        slowest = max(slowest, (sec, page.page_no))
         original = ex.to_original_page(doc_id, page.page_no)
         for i, (b, a) in enumerate(zip(before, after, strict=True), start=1):
             count += 1
@@ -116,6 +124,11 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(page_html)
     print(summary)
+    print(f"[시간] extract_text ({len(pages)}쪽)      : {extract_sec:6.2f}초  (쪽당 {extract_sec / len(pages):.2f}초)")
+    print(f"[시간] crop_regions ({count}개)      : {crop_sec:6.2f}초  (영역당 {crop_sec / max(count, 1):.2f}초)")
+    print(f"[시간] 가장 오래 걸린 쪽            : 파일 p.{slowest[1]} {slowest[0]:.2f}초")
+    print(f"[시간] 전체                         : {extract_sec + crop_sec:6.2f}초")
+    print("       (--vision 두 번째 실행부터는 캐시를 읽어서 비전 시간이 빠짐 → 처음 시간을 보려면 data/interim/<doc_id>/*.json 삭제)")
     print(f"저장: {out_path}  → 브라우저로 열어 보세요")
 
 
