@@ -1,14 +1,74 @@
-"""로그인·채팅 화면"""
+"""로그인·채팅 화면 (화면 요소·스타일은 ui/login, 관리자 화면은 ui/dashboard)"""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import gradio as gr
+
+from chatbot.core.state import ConversationState
+from chatbot.ui.dashboard import ADMIN_CSS_PATH, AdminDashboard
+from chatbot.ui.login import (
+    LOGIN_CSS_PATHS,
+    MSG_EMPTY,
+    MSG_INVALID,
+    MSG_SERVER,
+    THEME_INIT_JS,
+    bind_theme_toggle,
+    build_chat_shell,
+    build_login_form,
+    render_history,
+    render_login_error,
+    render_user_info,
+)
+
 if TYPE_CHECKING:
-    import gradio as gr
+    from chatbot.core.auth import AuthManager
+    from chatbot.core.config import Settings
 
 
 class ChatApp:
     """ChatApp (기능명세서 기준 뼈대)."""
+
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        auth: AuthManager | None = None,
+        conversation: ConversationState | None = None,
+    ):
+        """
+        받는 것:
+          settings     : 세션 저장 키·암호 키(BROWSER_STORAGE_KEY, BROWSER_SECRET)를 읽음
+          auth         : 로그인·세션 (core.auth.AuthManager)
+          conversation : 사용자별 대화 상태 (core.state.ConversationState). 없으면 DB 없이 화면 상태만 다룸
+        """
+        self._settings = settings
+        self._auth = auth
+        self._conversation = conversation or ConversationState()
+        self._dashboard = AdminDashboard()
+
+    @staticmethod
+    def launch_options() -> dict:
+        """app.py 가 launch(**ChatApp.launch_options()) 로 넘기는 값 (스타일 파일과 다크 모드 복원 스크립트)"""
+        return {"css_paths": [ADMIN_CSS_PATH, *LOGIN_CSS_PATHS], "js": THEME_INIT_JS}
+
+    def _screen(self, state: dict):
+        """state 에 맞는 화면 상태를 만든다 (로그인 화면 / 채팅 화면 / 관리자 대시보드 중 하나만 보임).
+
+        Returns: (로그인 화면, 채팅 화면, 관리자 화면, 관리자 전환 버튼, 채팅 사원 정보, 관리자 사원 정보, 대화 기록, 로그인 안내)
+        """
+        user = state.get("user")
+        admin_mode = bool(state.get("admin_mode")) and user is not None and user.is_admin
+        history = render_history(self.show_history(state)) if user is not None else ""
+        return (
+            gr.update(visible=user is None),
+            gr.update(visible=user is not None and not admin_mode),
+            gr.update(visible=admin_mode),
+            gr.update(visible=user is not None and user.is_admin),
+            render_user_info(user),
+            AdminDashboard.render_user_info(user),
+            history,
+            render_login_error(state.get("login_error")),
+        )
 
     def build_ui(self):
         """
@@ -19,7 +79,64 @@ class ChatApp:
 
         Returns: gr.Blocks
         """
-        raise NotImplementedError("ChatApp.build_ui")
+        storage_key = self._settings.browser_storage_key if self._settings else None
+        secret = self._settings.browser_secret if self._settings else None
+
+        with gr.Blocks(title="Wanna Know") as demo:
+            token_state = gr.BrowserState(None, storage_key=storage_key, secret=secret)   # 세션 토큰 (브라우저)
+            state = gr.State({})                                                            # 로그인한 사원 등 (서버)
+
+            login = build_login_form()      # ui/login/login_form.py
+            chat = build_chat_shell()       # ui/login/chat_shell.py
+
+            # ---- 관리자 대시보드 ----
+            admin_view = self._dashboard.build_admin_tab()
+            admin_view.visible = False
+            admin_user_info = self._dashboard.user_info_display
+
+            screen = [login.root, chat.root, admin_view, chat.admin_button, chat.user_info, admin_user_info, chat.history, login.error]
+
+            def load_event(token):
+                _, new_state = self.on_load(token)
+                return (new_state, *self._screen(new_state))
+
+            def login_event(employee_id, password, current):
+                try:
+                    token, new_state = self.on_login(employee_id, password, current)
+                except Exception as e:  # DB 연결 문제 등: 로그인 화면에 머물고 안내만 보여 줌 (입력은 그대로)
+                    print(f"[gradio_app] 로그인 처리 실패: {type(e).__name__}: {e}")
+                    new_state = dict(current or {})
+                    new_state["login_error"] = MSG_SERVER
+                    token = None
+                # 실패하면 token 이 None → 브라우저에 남아 있는 값은 건드리지 않음
+                return (token if token else gr.skip(), new_state, *self._screen(new_state))
+
+            def logout_event(token, current):
+                _, new_state = self.on_logout(token, current)
+                return (None, new_state, *self._screen(new_state), "", "")
+
+            def admin_event(current):
+                _, new_state = self.change_admin_mode(current)
+                return (new_state, *self._screen(new_state))
+
+            def back_event(current):  # 뒤로가기: 관리자 모드는 유지한 채 채팅 화면만 보여 줌
+                new_state = dict(current or {})
+                return (new_state, *self._screen({**new_state, "admin_mode": False}))
+
+            demo.load(load_event, inputs=[token_state], outputs=[state, *screen])
+            login_inputs = [login.employee, login.password, state]
+            login_outputs = [token_state, state, *screen]
+            login.button.click(login_event, inputs=login_inputs, outputs=login_outputs)
+            login.password.submit(login_event, inputs=login_inputs, outputs=login_outputs)
+            login.employee.submit(login_event, inputs=login_inputs, outputs=login_outputs)
+            logout_outputs = [token_state, state, *screen, login.employee, login.password]
+            chat.logout_button.click(logout_event, inputs=[token_state, state], outputs=logout_outputs)
+            self._dashboard.logout_button.click(logout_event, inputs=[token_state, state], outputs=logout_outputs)
+            chat.admin_button.click(admin_event, inputs=[state], outputs=[state, *screen])
+            self._dashboard.back_button.click(back_event, inputs=[state], outputs=[state, *screen])
+            bind_theme_toggle(login.theme_button, chat.theme_button)
+
+        return demo
 
     def on_load(self, token: str | None):
         """
@@ -28,7 +145,11 @@ class ChatApp:
 
         Returns: User | None, dict
         """
-        raise NotImplementedError("ChatApp.on_load")
+        state: dict = {}
+        user = self._auth.restore_session(token) if self._auth is not None and token else None
+        if user is not None:
+            self._conversation.set_user(state, user)   # 권한은 restore_session 이 DB 에서 다시 읽은 값
+        return user, state
 
     def on_login(self, employee_id: str, password: str, state: dict):
         """
@@ -38,7 +159,19 @@ class ChatApp:
 
         Returns: str (token), dict
         """
-        raise NotImplementedError("ChatApp.on_login")
+        state = dict(state or {})
+        state.pop("login_error", None)
+        employee_id = (employee_id or "").strip()
+        if not employee_id or not password:
+            state["login_error"] = MSG_EMPTY          # 미입력 → 입력 요청 안내
+            return None, state
+        user = self._auth.authenticate(employee_id, password)
+        if user is None:
+            state["login_error"] = MSG_INVALID        # 사원번호 없음·비밀번호 불일치는 같은 문구 (어느 쪽이 틀렸는지 알려 주지 않음)
+            return None, state
+        token = self._auth.create_session(user)
+        self._conversation.set_user(state, user)
+        return token, state
 
     def on_logout(self, token: str, state: dict):
         """
@@ -48,7 +181,12 @@ class ChatApp:
 
         Returns: bool, dict
         """
-        raise NotImplementedError("ChatApp.on_logout")
+        try:
+            self._auth.delete_session(token)
+        except Exception as e:  # DB 오류여도 이 화면은 로그아웃함. 남은 세션은 만료 시각(8시간)에 정리됨
+            print(f"[gradio_app] 세션 삭제 실패: {type(e).__name__}: {e}")
+        self._conversation.clear_user(state)
+        return True, state
 
     def on_submit(self, message: str, history: list, state: dict):
         """
@@ -89,7 +227,8 @@ class ChatApp:
 
         Returns: list
         """
-        raise NotImplementedError("ChatApp.show_history")
+        user = state.get("user")
+        return self._conversation.load_history(user.employee_id) if user is not None else []
 
     def reset_conversation(self, state: dict):
         """
@@ -105,7 +244,11 @@ class ChatApp:
 
         Returns: bool, dict
         """
-        raise NotImplementedError("ChatApp.change_admin_mode")
+        user = state.get("user")
+        if user is None or not user.is_admin:   # 버튼은 관리자에게만 보이지만, 여기서도 권한을 다시 확인
+            return False, state
+        state["admin_mode"] = True
+        return True, state
 
     def exit_admin_mode(self, state: dict):
         """
@@ -113,7 +256,8 @@ class ChatApp:
 
         Returns: dict
         """
-        raise NotImplementedError("ChatApp.exit_admin_mode")
+        state["admin_mode"] = False
+        return state
 
     def render_answer(self, answer: dict):
         """
