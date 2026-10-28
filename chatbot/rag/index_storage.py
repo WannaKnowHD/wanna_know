@@ -1,4 +1,5 @@
 """기존 검색 코드와 호환되는 Chroma·BM25 색인 저장."""
+
 from __future__ import annotations
 
 import os
@@ -10,7 +11,7 @@ from typing import TYPE_CHECKING, Protocol
 import chromadb
 
 from chatbot.core.schemas import Chunk
-from chatbot.rag.retriever import COLLECTION_NAME
+from chatbot.rag.retriever import COLLECTION_NAME, load_bm25_items
 
 if TYPE_CHECKING:
     from chatbot.rag.llm import LLMClient
@@ -116,3 +117,42 @@ def build_bm25_index(builder: StorageContext, items: list[Chunk | dict]):
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
+
+
+def validate_indexes(chroma_dir: Path, bm25_path: Path) -> None:
+    """두 색인의 ID·본문·메타데이터가 동일한지 검사한다."""
+    items = load_bm25_items(bm25_path)
+
+    if not items:
+        raise ValueError("BM25 색인에 항목이 없습니다.")
+
+    expected = {item["id"]: (item["text"], item["metadata"]) for item in items}
+
+    if len(expected) != len(items):
+        raise ValueError("BM25 색인에 중복 ID가 있습니다.")
+
+    client = chromadb.PersistentClient(path=str(chroma_dir))
+    collection = client.get_collection(
+        name=COLLECTION_NAME,
+        embedding_function=None,
+    )
+
+    if collection.count() != len(items):
+        raise ValueError("Chroma와 BM25의 항목 개수가 다릅니다.")
+
+    records = collection.get(
+        include=["documents", "metadatas"],
+    )
+
+    actual = {
+        item_id: (text, metadata)
+        for item_id, text, metadata in zip(
+            records["ids"],
+            records["documents"],
+            records["metadatas"],
+            strict=True,
+        )
+    }
+
+    if actual != expected:
+        raise ValueError("Chroma와 BM25의 ID·본문·메타데이터가 일치하지 않습니다.")
