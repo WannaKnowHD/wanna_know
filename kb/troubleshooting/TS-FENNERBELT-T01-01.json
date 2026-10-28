@@ -1,0 +1,71 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-01",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 28,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 29,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Belt runs off at tail pulley.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-01#c1",
+      "cause": "Belt running off-center around the tail pulley and through the loading area",
+      "actions": [
+        "install training idlers on the return run prior to tail pulley."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-01#c2",
+      "cause": "Material spillage and build-up",
+      "actions": [
+        "improve loading and transfer conditions",
+        "install cleaning devices",
+        "improve maintenance."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-01#c3",
+      "cause": "Idlers or pulleys out-of square with center line of belt",
+      "actions": [
+        "readjust idlers in affected area."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-01#c4",
+      "cause": "Dirty, stuck, or misaligned return rolls",
+      "actions": [
+        "remove accumulations",
+        "install cleaning devices",
+        "use self-cleaning return rolls",
+        "improve maintenance and lubrication."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-01#c5",
+      "cause": "Counterweight too light",
+      "actions": [
+        "add counterweight or increase screw take-up tension to value determined from calculations."
+      ]
+    }
+  ],
+  "safety": []
+}

@@ -1,0 +1,30 @@
+{
+  "kb_id": "MT-PRECOLSERIES-T02-03",
+  "applies_to": [
+    "L400",
+    "L500",
+    "L650"
+  ],
+  "sources": [
+    {
+      "doc_id": "preco_l_series",
+      "page": 54,
+      "ref": "Bearing lubrication"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "maintenance",
+  "task": "Lubricate the bearings",
+  "interval": "operating_hours",
+  "interval_hours": 100,
+  "interval_hours_max": 500,
+  "interval_note": "1 week to 1 month",
+  "details": [
+    "Type: Standard type",
+    "Code: D1",
+    "Environmental conditions: Dusty",
+    "Operating temperature, °C: -15 to +100"
+  ],
+  "lockout_required": true
+}

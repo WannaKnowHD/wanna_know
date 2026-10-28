@@ -1,0 +1,67 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-09",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 28,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 29,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 30,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Excessive belt stretch.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-09#c1",
+      "cause": "Tension too high",
+      "actions": [
+        "increase speed, same tonnage, same speed",
+        "reduce friction with better maintenance and replacement of damaged idlers",
+        "decrease tension by increasing arc of contact or go to lagged pulley",
+        "reduce CWT to minimum amount."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-09#c2",
+      "cause": "System under belted",
+      "actions": [
+        "recalculate belt tensions and select proper belt."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-09#c3",
+      "cause": "Counterweight too heavy",
+      "actions": [
+        "lighten counterweight to value required by calculations."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-09#c4",
+      "cause": "Insufficient counterweight travel",
+      "actions": [
+        "consult Fenner Dunlop for recommended minimum distances."
+      ]
+    }
+  ],
+  "safety": []
+}

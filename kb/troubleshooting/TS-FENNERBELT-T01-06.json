@@ -1,0 +1,53 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-06",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 28,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 30,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Belt runs true when empty, crooked when loaded.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-06#c1",
+      "cause": "Off-center loading or poor loading",
+      "actions": [
+        "adjust chute to place load on center of belt",
+        "discharge material in direction of belt travel at or near belt speed."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-06#c2",
+      "cause": "Variations in nature and formation of load",
+      "actions": [
+        "use notched chute to keep load peak in exact center of belt."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-06#c3",
+      "cause": "Belt not making good contact with all idlers",
+      "actions": [
+        "adjust height so all idlers contact belt."
+      ]
+    }
+  ],
+  "safety": []
+}

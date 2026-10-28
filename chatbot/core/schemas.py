@@ -130,7 +130,7 @@ class _KbBase(BaseModel):
     @field_validator("applies_to")
     @classmethod
     def _check_all_models(cls, v: list[str]) -> list[str]:
-        # ["*", "138ACC"]처럼 섞어 쓰면 "모든 모델"인지 "일부 모델"인지 애매해지므로 막는다.
+        # ["*", "138-ACC"]처럼 섞어 쓰면 "모든 모델"인지 "일부 모델"인지 애매해지므로 막는다.
         if ALL_MODELS in v and len(v) > 1:
             raise ValueError(f'applies_to에 "{ALL_MODELS}"를 쓰면 다른 모델명과 함께 적을 수 없음')
         return v
@@ -159,7 +159,9 @@ class MaintenanceKB(_KbBase):
     """점검·정비 작업과 주기. 매뉴얼의 점검표·윤활표에서 만듦."""
     type: Literal["maintenance"]
     task: str
-    interval: Literal["daily", "weekly", "monthly", "quarterly", "yearly", "operating_hours"]
+    # other = 위 값으로 나타낼 수 없는 주기 (예: "At least every six months", "At least every 10 years").
+    #   가까운 값(monthly 등)으로 바꿔 넣으면 주기가 틀리게 안내되므로, 원문을 interval_note에 그대로 적는다.
+    interval: Literal["daily", "weekly", "monthly", "quarterly", "yearly", "operating_hours", "other"]
     interval_hours: int | None = None        # interval = operating_hours일 때만. 범위면 아래쪽 값 (1000-1500 → 1000)
     interval_hours_max: int | None = None    # 원문이 범위일 때 위쪽 값 (1000-1500 → 1500). 한 값이면 비움
     first_interval_hours: int | None = None  # 첫 주기가 다른 경우 (예: 첫 500 h)
@@ -179,6 +181,8 @@ class MaintenanceKB(_KbBase):
         if self.interval_hours_max is not None:
             if self.interval_hours is None or self.interval_hours_max <= self.interval_hours:
                 raise ValueError("interval_hours_max는 interval_hours와 함께 적고, interval_hours보다 커야 함")
+        if self.interval == "other" and not self.interval_note:
+            raise ValueError("interval이 other이면 원문 주기를 interval_note에 적어야 함")
 
         return self
 

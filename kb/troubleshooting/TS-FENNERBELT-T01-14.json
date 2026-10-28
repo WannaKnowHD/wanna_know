@@ -1,0 +1,40 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-14",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 29,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Covers harden or crack.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-14#c1",
+      "cause": "Heat or chemical damage",
+      "actions": [
+        "use belt designed for specific condition."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-14#c2",
+      "cause": "Improper storage or handling",
+      "actions": [
+        "refer to Fenner Dunlop for proper storage or handling instructions."
+      ]
+    }
+  ],
+  "safety": []
+}

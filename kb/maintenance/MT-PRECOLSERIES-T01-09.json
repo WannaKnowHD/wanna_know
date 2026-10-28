@@ -1,0 +1,22 @@
+{
+  "kb_id": "MT-PRECOLSERIES-T01-09",
+  "applies_to": [
+    "L400",
+    "L500",
+    "L650"
+  ],
+  "sources": [
+    {
+      "doc_id": "preco_l_series",
+      "page": 54,
+      "ref": "MAINTENANCE"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "maintenance",
+  "task": "Inspect belt rollers for wear",
+  "interval": "monthly",
+  "details": [],
+  "lockout_required": true
+}

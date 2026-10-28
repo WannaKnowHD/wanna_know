@@ -1,0 +1,70 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-10",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 28,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 30,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Grooving, gouging or stripping of top cover.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-10#c1",
+      "cause": "Skirt boards improperly adjusted or of wrong material",
+      "actions": [
+        "adjust skirt board supports to minimum 1\" between metal and belt with gap increasing in direction of belt travel",
+        "use skirt board rubber (not old belt)."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-10#c2",
+      "cause": "Sticking idlers",
+      "actions": [
+        "free idlers and improve maintenance and lubrication."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-10#c3",
+      "cause": "Material hanging up in or under chute",
+      "actions": [
+        "improve loading to reduce spillage",
+        "install baffles",
+        "widen chute."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-10#c4",
+      "cause": "Impact of material on belt",
+      "actions": [
+        "reduce impact by improving chute design",
+        "install impact idlers or impact bed."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-10#c5",
+      "cause": "Sharp edges of material or tramp iron coming in contact with cover",
+      "actions": [
+        "use jingle bars, impact idlers, and magnetic removal equipment."
+      ]
+    }
+  ],
+  "safety": []
+}

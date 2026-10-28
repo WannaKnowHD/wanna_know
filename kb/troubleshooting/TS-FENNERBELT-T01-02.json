@@ -1,0 +1,61 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-02",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 28,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 29,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Belt runs to one side for long distance or entire length of conveyor.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-02#c1",
+      "cause": "Belt running off-center around the tail pulley and through the loading area",
+      "actions": [
+        "install training idlers on the return run prior to tail pulley."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-02#c2",
+      "cause": "Off-center loading or poor loading",
+      "actions": [
+        "adjust chute to place load on center of belt",
+        "discharge material in direction of belt travel at or near belt speed."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-02#c3",
+      "cause": "Build-up of material on idlers",
+      "actions": [
+        "remove accumulation",
+        "improve maintenance. Install scrapers or other cleaning devices."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-02#c4",
+      "cause": "Idlers or pulleys out-of square with center line of belt",
+      "actions": [
+        "readjust idlers in affected area."
+      ]
+    }
+  ],
+  "safety": []
+}
