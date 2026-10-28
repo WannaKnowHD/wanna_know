@@ -1,5 +1,8 @@
 """섹션 청킹 동작 검사. API와 DB를 호출하지 않는다."""
 
+import os
+from pathlib import Path
+
 import pytest
 
 from build_index import (
@@ -96,6 +99,85 @@ def test_long_text_has_overlap_and_no_missing_tokens(builder):
         disallowed_special=(),
     )
     assert reconstructed == original
+
+
+def test_real_pdf_chunk_sample(builder):
+    """지정한 PDF를 추출·청킹하고 출처와 본문 길이를 확인한다."""
+    pdf_value = os.environ.get("CHUNK_TEST_PDF")
+    if not pdf_value:
+        pytest.skip("CHUNK_TEST_PDF로 실제 PDF 경로를 지정하세요.")
+
+    pdf_path = Path(pdf_value).expanduser()
+    if not pdf_path.is_absolute():
+        pdf_path = builder.root_dir / pdf_path
+    assert pdf_path.is_file(), f"PDF 파일을 찾을 수 없습니다: {pdf_path}"
+
+    import pymupdf
+
+    from chatbot.rag.document_processor import PdfExtractor
+
+    with pymupdf.open(str(pdf_path)) as document:
+        page_value = os.environ.get("CHUNK_TEST_PAGES")
+        if page_value:
+            pages_to_read = [int(value.strip()) for value in page_value.split(",")]
+        else:
+            pages_to_read = list(range(1, min(document.page_count, 3) + 1))
+        assert pages_to_read, "검사할 페이지가 없습니다."
+        assert len(pages_to_read) == len(set(pages_to_read)), "페이지가 중복됩니다."
+        assert pages_to_read == sorted(pages_to_read), "페이지는 오름차순으로 지정하세요."
+        assert all(1 <= page <= document.page_count for page in pages_to_read)
+
+    extractor = PdfExtractor(
+        sources_path=str(builder.root_dir / "data" / "sources.csv")
+    )
+    pages = extractor.extract_text(str(pdf_path), pages=pages_to_read)
+    sections = extractor.split_sections(pages)
+    assert sections, "PDF에서 섹션을 추출하지 못했습니다."
+
+    chunks = builder.chunk_sections(sections)
+    assert chunks, "추출된 섹션에서 청크를 만들지 못했습니다."
+    ids = [chunk.chunk_id for chunk in chunks]
+    assert len(ids) == len(set(ids))
+
+    oversized_atomic = []
+    print(f"\nPDF: {pdf_path.name}, 파일 페이지: {pages_to_read}")
+    print(f"섹션 {len(sections)}개 → 청크 {len(chunks)}개")
+    for index, section in enumerate(sections):
+        section_chunks = [
+            chunk for chunk in chunks
+            if chunk.chunk_id.startswith(
+                f"{section.doc_id}:p{section.page}:s{index}:c"
+            )
+        ]
+        if section.type in {"table", "figure"}:
+            assert len(section_chunks) == 1
+            assert section_chunks[0].text == (
+                builder._make_prefix(section) + section.text
+            )
+        elif section.text.strip():
+            assert section_chunks
+        else:
+            assert not section_chunks
+
+        for chunk in section_chunks:
+            assert chunk.doc_id == section.doc_id
+            assert chunk.page == section.page
+            assert chunk.section_path == section.section_path
+            assert chunk.chunk_type == section.type
+            assert chunk.image_path == section.image_path
+            assert chunk.text.startswith(builder._make_prefix(section))
+            count = builder._count_tokens(chunk.text)
+            if chunk.chunk_type == "text":
+                assert count <= CHUNK_MAX_TOKENS
+            elif count > CHUNK_MAX_TOKENS:
+                oversized_atomic.append(chunk.chunk_id)
+            print(
+                f"\n[{chunk.chunk_id}] type={chunk.chunk_type}, "
+                f"page={chunk.page}, tokens={count}, image={chunk.image_path}"
+            )
+            print(chunk.text[:300])
+
+    print(f"\n800토큰 초과 표·그림: {oversized_atomic}")
 
     ids = [chunk.chunk_id for chunk in chunks]
     assert len(ids) == len(set(ids))

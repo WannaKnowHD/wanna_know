@@ -91,7 +91,7 @@ class IndexBuilder:
         )
 
     def _split_text(self, text: str, prefix: str) -> list[str]:
-        # 접두부 공간을 제외한 본문을 토큰 단위로 나눔
+        """문자 경계를 지키면서 본문을 80토큰씩 겹쳐 나눈다."""
         if not text.strip():
             return []
 
@@ -111,10 +111,31 @@ class IndexBuilder:
 
         while start < len(tokens):
             end = min(start + body_limit, len(tokens))
-            part = self.tokenizer.decode(
-                tokens[start:end],
-                errors="strict",
-            )
+
+            while end > start + CHUNK_OVERLAP_TOKENS or end == len(tokens):
+                try:
+                    part = self.tokenizer.decode(
+                        tokens[start:end],
+                        errors="strict",
+                    )
+
+                    if end < len(tokens):
+                        self.tokenizer.decode(
+                            tokens[end - CHUNK_OVERLAP_TOKENS : end],
+                            errors="strict",
+                        )
+
+                    break
+
+                except UnicodeDecodeError:
+                    end -= 1
+
+            else:
+                raise ValueError(
+                    "문자 경계와 80토큰 겹침 조건을 "
+                    "만족하는 분할 위치를 찾을 수 없습니다."
+                )
+
             parts.append(part)
 
             if end == len(tokens):
