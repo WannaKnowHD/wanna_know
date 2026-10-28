@@ -87,13 +87,11 @@ CREATE TABLE IF NOT EXISTS chat_history (
 ) DEFAULT CHARSET=utf8mb4 COMMENT='대화 기록';
 
 -- 매뉴얼 PDF 와 색인 상태. 화면 08 KB 현황(kb_status)·PDF 추가(add_pdf)가 쓴다. 다른 테이블과 관계없는 독립 테이블.
+-- 언어·판·적용 설비는 두지 않는다. 매뉴얼은 모두 영어이고 판은 문서마다 하나(schemas.SourceRef), 적용 설비는 data/models.csv 가 원본이다.
 CREATE TABLE IF NOT EXISTS documents (
   doc_id            VARCHAR(50)  NOT NULL COMMENT '문서 id(sources.csv 의 doc_id)',
   filename          VARCHAR(255) NOT NULL COMMENT 'PDF 파일명',
   title             VARCHAR(255) NULL COMMENT '문서명',
-  version           VARCHAR(20)  NULL COMMENT '판',
-  equipment_models  JSON         NULL COMMENT '적용 설비 모델 목록',
-  lang              VARCHAR(5)   NULL DEFAULT 'en' COMMENT '언어',
   source            ENUM('initial', 'admin_add') NOT NULL COMMENT '초기 문서 / 관리자 추가',
   pages             INT          NULL COMMENT '페이지 수',
   chunks            INT          NULL COMMENT '청크 수',
