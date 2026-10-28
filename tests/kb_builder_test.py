@@ -204,6 +204,86 @@ def test_from_sections_skips_broken_table(kb, capsys):
 
 
 # ------------------------------------------------------------------------------
+# validate_kb · _validate_all
+# ------------------------------------------------------------------------------
+HYTROL_P22 = ("TROUBLE SHOOTING DRIVES\nTROUBLE CAUSE SOLUTION\nConveyor will not start or motor quits\nfrequently. "
+              "1) Motor is overloaded. 2) Motor is drawing too much current. 1) Check for overloading of conveyor. "
+              "2) Check heater or circuit breaker and change if necessary.")
+
+
+def hytrol_kb(kb):
+    rows = [["Conveyor will not start or motor quits frequently.",
+             "1) Motor is overloaded. 2) Motor is drawing too much current.",
+             "1) Check for overloading of conveyor. 2) Check heater or circuit breaker and change if necessary."]]
+    return kb.to_troubleshooting_kb(rows, "hytrol_138acc", 22, 1, "TROUBLE SHOOTING DRIVES")[0]
+
+
+def test_validate_ok(kb):
+    # 원문 줄바꿈 위치가 달라도 통과 (공백·줄바꿈만 맞춤)
+    assert kb.validate_kb(hytrol_kb(kb), HYTROL_P22) == (True, [])
+
+
+def test_validate_quote_not_in_source(kb):
+    item = hytrol_kb(kb)
+    item["causes"][0]["cause"] = "Motor is overload."            # 원문과 한 글자 다름
+    ok, errors = kb.validate_kb(item, HYTROL_P22)
+    assert not ok and errors == ["TS-HYTROL138ACC-T01-01: 원문에 없는 문장 - Motor is overload."]
+
+
+def test_validate_schema_and_models(kb):
+    item = hytrol_kb(kb)
+    item["causes"][1]["cause_id"] = item["kb_id"] + "#c3"        # 순번 건너뜀
+    ok, errors = kb.validate_kb(item, HYTROL_P22)
+    assert not ok and "스키마" in errors[0] and "#c2" in errors[0]
+    item = hytrol_kb(kb)
+    item["applies_to"] = ["138ACC"]                              # models.csv 표기는 138-ACC
+    assert kb.validate_kb(item, HYTROL_P22) == (False, ["TS-HYTROL138ACC-T01-01: models.csv 에 없는 모델 - 138ACC"])
+
+
+def test_validate_maintenance_parts(kb):
+    # "MOTOR: Check Noise", "Note: …" 는 두 칸을 이은 것이라 나눠서 대조
+    (item,) = kb.to_maintenance_kb([{"task": "MOTOR: Check Noise", "interval": "Monthly",
+                                     "details": ["Note: Replace at 3 mm wear"]}], "hytrol_138acc", 24, 3, "Checklist")
+    assert kb.validate_kb(item, "| COMPONENT | ACTION | Note |\n| MOTOR | Check Noise | Replace at 3 mm wear |")[0]
+    assert not kb.validate_kb(item, "| MOTOR | Check Noise |")[0]   # Note 값이 원문에 없음
+
+
+def test_validate_all(kb):
+    a, b = hytrol_kb(kb), hytrol_kb(kb)
+    b["related_kb"] = ["TS-HYTROL138ACC-T09-09"]
+    assert kb._validate_all([a, b]) == ["kb_id 중복 - TS-HYTROL138ACC-T01-01 (2건)",
+                                        "TS-HYTROL138ACC-T01-01: related_kb 가 없는 KB 를 가리킴 - TS-HYTROL138ACC-T09-09"]
+
+
+# ------------------------------------------------------------------------------
+# merge_applies_to
+# ------------------------------------------------------------------------------
+def test_merge_same_content(kb):
+    # 두 매뉴얼에 같은 표 → 먼저 나온 KB 를 남기고 적용 모델·출처를 합친다
+    rows = [["Belt slips", "Belt too loose", "Tension the belt"]]
+    hytrol = kb.to_troubleshooting_kb(rows, "hytrol_138acc", 22, 1, "T")[0]
+    preco = kb.to_troubleshooting_kb([["Belt  slips", "Belt too\nloose", "Tension the belt"]],  # 공백만 다름
+                                     "preco_l_series", 57, 4, "TROUBLESHOOTING")[0]
+    other = kb.to_troubleshooting_kb([["Belt slips", "Belt too loose", "Replace the belt"]],    # 조치가 다름
+                                     "preco_l_series", 57, 5, "T")[0]
+    other["related_kb"] = [preco["kb_id"]]
+    merged = kb.merge_applies_to([hytrol, preco, other])
+    assert [m["kb_id"] for m in merged] == [hytrol["kb_id"], other["kb_id"]]
+    assert merged[0]["applies_to"] == HYTROL_MODELS + ["L400", "L500", "L650"]
+    assert [s["doc_id"] for s in merged[0]["sources"]] == ["hytrol_138acc", "preco_l_series"]
+    assert merged[1]["related_kb"] == [hytrol["kb_id"]]          # 사라진 KB → 남은 KB 로
+    assert hytrol["applies_to"] == HYTROL_MODELS                 # 입력은 그대로
+
+
+def test_merge_all_models_wins(kb):
+    rows = [["Belt slips.", "Pulley lagging worn", ["replace pulley lagging."]]]
+    fenner = kb.to_troubleshooting_kb(rows, "fenner_belt", 27, 1, "T")[0]
+    hytrol = kb.to_troubleshooting_kb(rows, "hytrol_138acc", 22, 1, "T")[0]
+    (merged,) = kb.merge_applies_to([hytrol, fenner])
+    assert merged["applies_to"] == ["*"]                         # "*" 와 모델명은 섞어 쓸 수 없음
+
+
+# ------------------------------------------------------------------------------
 # 저장소의 kb/*.json (scripts/build_kb.py 결과)
 # ------------------------------------------------------------------------------
 KB_FILES = sorted(glob.glob(os.path.join("kb", "*", "*.json")))

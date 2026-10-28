@@ -36,9 +36,10 @@ from collections import Counter
 
 import openai
 import pymupdf
+from pydantic import TypeAdapter, ValidationError
 
-from chatbot.core.schemas import (ALL_MODELS, KbCause, MaintenanceKB, Page, Section, SourceRef, StrictModel,
-                                  TroubleshootingKB)
+from chatbot.core.schemas import (ALL_MODELS, KbCause, KbEntry, MaintenanceKB, Page, Section, SourceRef,
+                                  StrictModel, TroubleshootingKB)
 from chatbot.rag.glossary import Glossary
 from chatbot.rag.prompts import FIGURE_DESCRIBE, PROMPT_VERSION, TABLE_TO_MARKDOWN
 
@@ -782,6 +783,7 @@ class KbBuilder:
                       re.compile(r"CAUSE", re.I),
                       re.compile(r"SOLUTION|REMEDY|ACTION|CORRECTIVE", re.I))
     CHECK_MARKS = {"X", "x", "✓", "✔", "●"}  # 점검표에서 "이 주기에 한다" 표시
+    KB_ADAPTER = TypeAdapter(KbEntry)        # dict → TroubleshootingKB / MaintenanceKB ("type" 으로 고름)
 
     def __init__(self, models_path: str = "data/models.csv"):
         """
@@ -910,6 +912,11 @@ class KbBuilder:
                     new = self.to_maintenance_kb(checklist, section.doc_id, section.page, n, ref)
             except ValueError as e:  # pydantic ValidationError 도 ValueError 의 한 종류
                 print(f"[KbBuilder] KB 변환 건너뜀 ({section.doc_id} p{section.page} {ref}): {e}")
+                continue
+            # 표 글자와 대조해서 하나라도 원문과 다르면 그 표는 KB로 쓰지 않는다 (사람이 검토하지 않는 자동 변환이라)
+            problems = [p for item in new for p in self.validate_kb(item, section.text)[1]]
+            if problems:
+                print(f"[KbBuilder] KB 검사 실패로 건너뜀 ({section.doc_id} p{section.page} {ref}): {problems[:3]}")
                 continue
             table_no[section.doc_id] = n
             kbs += new
@@ -1068,14 +1075,108 @@ class KbBuilder:
         """
         같은 표가 여러 모델에 반복되면 1건으로 합치고 applies_to에 모델 목록 기록
 
-        Returns: list[dict]
+        받는 것:
+          kbs : KB 목록 (여러 매뉴얼 것이 섞여 있어도 됨)
+        같은 KB = id·적용 모델·출처·그림·관련 KB 를 뺀 내용이 공백 차이 말고 글자까지 같은 KB.
+          비슷한 것까지 합치면 원인·조치가 조금 다른 KB가 섞여 틀린 조치를 안내할 수 있어서 완전히 같을 때만 합친다.
+        합치는 방법:
+          - 먼저 나온 KB 를 남긴다 (kb_id·cause_id 가 바뀌지 않게)
+          - applies_to · sources · figures · related_kb 는 합집합. applies_to 에 "*" 가 있으면 ["*"]
+          - 사라진 KB 를 가리키던 related_kb 는 남은 KB 로 바꾼다
+        Returns: list[dict]  (입력 순서 유지, 입력 dict 는 바꾸지 않음)
         """
-        raise NotImplementedError("KbBuilder.merge_applies_to")
+        kept: dict[str, dict] = {}   # {내용 열쇠: 남길 KB}
+        renamed = {}                 # {사라진 kb_id: 남은 kb_id}
+        for kb in kbs:
+            key = self._content_key(kb)
+            if key not in kept:
+                kept[key] = json.loads(json.dumps(kb))  # 깊은 복사 (호출한 쪽 dict 를 건드리지 않게)
+                continue
+            base = kept[key]
+            renamed[kb["kb_id"]] = base["kb_id"]
+            for field in ("applies_to", "sources", "figures", "related_kb"):
+                base[field] = self._union(base.get(field, []), kb.get(field, []))
+            if ALL_MODELS in base["applies_to"]:
+                base["applies_to"] = [ALL_MODELS]  # "*" 와 모델명을 섞어 쓰면 스키마 오류
+        merged = list(kept.values())
+        for kb in merged:
+            related = [renamed.get(r, r) for r in kb.get("related_kb", [])]
+            kb["related_kb"] = self._union([], [r for r in related if r != kb["kb_id"]])
+        return merged
+
+    def _content_key(self, kb):
+        """같은 KB 인지 비교할 열쇠: id·적용 모델·출처·그림·관련 KB 를 빼고 공백만 맞춘 내용"""
+        content = {k: v for k, v in kb.items()
+                   if k not in ("kb_id", "applies_to", "sources", "figures", "related_kb")}
+        if "causes" in content:  # cause_id 는 kb_id 가 들어 있어 KB 마다 다르므로 뺀다
+            content["causes"] = [{k: v for k, v in c.items() if k != "cause_id"} for c in content["causes"]]
+
+        def squash(v):  # 문자열 안의 줄바꿈·겹친 공백만 맞춘다
+            if isinstance(v, str):
+                return re.sub(r"\s+", " ", v).strip()
+            if isinstance(v, list):
+                return [squash(x) for x in v]
+            if isinstance(v, dict):
+                return {k: squash(x) for k, x in v.items()}
+            return v
+        return json.dumps(squash(content), ensure_ascii=False, sort_keys=True)
+
+    def _union(self, a, b):
+        """순서를 지키는 합집합 (dict 원소도 됨)"""
+        result = list(a)
+        for item in b:
+            if item not in result:
+                result.append(item)
+        return result
 
     def validate_kb(self, kb: dict, source_text: str):
         """
         필수 항목, id 중복, 인용문이 원문의 부분 문자열인지 검사
 
-        Returns: bool, list[str]
+        받는 것:
+          kb          : KB 1건
+          source_text : 그 KB 출처 쪽의 원문 글자 (출처가 여러 쪽이면 이어 붙인 것)
+        검사:
+          1) 스키마 (KbEntry: 필수 항목, kb_id 형식, cause_id 순번 = KB 안에서 원인 id 중복 없음)
+          2) 원문 대조: 증상·원인·조치·작업·주기 보충·판정 기준·보충 정보가 원문에 글자 그대로 있는지
+          3) applies_to 가 models.csv 의 모델명 또는 "*" 인지
+        kb_id 중복은 KB 1건만 봐서는 알 수 없으므로 _validate_all(KB 목록)이 검사한다.
+        Returns: bool, list[str]  (통과 여부, 문제 목록)
         """
-        raise NotImplementedError("KbBuilder.validate_kb")
+        try:
+            item = self.KB_ADAPTER.validate_python(kb)
+        except ValidationError as e:
+            # 스키마가 틀리면 필드를 믿을 수 없으므로 원문 대조까지 가지 않는다
+            return False, [f"{kb.get('kb_id', '?')}: 스키마 - {err['msg']} ({'.'.join(map(str, err['loc']))})"
+                           for err in e.errors()]
+        errors = []
+        text = self._normalize(source_text)
+        for quote in self._quotes(item):
+            if self._normalize(quote) not in text:
+                errors.append(f"{item.kb_id}: 원문에 없는 문장 - {quote}")
+        known = {name for names in self.doc_models.values() for name in names} | {ALL_MODELS}
+        errors += [f"{item.kb_id}: models.csv 에 없는 모델 - {m}" for m in item.applies_to if m not in known]
+        return not errors, errors
+
+    def _quotes(self, item):
+        """원문과 대조할 문장들.
+        "MOTOR: Check Noise" 같은 작업, "Note: Replace at 3 mm wear" 같은 보충 정보는
+        두 칸(부품·작업, 칸 이름·값)을 ": " 로 이은 것이라 나눠서 대조한다."""
+        if item.type == "troubleshooting":
+            return [item.symptom] + [q for c in item.causes for q in (c.cause, *c.actions)]
+        quotes = item.task.split(": ") + [part for d in item.details for part in d.split(": ")]
+        return quotes + [q for q in (item.interval_note, item.criteria) if q]
+
+    def _normalize(self, text):
+        """줄바꿈·공백 차이와 줄 끝 하이픈("fre-\\nquently")만 맞춘다. 글자는 바꾸지 않는다."""
+        text = re.sub(r"-\n(?=[a-z])", "", text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _validate_all(self, kbs):
+        """KB 목록 전체 검사: kb_id 중복, related_kb 가 실제로 있는 KB 를 가리키는지. 문제 목록을 돌려준다."""
+        counts = Counter(kb.get("kb_id") for kb in kbs)
+        errors = [f"kb_id 중복 - {kb_id} ({n}건)" for kb_id, n in counts.items() if n > 1]
+        for kb in kbs:
+            errors += [f"{kb['kb_id']}: related_kb 가 없는 KB 를 가리킴 - {rel}"
+                       for rel in kb.get("related_kb", []) if rel not in counts]
+        return errors
