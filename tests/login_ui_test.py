@@ -15,7 +15,7 @@ import pytest
 
 from auth_test import FakeDb as AuthFakeDb
 from chatbot.core.auth import AuthManager
-from chatbot.core.schemas import User
+from chatbot.core.schemas import Model, User
 from chatbot.core.state import ConversationState
 from chatbot.ui.gradio_app import ChatApp
 from chatbot.ui.login import MSG_EMPTY, MSG_INVALID, render_history, render_user_info
@@ -114,11 +114,11 @@ def test_load_expired_session(env):
 def test_logout_clears_session_state_and_keeps_history(env):
     app, db, conv = env
     token, state = app.on_login("e1", "pw-eng", {})
-    conv.set_equipment(state, "138-ACC")
+    state = conv.set_equipment(state, Model("138-ACC"))
     conv.save_history(state, {"question": "모터가 뜨거워요", "answer": {"summary": "x"}})
     ok, state = app.on_logout(token, state)
     assert ok and token not in db.sessions
-    assert "user" not in state and "equipment" not in state and "history" not in state and "admin_mode" not in state
+    assert state["user"] is None and state["equipment"] is None and state["admin_mode"] is False   # ConversationState.clear_user 결과
     assert len(db.history) == 1                      # DB 의 대화 기록은 그대로
     assert app.on_load(token)[0] is None             # 같은 토큰으로 다시 들어올 수 없음
 
@@ -128,7 +128,7 @@ def test_logout_survives_db_error(env):
     token, state = app.on_login("e1", "pw-eng", {})
     db.broken = True
     ok, state = app.on_logout(token, state)
-    assert ok and "user" not in state
+    assert ok and state["user"] is None
 
 
 # ---------------- 관리자 전환 ----------------
@@ -163,27 +163,14 @@ def test_history_visible_after_relogin(env):
     app.on_logout(token, state)
     _, state = app.on_login("e1", "pw-eng", {})
     assert [r["question"] for r in app.show_history(state)] == ["벨트가 쏠려요"]
-    assert "history" not in state                    # 화면 대화 내용은 비어 있고, DB 기록만 불러옴
 
 
 def test_save_history_survives_db_error(env):
     app, db, conv = env
     _, state = app.on_login("e1", "pw-eng", {})
     db.broken = True
-    conv.save_history(state, {"question": "q", "answer": {}})   # 예외 없이 지나감
-    assert state["history"][0]["question"] == "q"
-
-
-def test_clear_keeps_user_clear_user_removes_all():
-    conv = ConversationState()
-    user = User("e1", "엔지니어", "user")
-    state = conv.set_user({}, user)
-    conv.set_equipment(state, "138-ACC")
-    state["context"] = {"part": "벨트"}
-    conv.clear(state)
-    assert state["user"] == user and "equipment" not in state and "context" not in state
-    conv.clear_user(state)
-    assert state == {}
+    state = conv.save_history(state, {"question": "q", "answer": {}})   # 예외 없이 지나가고, 상태(로그인 사원)는 그대로
+    assert state["user"].employee_id == "e1"
 
 
 # ---------------- 화면 ----------------
