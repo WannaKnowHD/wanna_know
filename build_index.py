@@ -14,7 +14,12 @@ from chatbot.core.schemas import Chunk, KbEntry, Section
 from chatbot.rag import index_chunking, index_storage
 from chatbot.rag.document_processor import KbBuilder, PdfExtractor
 from chatbot.rag.glossary import Glossary
-from chatbot.rag.index_cache import document_cache_key, write_json_atomic
+from chatbot.rag.index_cache import (
+    document_cache_key,
+    load_or_build_kbs,
+    load_or_extract_sections,
+    write_json_atomic,
+)
 from chatbot.rag.index_items import (
     chunk_to_item,
     format_maintenance_kb,
@@ -180,6 +185,42 @@ class IndexBuilder:
         kbs = builder.from_sections(raw_sections)
 
         return builder.merge_applies_to(kbs)
+
+    def _process_pdf(
+        self,
+        pdf_path: Path,
+        cache_root: Path,
+        vision_model: str,
+        *,
+        is_initial: bool,
+    ) -> list[dict]:
+        """PDF 한 건을 캐시·청킹·KB 변환하여 검색 항목으로 만든다."""
+        cache_key = self._document_cache_key(
+            pdf_path,
+            vision_model,
+        )
+
+        raw_sections, search_sections = load_or_extract_sections(
+            pdf_path=pdf_path,
+            cache_root=cache_root,
+            cache_key=cache_key,
+            extract_sections=self._extract_pdf_sections,
+        )
+
+        chunks = self.chunk_sections(search_sections)
+
+        items: list[Chunk | dict] = list(chunks)
+
+        if not is_initial:
+            kbs = load_or_build_kbs(
+                raw_sections=raw_sections,
+                cache_root=cache_root,
+                cache_key=cache_key,
+                build_kbs=self._build_added_pdf_kbs,
+            )
+            items.extend(kbs)
+
+        return self._prepare_items(items)
 
     def _load_initial_kbs(self, kb_dir: Path) -> list[dict]:
         """기존 초기 KB JSON을 읽고 공통 스키마로 검사한다."""
