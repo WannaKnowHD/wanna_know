@@ -238,6 +238,54 @@ class IndexBuilder:
             causes="\n".join(causes),
         )
 
+    def _format_maintenance_kb(self, kb: dict) -> str:
+        """기존 템플릿으로 점검 KB의 검색 본문을 만든다."""
+        applies_to = kb["applies_to"]
+        model_text = (
+            prompts.ALL_MODELS_TEXT
+            if applies_to == [ALL_MODELS]
+            else ", ".join(applies_to)
+        )
+
+        interval_parts = [kb["interval"]]
+
+        if kb.get("interval_hours") is not None:
+            hours = str(kb["interval_hours"])
+
+            if kb.get("interval_hours_max") is not None:
+                hours += f"-{kb['interval_hours_max']}"
+
+            interval_parts.append(f"{hours} hours")
+
+        if kb.get("first_interval_hours") is not None:
+            interval_parts.append(f"first: {kb['first_interval_hours']} hours")
+
+        if kb.get("interval_note"):
+            interval_parts.append(kb["interval_note"])
+
+        extra_parts = []
+
+        if kb.get("criteria"):
+            extra_parts.append(
+                prompts.KB_CRITERIA.format(
+                    criteria=kb["criteria"],
+                )
+            )
+
+        if kb.get("details"):
+            extra_parts.append(
+                prompts.KB_DETAILS.format(
+                    details="; ".join(kb["details"]),
+                )
+            )
+
+        return prompts.KB_MAINTENANCE.format(
+            applies_to=model_text,
+            task=kb["task"],
+            interval="; ".join(interval_parts),
+            extra="".join(extra_parts),
+        )
+
     def _kb_to_item(self, kb: dict) -> dict:
         """KB를 검색 코드가 읽는 공통 형식으로 변환한다."""
         kb_type = kb["type"]
@@ -247,25 +295,15 @@ class IndexBuilder:
         elif kb_type == "maintenance":
             text = self._format_maintenance_kb(kb)
         else:
-            raise ValueError(
-                f"지원하지 않는 KB 종류입니다: {kb_type}"
-            )
+            raise ValueError(f"지원하지 않는 KB 종류입니다: {kb_type}")
 
         sources = kb["sources"]
         if not sources:
-            raise ValueError(
-                f"KB에 출처가 없습니다: {kb['kb_id']}"
-            )
+            raise ValueError(f"KB에 출처가 없습니다: {kb['kb_id']}")
 
         source = sources[0]
-        if any(
-            ref["doc_id"] != source["doc_id"]
-            for ref in sources
-        ):
-            raise ValueError(
-                f"KB에 여러 문서의 출처가 섞여 있습니다: "
-                f"{kb['kb_id']}"
-            )
+        if any(ref["doc_id"] != source["doc_id"] for ref in sources):
+            raise ValueError(f"KB에 여러 문서의 출처가 섞여 있습니다: {kb['kb_id']}")
 
         metadata = {
             "doc_id": source["doc_id"],
