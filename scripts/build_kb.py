@@ -8,9 +8,10 @@
      모델이 다시 쓴 글자라 원문과 달라질 수 있는데, KB 문장은 원문 그대로여야 하기 때문)
   2) 표 모양이 매뉴얼마다 달라서, 매뉴얼마다 표 찾기·행 정리 함수(hytrol·preco·fenner)가 따로 있다.
      정리한 행을 KbBuilder.to_troubleshooting_kb / to_maintenance_kb 에 넘긴다.
-  3) 저장 전에 모든 KB를 확인한다.
-       - KbEntry 스키마, kb_id 중복
-       - 증상·원인·조치·작업 문장이 원본 PDF 그 쪽에 글자 그대로 있는지
+  3) 같은 매뉴얼 안에서 내용이 완전히 같은 KB 는 1건으로 합친다. (KbBuilder.merge_applies_to)
+     저장 전에 모든 KB를 확인한다. (KbBuilder.validate_kb · _validate_all)
+       - KbEntry 스키마, kb_id 중복, related_kb, applies_to 가 models.csv 모델명인지
+       - 증상·원인·조치·작업·보충 문장이 원본 PDF 그 쪽에 글자 그대로 있는지
   4) kb/troubleshooting/, kb/maintenance/ 의 기존 json 을 지우고 {kb_id}.json 으로 새로 쓴다.
      (표에서 빠진 KB 파일이 남아 검색되지 않게)
 
@@ -33,9 +34,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import pymupdf                                                  # noqa: E402
-from pydantic import TypeAdapter                                # noqa: E402
 
-from chatbot.core.schemas import KbEntry                        # noqa: E402
 from chatbot.rag.document_processor import KbBuilder, PdfExtractor  # noqa: E402
 
 RAW = PROJECT_ROOT / "data" / "raw" / "initial"
@@ -219,34 +218,18 @@ def fenner(ex, kb):
 # ------------------------------------------------------------------------------
 # 확인·저장
 # ------------------------------------------------------------------------------
-def normalize(text):
-    """공백·줄바꿈 차이와 줄 끝 하이픈("fre-\\nquently")만 맞춘다. 글자는 바꾸지 않는다."""
-    text = re.sub(r"-\n(?=[a-z])", "", text)
-    return re.sub(r"\s+", " ", text).strip()
+def page_texts(ex, files):
+    """{(doc_id, 원본 쪽): 그 쪽 글자} — validate_kb 의 원문 대조용.
 
-
-def check_quotes(ex, kbs, files):
-    """KB 문장이 원본 PDF 출처 쪽에 글자 그대로 있는지 확인. 없는 문장 목록을 돌려준다.
-
-    extract_text 결과가 아니라 PyMuPDF 로 쪽 글자를 따로 읽어 비교한다 (추출 단계의 실수도 잡으려고).
+    extract_text 결과가 아니라 PyMuPDF 로 쪽 글자를 따로 읽는다 (추출 단계의 실수도 잡으려고).
     ex 는 extract_text 를 이미 실행한 PdfExtractor (그때 읽어 둔 page_map 으로 원본 쪽을 맞춘다).
     """
-    page_text = {}
+    texts = {}
     for doc_id, file_name in files.items():
         with pymupdf.open(str(RAW / file_name)) as pdf:
             for i, page in enumerate(pdf, start=1):
-                page_text[(doc_id, ex.to_original_page(doc_id, i))] = normalize(page.get_text())
-
-    missing = []
-    for kb in kbs:
-        text = " ".join(page_text[(s["doc_id"], s["page"])] for s in kb["sources"])
-        if kb["type"] == "troubleshooting":
-            quotes = [kb["symptom"]] + [q for c in kb["causes"] for q in [c["cause"], *c["actions"]]]
-        else:
-            # Hytrol "MOTOR: Check Noise" 는 부품·작업 두 칸을 이은 것이라 나눠서 확인
-            quotes = kb["task"].split(": ") + ([kb["interval_note"]] if kb.get("interval_note") else [])
-        missing += [f"{kb['kb_id']}: {q}" for q in quotes if normalize(q) not in text]
-    return missing
+                texts[(doc_id, ex.to_original_page(doc_id, i))] = page.get_text()
+    return texts
 
 
 def save(kbs):
@@ -263,23 +246,21 @@ def save(kbs):
 def main():
     ex = PdfExtractor(str(PROJECT_ROOT / "data" / "sources.csv"))
     kb = KbBuilder(str(PROJECT_ROOT / "data" / "models.csv"))
-    kbs = hytrol(ex, kb) + preco(ex, kb) + fenner(ex, kb)
+    # 같은 매뉴얼 안에서 내용이 완전히 같은 KB(모델마다 반복된 표)는 1건으로 합친다. 지금 3종에는 없어서 82건 그대로
+    kbs = kb.merge_applies_to(hytrol(ex, kb) + preco(ex, kb) + fenner(ex, kb))
 
-    adapter = TypeAdapter(KbEntry)
-    for item in kbs:
-        adapter.validate_python(item)  # Fenner 처럼 출처를 덧붙인 KB도 다시 스키마 확인
-    ids = [item["kb_id"] for item in kbs]
-    duplicated = {i for i in ids if ids.count(i) > 1}
-    if duplicated:
-        sys.exit(f"[실패] kb_id 중복: {sorted(duplicated)}")
-
-    missing = check_quotes(ex, kbs, {
+    # KB마다 검사(스키마·원문 대조·적용 모델) + 목록 전체 검사(kb_id 중복·related_kb)
+    texts = page_texts(ex, {
         "hytrol_138acc": "hytrol_138acc_p1-27.pdf",
         "preco_l_series": "preco_l_series_p6-29_54-60.pdf",
         "fenner_belt": "Fenner-Dunlop-Conveyor-Belt-Manual-21-39.pdf",
     })
-    if missing:
-        sys.exit("[실패] 원문에 없는 문장:\n  " + "\n  ".join(missing))
+    errors = kb._validate_all(kbs)
+    for item in kbs:
+        source = "\n".join(texts[(s["doc_id"], s["page"])] for s in item["sources"])
+        errors += kb.validate_kb(item, source)[1]
+    if errors:
+        sys.exit("[실패] KB 검사:\n  " + "\n  ".join(errors))
 
     save(kbs)
     for kind in ("troubleshooting", "maintenance"):
