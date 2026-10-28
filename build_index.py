@@ -1,14 +1,80 @@
 """실행: python build_index.py → KB·색인 전체 재생성"""
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import csv
+from pathlib import Path
 
-if TYPE_CHECKING:
-    from chatbot.core.schemas import Chunk, Section
+import tiktoken
+
+from chatbot.core.schemas import Chunk, Section
+from chatbot.rag.glossary import Glossary
+
+CHUNK_TARGET_TOKENS = 600
+CHUNK_MAX_TOKENS = 800
+CHUNK_OVERLAP_TOKENS = 80
 
 
 class IndexBuilder:
     """IndexBuilder (기능명세서 기준 뼈대)."""
+
+    def __init__(self, embedding_model: str):
+        self.tokenizer = tiktoken.encoding_for_model(embedding_model)
+        self.root_dir = Path(__file__).resolve().parent
+        self.document_names = {}
+        self.document_models = {}
+
+        sources_path = self.root_dir / "data" / "sources.csv"
+        with sources_path.open(encoding="utf-8-sig", newline="") as file:
+            for row in csv.DictReader(file):
+                self.document_names[row["doc_id"]] = row["original_file"] or row["file"]
+
+        models_path = self.root_dir / "data" / "models.csv"
+        models = Glossary().load_models(str(models_path))
+
+        for model in models.values():
+            for doc_id in model.doc_ids:
+                names = self.document_models.setdefault(doc_id, [])
+                if model.model_name not in names:
+                    names.append(model.model_name)
+
+    def _make_prefix(self, section: Section) -> str:
+        # 청크 앞에 붙일 문서명, 연결 모델명 생성
+        document_name = self.document_names.get(section.doc_id, section.doc_id)
+        models = self.document_models.get(section.doc_id, [])
+        model_text = ",".join(models) if models else "미지정"
+
+        return f"Document: {document_name}\nModels: {model_text}\n\n"
+
+    def _make_chunk(
+        self,
+        section: Section,       # PDF에서 추출한 원래 섹션
+        text: str,              # 접두부와 분할된 본문을 합친 최종 검색용 글
+        section_index: int,     # 입력 목록에서 섹션의 순번
+        part_index: int,        # 해당 섹션에서 만들어진 청크의 순번
+    ) -> Chunk:
+        # 섹션의 출처 정보를 유지하면서 청크를 생성
+        models = self.document_models.get(section.doc_id, [])
+        equipment_model = models[0] if len(models) == 1 else None
+
+        chunk_id = f"{section.doc_id}:p{section.page}:s{section_index}:c{part_index}"
+
+        return Chunk(
+            chunk_id=chunk_id,
+            doc_id=section.doc_id,
+            text=text,
+            chunk_type=section.type,
+            section_path=section.section_path,
+            page=section.page,
+            equipment_model=equipment_model,
+            image_path=section.image_path,
+        )
+
+    def _count_tokens(self, text: str) -> int:
+        # 문자열의 토큰 수를 계산
+        return len(
+            self.tokenizer.encode(text, disallowed_special=())
+        )
 
     def chunk_sections(self, sections: list[Section]):
         """
