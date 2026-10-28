@@ -6,8 +6,8 @@
 [이 파일이 하는 일]  기능명세서 D-01
   1) extract_text   : PDF 에서 페이지별 영어 본문 + 표·그림 위치(bbox)를 뽑는다
   2) split_sections : 섹션 제목(큰 글씨)을 기준으로 본문을 나누고, 표·그림도 섹션으로 넣는다
-
-  (crop_regions 는 다음 작업, KbBuilder 는 김민재 담당)
+  3) crop_regions   : 표·그림 영역을 잘라 비전 모델로 Markdown·영어 설명을 만든다 (data/interim 저장)
+  (KbBuilder 는 김민재 담당)
 
 [처리 규칙]
   - 영어·스페인어 2단 매뉴얼(Hytrol)은 스페인어 줄을 빼고 영어만 남긴다
@@ -21,19 +21,24 @@
     from chatbot.rag.document_processor import PdfExtractor
     ex = PdfExtractor("data/sources.csv")
     pages = ex.extract_text("data/raw/initial/hytrol_138acc_p1-27.pdf")
+    for page in pages:                                       # 표·그림 비전 파싱 (선택)
+        page.regions = ex.crop_regions(pdf_path, page.page_no, page.regions)
     sections = ex.split_sections(pages)
 ==============================================================================
 """
 from __future__ import annotations
 
 import csv
+import json
 import os
 import re
 from collections import Counter
 
+import openai
 import pymupdf
 
-from chatbot.core.schemas import Page, Section
+from chatbot.core.schemas import Page, Section, StrictModel
+from chatbot.rag.prompts import FIGURE_DESCRIBE, PROMPT_VERSION, TABLE_TO_MARKDOWN
 
 # 스페인어 줄인지 판단할 때 쓰는 말 (영어에는 거의 안 나오는 짧은 단어)
 SPANISH_WORDS = {"de", "la", "el", "los", "las", "del", "para", "con", "una", "por",
@@ -52,17 +57,32 @@ LABEL_NEAR = 15         # 그림에서 15pt 안에 있는 이름표 덩어리는
 NEAR = 8                # 8pt 안으로 붙어 있는 조각은 같은 그림으로 합친다
 CELL_GAP = 12           # 테두리만 있는 표에서 단어 사이가 12pt 넘게 벌어지면 다른 칸으로 본다
 REPEAT_PAGES = 3        # 같은 자리의 그림 조각이 3쪽 이상 반복되면 꾸밈(로고·바닥 줄)으로 보고 뺀다
+CROP_DPI = 200          # 표·그림을 자를 때 해상도 (작은 글자도 비전 모델이 읽도록)
+CROP_PAD = 4            # 자를 때 상자 바깥으로 4pt 여유
 
+class TableResult(StrictModel):
+    """비전 모델이 표를 읽은 결과"""
+    markdown: str
+    summary: str
+
+
+class FigureResult(StrictModel):
+    """비전 모델이 그림을 설명한 결과"""
+    description: str
 
 class PdfExtractor:
     """PDF 에서 본문·표·그림 위치를 뽑고 섹션으로 나눈다."""
 
-    def __init__(self, sources_path="data/sources.csv"):
+    def __init__(self, sources_path="data/sources.csv",llm=None, interim_dir="data/interim"):
         """
         받는 것:
           sources_path : sources.csv 경로. 파일 이름으로 doc_id 와 page_map 을 찾는다.
                          목록에 없는 PDF(관리자가 추가한 PDF)는 파일 이름이 doc_id, 쪽은 그대로.
+            llm          : LLMClient (crop_regions 에서 vision 호출). 없으면 이미지만 자르고 글자는 그대로
+          interim_dir  : 잘라 낸 이미지와 비전 결과를 저장할 폴더 (Settings.interim_dir)
         """
+        self.llm = llm
+        self.interim_dir = str(interim_dir)
         self.sources = {}      # {파일 이름: {"doc_id": ..., "page_map": ...}}
         if sources_path and os.path.exists(sources_path):
             with open(sources_path, encoding="utf-8-sig") as f:
@@ -84,11 +104,7 @@ class PdfExtractor:
           Page.regions : [{"type": "table" 또는 "figure", "bbox": (x0, y0, x1, y1),
                            "text": 영역 안 글자, "image_path": None}]
         """
-        file_name = os.path.basename(pdf_path)
-        source = self.sources.get(file_name, {})
-        doc_id = source.get("doc_id") or os.path.splitext(file_name)[0]
-        self.page_maps[doc_id] = source.get("page_map", "")
-
+        doc_id = self.doc_id_of(pdf_path)
         doc = pymupdf.open(pdf_path)
         if pages is None:
             pages = range(1, doc.page_count + 1)
@@ -407,9 +423,84 @@ class PdfExtractor:
         같은 영역은 캐시를 써서 다시 호출하지 않음. regions는 영역마다 종류(table/figure)와 bbox,
         결과는 영역마다 종류·변환 결과 텍스트·이미지 경로
 
-        Returns: list[dict]
+        받는 것:
+          pdf_path : PDF 경로
+          page     : PDF 파일 쪽 (Page.page_no)
+          regions  : Page.regions
+        돌려주는 것: regions 와 같은 순서의 새 목록 (text · image_path 가 채워짐)
+          저장 : data/interim/{doc_id}/p{쪽}_{번호}_{table|figure}.png  (잘라 낸 이미지)
+                 data/interim/{doc_id}/p{쪽}_{번호}_{table|figure}.json (비전 결과 = 캐시)
+          비전 호출이 실패하거나 llm 이 없으면 text 는 원래 글자(PDF 에서 읽은 것)를 그대로 둔다.
         """
-        raise NotImplementedError("PdfExtractor.crop_regions")
+        doc_id = self.doc_id_of(pdf_path)
+        folder = os.path.join(self.interim_dir, doc_id)
+        os.makedirs(folder, exist_ok=True)
+
+        doc = pymupdf.open(pdf_path)
+        pdf_page = doc[page - 1]
+        results = []
+        for i, region in enumerate(regions, start=1):
+            name = f"p{page}_{i}_{region['type']}"
+            image_path = os.path.join(folder, name + ".png")
+            cache_path = os.path.join(folder, name + ".json")
+
+            # (1) 캐시 : 같은 상자 · 같은 프롬프트 버전이면 저장된 결과를 쓴다
+            cached = self.load_crop_cache(cache_path, region)
+            if cached is not None:
+                results.append({**region, "text": cached["text"], "image_path": image_path})
+                continue
+
+            # (2) 영역을 이미지로 잘라 저장
+            box = pymupdf.Rect(region["bbox"]) + (-CROP_PAD, -CROP_PAD, CROP_PAD, CROP_PAD)
+            png = pdf_page.get_pixmap(dpi=CROP_DPI, clip=box & pdf_page.rect).tobytes("png")
+            with open(image_path, "wb") as f:
+                f.write(png)
+
+            # (3) 비전 모델로 표 → Markdown, 그림 → 영어 설명
+            text = self.read_region(png, region)
+            results.append({**region, "text": text, "image_path": image_path})
+
+            # (4) 비전 결과가 있을 때만 캐시로 저장 (실패하면 다음 실행에 다시 시도)
+            if text != region.get("text", ""):
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump({"bbox": list(region["bbox"]), "prompt_version": PROMPT_VERSION,
+                               "text": text}, f, ensure_ascii=False, indent=2)
+        doc.close()
+        return results
+
+    def read_region(self, png, region):
+        """잘라 낸 이미지를 비전 모델로 읽는다. 실패하면 원래 글자를 돌려준다."""
+        old_text = region.get("text", "")
+        if self.llm is None:
+            return old_text
+        try:
+            if region["type"] == "table":
+                result = self.llm.vision(png, TABLE_TO_MARKDOWN, TableResult)["parsed"]
+                return f"{result['markdown']}\nSummary: {result['summary']}" if result else old_text
+            result = self.llm.vision(png, FIGURE_DESCRIBE, FigureResult)["parsed"]
+            return result["description"] if result else old_text
+        except (openai.OpenAIError, ValueError, OSError) as e:   # 한 영역이 실패해도 나머지는 계속
+            print(f"[document_processor] 비전 실패 ({region['type']} {region['bbox']}): {e}")
+            return old_text
+
+    def load_crop_cache(self, cache_path, region):
+        """캐시 파일이 있고 상자 위치·프롬프트 버전이 같으면 그 결과를 돌려준다."""
+        if not os.path.exists(cache_path):
+            return None
+        with open(cache_path, encoding="utf-8") as f:
+            cached = json.load(f)
+        same_box = all(abs(a - b) < 1 for a, b in zip(cached["bbox"], region["bbox"]))
+        if same_box and cached.get("prompt_version") == PROMPT_VERSION:
+            return cached
+        return None
+
+    def doc_id_of(self, pdf_path):
+        """파일 이름으로 sources.csv 에서 doc_id 를 찾는다. (없으면 파일 이름) page_map 도 같이 기억해 둔다."""
+        file_name = os.path.basename(pdf_path)
+        source = self.sources.get(file_name, {})
+        doc_id = source.get("doc_id") or os.path.splitext(file_name)[0]
+        self.page_maps[doc_id] = source.get("page_map", "")
+        return doc_id
 
     # ==========================================================================
     # 2. split_sections : list[Page] → list[Section]
