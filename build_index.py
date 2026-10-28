@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import csv
 import json
 from pathlib import Path
@@ -325,6 +326,30 @@ class IndexBuilder:
     def build_bm25_index(self, items: list[Chunk | dict]):
         """기존 호출 형식을 유지하며 저장 모듈에 위임한다."""
         return index_storage.build_bm25_index(self, items)
+
+    def _build_indexes_at(
+        self,
+        items: list[Chunk | dict],
+        chroma_dir: Path,
+        bm25_path: Path,
+    ) -> None:
+        """지정한 새 위치에 두 색인을 만들고 일치 여부를 검사한다."""
+        prepared = self._prepare_items(items)
+
+        if not prepared:
+            raise ValueError("색인으로 만들 검색 항목이 없습니다.")
+
+        staged_builder = copy.copy(self)
+        staged_builder.chroma_dir = chroma_dir
+        staged_builder.bm25_path = bm25_path
+
+        staged_builder.build_vector_index(prepared)
+        staged_builder.build_bm25_index(prepared)
+
+        index_storage.validate_indexes(
+            chroma_dir,
+            bm25_path,
+        )
 
     def main(self):
         """
