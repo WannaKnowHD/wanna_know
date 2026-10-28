@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import csv
 import json
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -30,6 +31,7 @@ from chatbot.rag.index_items import (
 )
 
 if TYPE_CHECKING:
+    from chatbot.core.config import Settings
     from chatbot.rag.llm import LLMClient
 
 CHUNK_TARGET_TOKENS = 600
@@ -48,6 +50,7 @@ class IndexBuilder:
         chroma_dir: str | Path | None = None,
         llm: LLMClient | None = None,
         common_doc_ids: set[str] | None = None,
+        settings: Settings | None = None,
     ):
         self.tokenizer = tiktoken.encoding_for_model(embedding_model)
         self.root_dir = Path(__file__).resolve().parent
@@ -57,6 +60,8 @@ class IndexBuilder:
         self.document_names = {}
         self.document_models = {}
         self.common_doc_ids = set(common_doc_ids or ())
+        self.settings = settings
+        self.embedding_model = embedding_model
 
         sources_path = self.root_dir / "data" / "sources.csv"
         with sources_path.open(encoding="utf-8-sig", newline="") as file:
@@ -353,14 +358,105 @@ class IndexBuilder:
 
     def main(self):
         """
-        data/raw/의 모든 PDF로 색인을 처음부터 다시 만듦. 새 PDF만 추출·KB 변환하고 기존 문서는 캐시 재사용 → 청킹 →
-        벡터·BM25 색인 생성. 새 색인은 임시 위치에 만든 뒤 완성되면 교체. 개발자 실행(python build_index.py)과 관리자 PDF
-        추가에서 같이 사용. 재생성이 이미 돌고 있으면 끝날 때까지 기다림(동시에 두 번 실행하지 않음). 실패하면 기존 색인을 그대로 둠
+        data/raw/의 모든 PDF로 색인을 처음부터 다시 만듦.
+        새 PDF만 추출·KB 변환하고 기존 문서는 캐시 재사용 → 청킹 →
+        벡터·BM25 색인 생성. 새 색인은 임시 위치에 만든 뒤 완성되면 교체.
+        개발자 실행(python build_index.py)과 관리자 PDF 추가에서 같이 사용.
+        재생성이 이미 돌고 있으면 끝날 때까지 기다림(동시에 두 번 실행하지 않음).
+        실패하면 기존 색인을 그대로 둠
 
         Returns: None
+        챗봇이 중지된 상태에서 전체 색인을 재생성한다.
         """
-        raise NotImplementedError("IndexBuilder.main")
+        from chatbot.core.config import Settings
+        from chatbot.rag.llm import LLMClient
+
+        settings = self.settings
+        if settings is None:
+            settings = Settings.load()
+
+        if self.embedding_model != settings.embedding_model:
+            raise ValueError("청킹과 색인 생성의 임베딩 모델 설정이 다릅니다.")
+
+        target_dir = settings.chroma_dir
+        if target_dir.is_symlink():
+            raise ValueError("색인 경로에는 심볼릭 링크를 사용하지 않습니다.")
+
+        target_dir = target_dir.resolve()
+        bm25_path = settings.bm25_path.resolve()
+
+        if target_dir == self.root_dir or target_dir == target_dir.parent:
+            raise ValueError("색인 저장 경로를 확인하세요.")
+
+        try:
+            bm25_relative = bm25_path.relative_to(target_dir)
+        except ValueError as error:
+            raise ValueError(
+                "폴더 단위 교체를 위해 BM25 파일은 Chroma 폴더 내부에 있어야 합니다."
+            ) from error
+
+        if bm25_relative == Path("."):
+            raise ValueError("BM25 경로는 파일 경로여야 합니다.")
+
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+
+        lock_path = target_dir.with_name(f".{target_dir.name}.rebuild.lock")
+        cache_root = settings.interim_dir / "index_cache"
+
+        with index_storage.rebuild_lock(lock_path):
+            backups = list(target_dir.parent.glob(f".{target_dir.name}.backup-*"))
+            if not target_dir.exists() and backups:
+                raise RuntimeError(
+                    "기존 경로는 없지만 색인 백업이 남아 있습니다. "
+                    "이전 교체가 중단됐는지 확인하고 복구하세요."
+                )
+
+            if self.llm is None:
+                self.llm = LLMClient(settings, cache_path="")
+
+            items = self._collect_items(
+                raw_dir=settings.raw_dir,
+                kb_dir=settings.kb_dir,
+                cache_root=cache_root,
+                vision_model=settings.model_vision,
+            )
+
+            with tempfile.TemporaryDirectory(
+                dir=target_dir.parent,
+                prefix=f".{target_dir.name}.stage-",
+            ) as temporary_dir:
+                staged_dir = Path(temporary_dir)
+
+                index_storage.run_staged_index_worker(
+                    items=items,
+                    settings=settings,
+                    chroma_dir=staged_dir,
+                    bm25_path=staged_dir / bm25_relative,
+                )
+
+                backup_dir = index_storage.replace_staged_indexes(
+                    staged_dir,
+                    target_dir,
+                )
+
+            print(f"색인 재생성 완료: {len(items)}개 항목")
+            print(f"Chroma: {target_dir}")
+            print(f"BM25: {bm25_path}")
+
+            if backup_dir is not None:
+                print(f"기존 색인 백업: {backup_dir}")
 
 
 if __name__ == "__main__":
-    IndexBuilder().main()
+    from chatbot.core.config import Settings
+
+    settings = Settings.load()
+
+    builder = IndexBuilder(
+        embedding_model=settings.embedding_model,
+        bm25_path=settings.bm25_path,
+        chroma_dir=settings.chroma_dir,
+        common_doc_ids={"fenner_belt"},
+        settings=settings,
+    )
+    builder.main()
