@@ -12,7 +12,7 @@ from pathlib import Path
 
 from pydantic import TypeAdapter
 
-from chatbot.core.schemas import Section
+from chatbot.core.schemas import KbEntry, Section
 
 
 def write_json_atomic(path: Path, data: dict):
@@ -155,3 +155,52 @@ def load_or_extract_sections(
         )
 
     return raw_sections, search_sections
+
+
+def load_or_build_kbs(
+    raw_sections: list[Section],
+    cache_root: Path,
+    cache_key: str,
+    build_kbs: Callable[[list[Section]], list[dict]],
+) -> list[dict]:
+    """관리자 추가 PDF의 자동 생성 KB를 캐시한다."""
+    cache_path = cache_root.resolve() / cache_key / "auto_kbs.json"
+    adapter = TypeAdapter(list[KbEntry])
+    from_cache = cache_path.is_file()
+
+    if from_cache:
+        with cache_path.open(encoding="utf-8") as file:
+            cached = json.load(file)
+
+        if cached["cache_key"] != cache_key:
+            raise ValueError("자동 KB 캐시 키가 일치하지 않습니다.")
+
+        raw_kbs = cached["kbs"]
+    else:
+        raw_kbs = build_kbs(raw_sections)
+
+    validated = adapter.validate_python(raw_kbs)
+    kbs = [kb.model_dump() for kb in validated]
+
+    seen_ids = set()
+    document_ids = {section.doc_id for section in raw_sections}
+
+    for kb in kbs:
+        if kb["kb_id"] in seen_ids:
+            raise ValueError(f"자동 생성 KB ID가 중복됩니다: {kb['kb_id']}")
+        seen_ids.add(kb["kb_id"])
+
+        source_ids = {source["doc_id"] for source in kb["sources"]}
+        if len(source_ids) != 1 or not source_ids <= document_ids:
+            raise ValueError(f"자동 KB의 출처 문서가 잘못되었습니다: {kb['kb_id']}")
+
+    if not from_cache:
+        write_json_atomic(
+            cache_path,
+            {
+                "cache_key": cache_key,
+                "kbs": kbs,
+            },
+        )
+
+    return kbs
