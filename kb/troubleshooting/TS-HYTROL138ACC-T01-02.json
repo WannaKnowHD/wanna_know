@@ -1,0 +1,45 @@
+{
+  "kb_id": "TS-HYTROL138ACC-T01-02",
+  "applies_to": [
+    "138-ACC",
+    "138-LRC",
+    "138-LRS",
+    "138-LRSS"
+  ],
+  "sources": [
+    {
+      "doc_id": "hytrol_138acc",
+      "page": 22,
+      "ref": "TROUBLE SHOOTING DRIVES"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Drive chain and sprockets wear excessively.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-HYTROL138ACC-T01-02#c1",
+      "cause": "Lack of lubrication on chain causing chain stretch which creates improper chain to sprocket mesh.",
+      "actions": [
+        "Replace chain and sprockets. Provide adequate lubrication. NOTE: If problem reoccurs, a chain take-up may be required."
+      ]
+    },
+    {
+      "cause_id": "TS-HYTROL138ACC-T01-02#c2",
+      "cause": "Sprockets are out of alignment.",
+      "actions": [
+        "Align sprockets. See “Drive Chain Alignment and Tension”."
+      ]
+    },
+    {
+      "cause_id": "TS-HYTROL138ACC-T01-02#c3",
+      "cause": "Loose chain.",
+      "actions": [
+        "Tighten chain."
+      ]
+    }
+  ],
+  "safety": []
+}

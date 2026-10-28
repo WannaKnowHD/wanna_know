@@ -1,0 +1,45 @@
+{
+  "kb_id": "TS-HYTROL138ACC-T01-04",
+  "applies_to": [
+    "138-ACC",
+    "138-LRC",
+    "138-LRS",
+    "138-LRSS"
+  ],
+  "sources": [
+    {
+      "doc_id": "hytrol_138acc",
+      "page": 22,
+      "ref": "TROUBLE SHOOTING DRIVES"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Motor or reducer overheating.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-HYTROL138ACC-T01-04#c1",
+      "cause": "Conveyor is overloaded.",
+      "actions": [
+        "Check capacity of conveyor and reduce load to recommended level."
+      ]
+    },
+    {
+      "cause_id": "TS-HYTROL138ACC-T01-04#c2",
+      "cause": "Low voltage to motor.",
+      "actions": [
+        "Have electrician check and correct as necessary."
+      ]
+    },
+    {
+      "cause_id": "TS-HYTROL138ACC-T01-04#c3",
+      "cause": "Low lubricant level in reducer.",
+      "actions": [
+        "Relubricate per manufacturer’s recommendations. For HYTROL reducer, refer to separate manual."
+      ]
+    }
+  ],
+  "safety": []
+}

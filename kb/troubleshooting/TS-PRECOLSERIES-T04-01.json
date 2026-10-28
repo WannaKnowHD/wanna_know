@@ -1,0 +1,44 @@
+{
+  "kb_id": "TS-PRECOLSERIES-T04-01",
+  "applies_to": [
+    "L400",
+    "L500",
+    "L650"
+  ],
+  "sources": [
+    {
+      "doc_id": "preco_l_series",
+      "page": 57,
+      "ref": "TROUBLESHOOTING"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "The specified capacity has not been reached",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-PRECOLSERIES-T04-01#c1",
+      "cause": "Conveyor is not sufficiently filled",
+      "actions": [
+        "Inspect inlet"
+      ]
+    },
+    {
+      "cause_id": "TS-PRECOLSERIES-T04-01#c2",
+      "cause": "Slow operation of geared motor",
+      "actions": [
+        "Inspect supplied voltage"
+      ]
+    },
+    {
+      "cause_id": "TS-PRECOLSERIES-T04-01#c3",
+      "cause": "Belt backed up with bulk material",
+      "actions": [
+        "Clean the belt"
+      ]
+    }
+  ],
+  "safety": []
+}

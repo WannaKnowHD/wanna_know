@@ -1,0 +1,37 @@
+{
+  "kb_id": "TS-PRECOLSERIES-T04-03",
+  "applies_to": [
+    "L400",
+    "L500",
+    "L650"
+  ],
+  "sources": [
+    {
+      "doc_id": "preco_l_series",
+      "page": 57,
+      "ref": "TROUBLESHOOTING"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Motor is overheating",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-PRECOLSERIES-T04-03#c1",
+      "cause": "Conveyor is overloaded",
+      "actions": [
+        "Remove excessive material from conveyor"
+      ]
+    },
+    {
+      "cause_id": "TS-PRECOLSERIES-T04-03#c2",
+      "cause": "Low voltage to motor",
+      "actions": [
+        "Check voltage and change if necessary"
+      ]
+    }
+  ],
+  "safety": []
+}

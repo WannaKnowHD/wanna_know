@@ -1,0 +1,61 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-04",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 28,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 29,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Belt runs off at head pulley.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-04#c1",
+      "cause": "Pulley lagging worn",
+      "actions": [
+        "replace pulley lagging."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-04#c2",
+      "cause": "Material spillage and build-up",
+      "actions": [
+        "improve loading and transfer conditions",
+        "install cleaning devices",
+        "improve maintenance."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-04#c3",
+      "cause": "Idlers or pulleys out-of square with center line of belt",
+      "actions": [
+        "readjust idlers in affected area."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-04#c4",
+      "cause": "Idler stands not centered on belt",
+      "actions": [
+        "readjust idlers in affected area."
+      ]
+    }
+  ],
+  "safety": []
+}

@@ -1,0 +1,73 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-11",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 28,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 29,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Excessive top cover wear, uniform around belt.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-11#c1",
+      "cause": "Dirty, stuck, or misaligned return rolls",
+      "actions": [
+        "remove accumulations",
+        "install cleaning devices",
+        "use self-cleaning return rolls",
+        "improve maintenance and lubrication."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-11#c2",
+      "cause": "Cover quality too low",
+      "actions": [
+        "replace with belt of heavier cover gauge or higher quality rubber or other elastomer."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-11#c3",
+      "cause": "Material spillage and build-up",
+      "actions": [
+        "improve loading and transfer conditions",
+        "install cleaning devices",
+        "improve maintenance."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-11#c4",
+      "cause": "Off-center loading or poor loading",
+      "actions": [
+        "adjust chute to place load on center of belt",
+        "discharge material in direction of belt travel at or near belt speed."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-11#c5",
+      "cause": "Excessive sag between idlers causing load to work and shuffle on belt as it passes over idlers",
+      "actions": [
+        "increase tension if unnecessarily low",
+        "reduce idler spacing."
+      ]
+    }
+  ],
+  "safety": []
+}

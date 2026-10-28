@@ -1,0 +1,74 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-05",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 28,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 30,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Conveyor runs to one side at given point on structure.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-05#c1",
+      "cause": "Build-up of material on idlers",
+      "actions": [
+        "remove accumulation",
+        "improve maintenance. Install scrapers or other cleaning devices."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-05#c2",
+      "cause": "Sticking idlers",
+      "actions": [
+        "free idlers and improve maintenance and lubrication."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-05#c3",
+      "cause": "Idlers or pulleys out-of square with center line of belt",
+      "actions": [
+        "readjust idlers in affected area."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-05#c4",
+      "cause": "Conveyor frame or structure crooked",
+      "actions": [
+        "straighten in affected area."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-05#c5",
+      "cause": "Idler stands not centered on belt",
+      "actions": [
+        "readjust idlers in affected area."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-05#c6",
+      "cause": "Structure not level",
+      "actions": [
+        "level structure in affected area."
+      ]
+    }
+  ],
+  "safety": []
+}

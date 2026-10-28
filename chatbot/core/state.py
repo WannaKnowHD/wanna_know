@@ -37,6 +37,9 @@ class ConversationState:
     def __init__(self, db: Database | None = None):
         self._db = db
 
+    def __init__(self, db: Database | None = None):
+        self._db = db   # save_history · load_history 가 chat_history 테이블을 쓸 때 필요
+
     def set_equipment(self, state: dict, model: Model):
         """
         명판으로 인식한 설비(모델, 문서 id)를 대화 상태에 저장
