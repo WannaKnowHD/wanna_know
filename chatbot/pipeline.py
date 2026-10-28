@@ -2,10 +2,23 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from chatbot.core.schemas import Model, QueryInfo
-from chatbot.rag.prompts import QUESTION_TYPE, REWRITE_QUERY
+import tiktoken
+
+from chatbot.core.schemas import LLMAnswer, Model, QueryInfo
+from chatbot.rag.prompts import (
+    ANSWER_HUMAN,
+    ANSWER_SYSTEM,
+    CHUNK_TYPE_LABELS,
+    CONTEXT_ITEM,
+    NO_CONTEXT,
+    NO_EQUIPMENT,
+    NO_QUESTION_TYPE,
+    QUESTION_TYPE,
+    REWRITE_QUERY,
+)
 
 if TYPE_CHECKING:
     from chatbot.core.schemas import Hit
@@ -21,6 +34,35 @@ HINT_INSTRUCTION = """
 설비: 질문에 나온 설비 모델명 (원문 그대로, 예: 138-ACC)
 부품: 질문에 나온 부품 (예: 벨트, 체인, 모터)
 증상: 증상 한 구절 (예: 모터 과열)"""
+
+# 답변 생성 프롬프트의 [자료] 최대 토큰 수 (기능명세서 build_prompt). 지시문(ANSWER_SYSTEM)·질문은 따로 센다
+MAX_CONTEXT_TOKENS = 4000
+# 토큰을 세는 규칙. gpt-4o · gpt-4.1 계열 모델이 쓰는 규칙(o200k_base)
+TOKEN_ENCODING = "o200k_base"
+
+
+@lru_cache(maxsize=1)
+def _encoding():
+    """토큰 규칙을 한 번만 불러온다. (처음 한 번은 tiktoken 이 규칙 파일을 내려받는다)"""
+    return tiktoken.get_encoding(TOKEN_ENCODING)
+
+
+def _count_tokens(text: str) -> int:
+    """글의 토큰 수를 센다."""
+    return len(_encoding().encode(text))
+
+
+def _cut_to_tokens(text: str, limit: int) -> str:
+    """글을 앞에서부터 limit 토큰까지만 남긴다."""
+    enc = _encoding()
+    return enc.decode(enc.encode(text)[:limit])
+
+
+def _kind_label(hit: Hit) -> str:
+    """[자료]의 종류 이름. KB 는 kb_type(고장 KB · 점검 KB), 청크는 chunk_type(본문 · 표 · 그림)으로 고른다."""
+    chunk_type = hit.metadata.get("chunk_type", "")
+    key = hit.metadata.get("kb_type", "") if chunk_type == "kb" else chunk_type
+    return CHUNK_TYPE_LABELS.get(key, key)
 
 
 class RagPipeline:
@@ -133,22 +175,57 @@ class RagPipeline:
         # 검색어는 2~3개(REWRITE_QUERY). 모두 실패해도 검색은 계속할 수 있게 원래 질문이라도 돌려줌
         return unique[:3] or [question]
 
-    def build_prompt(self, question: str, hits: list[Hit]):
+    def build_prompt(self, question: str, hits: list[Hit], question_type: str | None = None,
+                     equipment: str | None = None):
         """
         검색된 KB·청크(출처 포함, 최대 4,000토큰)로 프롬프트 구성
 
-        Returns: list[dict]
+        받는 것:
+          question      : 사용자 질문 원문
+          hits          : 검색 결과 (Retriever.search 가 돌려준 순위 순서)
+          question_type : understand_question 이 정한 유형 (QueryInfo.qtype). 없으면 "지정 안 됨"
+          equipment     : 설비 모델명 (QueryInfo.equipment_hint). 없으면 "지정 안 됨"
+        돌려주는 것: [{"role": "system", ...}, {"role": "user", ...}]  → generate 에 그대로 넘긴다
+        [자료]는 검색 순위대로 붙이고, 4,000토큰을 넘기 직전에 멈춘다.
+        1위 자료 하나만으로 넘으면 앞부분만 잘라서 넣는다. (자료가 빈 채로 LLM 을 부르지 않게)
         """
-        raise NotImplementedError("RagPipeline.build_prompt")
+        items: list[str] = []
+        used = 0
+        separator = _count_tokens("\n\n")
+        for hit in hits or []:
+            item = CONTEXT_ITEM.format(ref_id=hit.id, doc_id=hit.doc_id, page=hit.page,
+                                       kind=_kind_label(hit), text=hit.text)
+            cost = _count_tokens(item) + (separator if items else 0)
+            if used + cost > MAX_CONTEXT_TOKENS:
+                if not items:
+                    items.append(_cut_to_tokens(item, MAX_CONTEXT_TOKENS))
+                break   # 순위를 지키기 위해, 뒤에 짧은 자료가 있어도 여기서 멈춘다
+            items.append(item)
+            used += cost
+
+        human = ANSWER_HUMAN.format(
+            context="\n\n".join(items) or NO_CONTEXT,
+            question_type=question_type or NO_QUESTION_TYPE,
+            equipment=(equipment or "").strip() or NO_EQUIPMENT,
+            question=question,
+        )
+        return [{"role": "system", "content": ANSWER_SYSTEM}, {"role": "user", "content": human}]
 
     def generate(self, messages: list[dict]):
         """
-        LLM으로 정해진 JSON 형식의 답변 생성 (temperature 0). 요약·원인·조치·출처·그림·후속 질문 항목 포함. 후속 질문은
-        설비·부품이 들어간 완전한 문장으로 생성
+        LLM으로 정해진 JSON 형식의 답변 생성 (temperature 0). 요약·원인·조치·출처 항목 포함
 
-        Returns: dict (응답 JSON)
+        받는 것: build_prompt 가 만든 messages
+        돌려주는 것: dict (LLMClient.chat 의 결과 그대로)
+          parsed     : LLMAnswer 형식의 dict (not_found · summary · cause_ids · actions · sources).
+                       형식이 깨지면 None → 다시 요청할지는 AnswerValidator.validate_schema 가 정한다
+          usage      : 토큰 수 {"input_tokens", "output_tokens", ...} → trace.tokens
+          latency_ms : 걸린 시간(ms) → trace.latency_ms["generate"]
+          model · text : 사용한 모델 이름, 원래 답 글자
+        temperature 0 · 30초 제한 · 3번 재시도는 llm.py 에 정해져 있다.
+        3번 다시 시도해도 실패하면 예외가 그대로 나간다 → answer 가 status="error" 로 처리한다.
         """
-        raise NotImplementedError("RagPipeline.generate")
+        return self.llm.chat(messages, json_schema=LLMAnswer)
 
 if __name__ == "__main__":
     # 직접 실행해서 점검 (실제 OpenAI 를 호출함). 프로젝트 최상단 폴더에서, 가상환경을 켠 상태로:
