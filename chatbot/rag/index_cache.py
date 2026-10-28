@@ -1,11 +1,18 @@
 """색인 생성에 사용하는 캐시 키 계산과 JSON 파일 저장."""
+
 from __future__ import annotations
 
 import hashlib
 import json
 import os
 import tempfile
+from collections.abc import Callable
+from dataclasses import asdict
 from pathlib import Path
+
+from pydantic import TypeAdapter
+
+from chatbot.core.schemas import Section
 
 
 def write_json_atomic(path: Path, data: dict):
@@ -80,3 +87,71 @@ def document_cache_key(
     ).encode("utf-8")
 
     return hashlib.sha256(encoded).hexdigest()
+
+
+def section_assets_ready(sections: list[Section]) -> bool:
+    """표·그림 이미지와 정상 복원 캐시가 존재하는지 확인한다."""
+    for section in sections:
+        if section.type not in {"table", "figure"}:
+            continue
+
+        if not section.image_path:
+            return False
+
+        image_path = Path(section.image_path)
+
+        if not image_path.is_file():
+            return False
+
+        if not image_path.with_suffix(".json").is_file():
+            return False
+
+    return True
+
+
+def load_or_extract_sections(
+    pdf_path: Path,
+    cache_root: Path,
+    cache_key: str,
+    extract_sections: Callable[
+        [Path, Path],
+        tuple[list[Section], list[Section]],
+    ],
+) -> tuple[list[Section], list[Section]]:
+    """정상 섹션 캐시를 재사용하거나 PDF를 추출한다."""
+    cache_dir = cache_root.resolve() / cache_key
+    cache_path = cache_dir / "sections.json"
+    adapter = TypeAdapter(list[Section])
+
+    if cache_path.is_file():
+        with cache_path.open(encoding="utf-8") as file:
+            cached = json.load(file)
+
+        if cached["cache_key"] != cache_key:
+            raise ValueError("섹션 캐시 키가 일치하지 않습니다.")
+
+        raw_sections = adapter.validate_python(cached["raw_sections"])
+        search_sections = adapter.validate_python(cached["search_sections"])
+
+        if raw_sections and search_sections and section_assets_ready(search_sections):
+            return raw_sections, search_sections
+
+    raw_sections, search_sections = extract_sections(
+        pdf_path,
+        cache_dir / "regions",
+    )
+
+    if not raw_sections or not search_sections:
+        raise ValueError(f"사용할 섹션을 추출하지 못했습니다: {pdf_path.name}")
+
+    if section_assets_ready(search_sections):
+        write_json_atomic(
+            cache_path,
+            {
+                "cache_key": cache_key,
+                "raw_sections": [asdict(section) for section in raw_sections],
+                "search_sections": [asdict(section) for section in search_sections],
+            },
+        )
+
+    return raw_sections, search_sections
