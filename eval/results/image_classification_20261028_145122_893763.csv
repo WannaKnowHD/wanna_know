@@ -1,0 +1,6 @@
+﻿file,expected,predicted,confidence,correct,retake,threshold,model,latency_ms,error_type
+eval/images/other/order_001.jpeg,other,other,0.99,True,True,0.6,gpt-5.6-terra,2738,
+eval/images/other/order_002.jpeg,other,other,0.99,True,True,0.6,gpt-5.6-terra,2810,
+eval/images/other/order_003.jpeg,other,other,0.99,True,True,0.6,gpt-5.6-terra,2296,
+eval/images/other/order_004.jpeg,other,other,0.99,True,True,0.6,gpt-5.6-terra,2158,
+eval/images/other/order_005.png,other,other,0.99,True,True,0.6,gpt-5.6-terra,2755,
