@@ -7,7 +7,8 @@ from pathlib import Path
 
 import tiktoken
 
-from chatbot.core.schemas import Chunk, Section
+from chatbot.core.schemas import ALL_MODELS, Chunk, Section
+from chatbot.rag import prompts
 from chatbot.rag.glossary import Glossary
 
 CHUNK_TARGET_TOKENS = 600
@@ -182,6 +183,106 @@ class IndexBuilder:
                 chunks.append(chunk)
 
         return chunks
+
+    def _chunk_to_item(self, chunk: Chunk) -> dict:
+        """매뉴얼 청크를 검색 코드가 읽는 공통 형식으로 변환한다."""
+        metadata = {
+            "doc_id": chunk.doc_id,
+            "page": chunk.page,
+            "chunk_type": chunk.chunk_type,
+            "section_path": chunk.section_path,
+            "safety_flag": chunk.safety_flag,
+            "all_models": chunk.equipment_model == ALL_MODELS,
+        }
+
+        if chunk.equipment_model is not None:
+            metadata["equipment_model"] = chunk.equipment_model
+
+        if chunk.image_path is not None:
+            metadata["image_path"] = chunk.image_path
+
+        return {
+            "id": chunk.chunk_id,
+            "text": chunk.text,
+            "metadata": metadata,
+        }
+
+    def _format_troubleshooting_kb(self, kb: dict) -> str:
+        """기존 템플릿으로 고장 KB의 검색 본문을 만든다."""
+        applies_to = kb["applies_to"]
+        model_text = (
+            prompts.ALL_MODELS_TEXT
+            if applies_to == [ALL_MODELS]
+            else ", ".join(applies_to)
+        )
+
+        alarm_codes = ""
+        if kb.get("alarm_codes"):
+            alarm_codes = prompts.KB_ALARM_CODES.format(
+                codes=", ".join(kb["alarm_codes"]),
+            )
+
+        causes = []
+        for cause in kb["causes"]:
+            cause_text = prompts.KB_CAUSE.format(
+                cause_id=cause["cause_id"],
+                cause=cause["cause"],
+                actions=" → ".join(cause["actions"]),
+            )
+            causes.append(cause_text)
+
+        return prompts.KB_TROUBLESHOOTING.format(
+            applies_to=model_text,
+            symptom=kb["symptom"],
+            alarm_codes=alarm_codes,
+            causes="\n".join(causes),
+        )
+
+    def _kb_to_item(self, kb: dict) -> dict:
+        """KB를 검색 코드가 읽는 공통 형식으로 변환한다."""
+        kb_type = kb["type"]
+
+        if kb_type == "troubleshooting":
+            text = self._format_troubleshooting_kb(kb)
+        elif kb_type == "maintenance":
+            text = self._format_maintenance_kb(kb)
+        else:
+            raise ValueError(
+                f"지원하지 않는 KB 종류입니다: {kb_type}"
+            )
+
+        sources = kb["sources"]
+        if not sources:
+            raise ValueError(
+                f"KB에 출처가 없습니다: {kb['kb_id']}"
+            )
+
+        source = sources[0]
+        if any(
+            ref["doc_id"] != source["doc_id"]
+            for ref in sources
+        ):
+            raise ValueError(
+                f"KB에 여러 문서의 출처가 섞여 있습니다: "
+                f"{kb['kb_id']}"
+            )
+
+        metadata = {
+            "doc_id": source["doc_id"],
+            "page": source["page"],
+            "chunk_type": "kb",
+            "kb_type": kb_type,
+            "all_models": kb["applies_to"] == [ALL_MODELS],
+        }
+
+        if kb_type == "maintenance":
+            metadata["lockout_required"] = kb["lockout_required"]
+
+        return {
+            "id": kb["kb_id"],
+            "text": text,
+            "metadata": metadata,
+        }
 
     def build_vector_index(self, items: list[Chunk | dict]):
         """
