@@ -1,12 +1,15 @@
 """사진 판별, 명판 판독, 손상 분석"""
 from __future__ import annotations
 
+import csv
 import re
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
-from chatbot.rag.prompts import NAMEPLATE
+from chatbot.core.schemas import DamageResult
+from chatbot.rag.glossary import LIST_SEP
+from chatbot.rag.prompts import DAMAGE, NAMEPLATE
 
 if TYPE_CHECKING:
     from chatbot.rag.llm import LLMClient
@@ -147,21 +150,54 @@ class NameplateReader:
 
 
 class DamageAnalyzer:
-    """DamageAnalyzer (기능명세서 기준 뼈대)."""
+    """손상 사진 → 라벨·증상 문장 → damage_map.csv 의 KB 후보 (담당: 김민재)"""
+
+    # 이 확신도 미만이면 재촬영 요청 (기능 I-03). 명판 판독과 같은 기준
+    MIN_CONFIDENCE = 0.6
+
+    def __init__(self, llm_client: LLMClient, damage_map_path: str = "data/damage_map.csv"):
+        """
+        받는 것:
+          llm_client      : 비전 모델 호출용 LLMClient
+          damage_map_path : 라벨 → 대표 증상·KB 후보 표. 사진마다 다시 읽지 않게 처음 한 번만 읽는다
+        """
+        self.llm_client = llm_client
+        self.damage_map: dict[str, dict] = {}  # {label: {"symptom_ko": 대표 증상, "kb_ids": [kb_id, ...]}}
+        with open(damage_map_path, encoding="utf-8-sig") as f:  # 엑셀로 저장해 BOM 이 붙어도 읽히게
+            for row in csv.DictReader(f):
+                label = (row.get("label") or "").strip()
+                if label:
+                    self.damage_map[label] = {
+                        "symptom_ko": (row.get("symptom_ko") or "").strip(),
+                        "kb_ids": [k.strip() for k in (row.get("kb_ids") or "").split(LIST_SEP) if k.strip()],
+                    }
 
     def describe_damage(self, image: bytes):
         """
         손상 사진을 라벨(hole / tear / joint / edge_damage / other)과 증상 문장으로 변환. 확신도 0.6 이상이면 KB
         검색·답변, 0.6 미만이면 재촬영 요청
 
+        돌려주는 것: {"label", "symptom_ko", "confidence", "retake"}
+          - retake=True : 확신도가 MIN_CONFIDENCE 미만이거나 응답 형식이 깨짐 → 화면에서 재촬영 요청
+          - 모델이 증상 문장을 비워 보내면 damage_map.csv 의 대표 증상으로 채운다 (검색어가 비지 않게)
         Returns: dict (label, symptom_ko, confidence)
         """
-        raise NotImplementedError("DamageAnalyzer.describe_damage")
+        # 결과 형식은 응답 스키마의 DamageResult 그대로 (라벨 5개 중 하나·확신도 0~1)
+        result = self.llm_client.vision(image=image, prompt=DAMAGE, json_schema=DamageResult)
+        if result["parsed"] is None:
+            # 형식이 깨진 응답은 믿을 수 없으므로 "모르겠음"(other, 확신도 0)으로 보고 재촬영을 요청한다
+            reading = DamageResult(label="other", symptom_ko="", confidence=0.0)
+        else:
+            reading = DamageResult.model_validate(result["parsed"])
+        symptom = reading.symptom_ko.strip() or self.damage_map.get(reading.label, {}).get("symptom_ko", "")
+        return {"label": reading.label, "symptom_ko": symptom, "confidence": reading.confidence,
+                "retake": reading.confidence < self.MIN_CONFIDENCE}
 
     def map_damage_to_kb(self, label: str):
         """
         손상 라벨 → KB 후보 매핑(damage_map.csv)
 
+        표에 없는 라벨이나 other 는 빈 목록 → KB 후보 없이 증상 문장으로 일반 검색한다.
         Returns: list[str]
         """
-        raise NotImplementedError("DamageAnalyzer.map_damage_to_kb")
+        return list(self.damage_map.get(label, {}).get("kb_ids", []))
