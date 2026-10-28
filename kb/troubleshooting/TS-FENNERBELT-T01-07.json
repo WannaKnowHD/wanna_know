@@ -1,0 +1,77 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-07",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 28,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 29,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Belt slips.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-07#c1",
+      "cause": "Insufficient traction between belt and pulley",
+      "actions": [
+        "lag drive pulley",
+        "increase belt wrap",
+        "install belt cleaning devices."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-07#c2",
+      "cause": "Pulley lagging worn",
+      "actions": [
+        "replace pulley lagging."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-07#c3",
+      "cause": "Counterweight too light",
+      "actions": [
+        "add counterweight or increase screw take-up tension to value determined from calculations."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-07#c4",
+      "cause": "Material spillage and build-up",
+      "actions": [
+        "improve loading and transfer conditions",
+        "install cleaning devices",
+        "improve maintenance."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-07#c5",
+      "cause": "Sticking idlers",
+      "actions": [
+        "free idlers and improve maintenance and lubrication."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-07#c6",
+      "cause": "Pulleys too small",
+      "actions": [
+        "use larger diameter pulleys."
+      ]
+    }
+  ],
+  "safety": []
+}

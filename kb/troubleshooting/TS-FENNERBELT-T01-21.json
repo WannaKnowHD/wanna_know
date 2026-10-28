@@ -1,0 +1,47 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-21",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 29,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Ply separation.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-21#c1",
+      "cause": "Insufficient transverse stiffness",
+      "actions": [
+        "replace with the proper belt."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-21#c2",
+      "cause": "Pulleys too small",
+      "actions": [
+        "use larger diameter pulleys."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-21#c3",
+      "cause": "Heat or chemical damage",
+      "actions": [
+        "use belt designed for specific condition."
+      ]
+    }
+  ],
+  "safety": []
+}

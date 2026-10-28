@@ -1,0 +1,35 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-15",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 29,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Cover swells in spots or streaks.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-15#c1",
+      "cause": "Spilled oil or grease/over-lubrication of idlers",
+      "actions": [
+        "improve housekeeping",
+        "reduce quantity of grease used",
+        "check grease seals"
+      ]
+    }
+  ],
+  "safety": []
+}

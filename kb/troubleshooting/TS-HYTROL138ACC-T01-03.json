@@ -1,0 +1,45 @@
+{
+  "kb_id": "TS-HYTROL138ACC-T01-03",
+  "applies_to": [
+    "138-ACC",
+    "138-LRC",
+    "138-LRS",
+    "138-LRSS"
+  ],
+  "sources": [
+    {
+      "doc_id": "hytrol_138acc",
+      "page": 22,
+      "ref": "TROUBLE SHOOTING DRIVES"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Loud popping or grinding noise.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-HYTROL138ACC-T01-03#c1",
+      "cause": "Defective bearing.",
+      "actions": [
+        "Replace bearing."
+      ]
+    },
+    {
+      "cause_id": "TS-HYTROL138ACC-T01-03#c2",
+      "cause": "Loose set screws in bearing.",
+      "actions": [
+        "Tighten set screw."
+      ]
+    },
+    {
+      "cause_id": "TS-HYTROL138ACC-T01-03#c3",
+      "cause": "Loose drive chain.",
+      "actions": [
+        "Tighten chain."
+      ]
+    }
+  ],
+  "safety": []
+}

@@ -1,0 +1,71 @@
+{
+  "kb_id": "TS-FENNERBELT-T01-13",
+  "applies_to": [
+    "*"
+  ],
+  "sources": [
+    {
+      "doc_id": "fenner_belt",
+      "page": 27,
+      "ref": "TROUBLE SHOOTING"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 28,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    },
+    {
+      "doc_id": "fenner_belt",
+      "page": 29,
+      "ref": "CONVEYOR SYSTEM PROBLEMS/CAUSES AND THEIR SOLUTIONS"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Longitudinal grooving or cracking of bottom cover.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-FENNERBELT-T01-13#c1",
+      "cause": "Sticking idlers",
+      "actions": [
+        "free idlers and improve maintenance and lubrication."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-13#c2",
+      "cause": "Material spillage and build-up",
+      "actions": [
+        "improve loading and transfer conditions",
+        "install cleaning devices",
+        "improve maintenance."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-13#c3",
+      "cause": "Slippage on drive pulley",
+      "actions": [
+        "increase tension through screw take-up or add counterweight",
+        "lag drive pulley",
+        "increase arc of contact."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-13#c4",
+      "cause": "Pulley lagging worn",
+      "actions": [
+        "replace pulley lagging."
+      ]
+    },
+    {
+      "cause_id": "TS-FENNERBELT-T01-13#c5",
+      "cause": "Excessive sag between idlers causing load to work and shuffle on belt as it passes over idlers",
+      "actions": [
+        "increase tension if unnecessarily low",
+        "reduce idler spacing."
+      ]
+    }
+  ],
+  "safety": []
+}

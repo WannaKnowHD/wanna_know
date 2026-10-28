@@ -1,0 +1,37 @@
+{
+  "kb_id": "TS-PRECOLSERIES-T04-08",
+  "applies_to": [
+    "L400",
+    "L500",
+    "L650"
+  ],
+  "sources": [
+    {
+      "doc_id": "preco_l_series",
+      "page": 57,
+      "ref": "TROUBLESHOOTING"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Uneven idler wear",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-PRECOLSERIES-T04-08#c1",
+      "cause": "Worn belt",
+      "actions": [
+        "Replace belt"
+      ]
+    },
+    {
+      "cause_id": "TS-PRECOLSERIES-T04-08#c2",
+      "cause": "Improper alignment",
+      "actions": [
+        "Check idler alignment"
+      ]
+    }
+  ],
+  "safety": []
+}
