@@ -4,14 +4,16 @@ crop_regions 실제 API 테스트 (OpenAI 비전 모델을 진짜로 부른다 �
 - Hytrol 매뉴얼의 표 2개(인쇄 p.22)와 그림 2개(p.19)를 잘라 비전 모델로 읽는다.
 - 결과를 data/interim/check/live_crops.html 로 저장 → 브라우저로 열어 이미지와 비교한다.
 - 매번 새로 부르도록 캐시는 pytest 임시 폴더에 둔다. (4번 호출)
+- 단계별 걸린 시간(extract_text · 쪽별 crop_regions · 영역당 평균)을 터미널에 출력한다. (-s 옵션 필요)
 
 실행 (환경변수 LIVE_VISION=1 일 때만 돈다. 평소 pytest 에서는 건너뜀):
-    Windows cmd : set LIVE_VISION=1 && python -m pytest tests/crop_regions_live_test.py -v -s
+    Windows cmd : set "LIVE_VISION=1" && python -m pytest tests/crop_regions_live_test.py -v -s
     Git Bash    : LIVE_VISION=1 python -m pytest tests/crop_regions_live_test.py -v -s
 """
 import base64
 import html
 import os
+import time
 
 import pytest
 
@@ -21,7 +23,7 @@ HYTROL = os.path.join("data", "raw", "initial", "hytrol_138acc_p1-27.pdf")
 OUT = os.path.join("data", "interim", "check", "live_crops.html")
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("LIVE_VISION") != "1" or not os.path.exists(HYTROL),
+    os.environ.get("LIVE_VISION", "").strip() != "1" or not os.path.exists(HYTROL),
     reason="실제 API 테스트는 LIVE_VISION=1 이고 매뉴얼 PDF 가 있을 때만")
 
 
@@ -33,12 +35,33 @@ def results(tmp_path_factory):
 
     interim = str(tmp_path_factory.mktemp("interim"))
     ex = PdfExtractor(os.path.join("data", "sources.csv"), llm=LLMClient(Settings.load()), interim_dir=interim)
-    rows = []
-    for page in ex.extract_text(HYTROL, [19, 22]):
+    rows, times = [], []
+
+    start = time.perf_counter()
+    pages = ex.extract_text(HYTROL, [19, 22])
+    extract_sec = time.perf_counter() - start
+
+    for page in pages:
+        start = time.perf_counter()
         after = ex.crop_regions(HYTROL, page.page_no, page.regions)
+        times.append((page.page_no, len(page.regions), time.perf_counter() - start))
         rows += [(page.page_no, b, a) for b, a in zip(page.regions, after, strict=True)]
+    print_times(extract_sec, times)
     save_html(rows)
     return rows
+
+
+def print_times(extract_sec, times):
+    """터미널에 단계별 시간 출력 (캐시 없이 매번 비전 호출한 시간)"""
+    total_regions = sum(n for _, n, _ in times)
+    total_crop = sum(t for _, _, t in times)
+    print(f"\n[시간] extract_text (2쪽)          : {extract_sec:6.2f}초")
+    for page_no, n, sec in times:
+        avg = sec / n if n else 0
+        print(f"[시간] crop_regions p.{page_no:<3} ({n}개)    : {sec:6.2f}초  (영역당 {avg:.2f}초)")
+    avg = total_crop / total_regions if total_regions else 0
+    print(f"[시간] crop_regions 합계 ({total_regions}개)     : {total_crop:6.2f}초  (영역당 {avg:.2f}초)")
+    print(f"[시간] 전체                         : {extract_sec + total_crop:6.2f}초")
 
 
 def save_html(rows):
