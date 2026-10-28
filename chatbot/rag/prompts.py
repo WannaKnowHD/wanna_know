@@ -89,20 +89,32 @@ ANSWER_HUMAN = """[자료]
 [설비] {equipment}
 질문: {question}"""
 
-# [자료] 한 건의 형식. 검색 결과마다 만들어 "\n\n" 으로 이어 붙인 것이 context 다.
-#    사용: CONTEXT_ITEM.format(ref_id=..., doc_title=..., page=..., chunk_type=..., text=...)
+# [자료] 한 건의 형식. 검색 결과(Hit)마다 만들어 "\n\n" 으로 이어 붙인 것이 context 다.
+#    사용: CONTEXT_ITEM.format(ref_id=hit.id, doc_id=hit.doc_id, page=hit.page, kind=종류 이름, text=hit.text)
 #    ref_id 는 검색 결과 id (kb_id 또는 chunk_id). LLM 이 sources[].ref_id 로 그대로 돌려준다.
-CONTEXT_ITEM = """--- id: {ref_id} | 문서: {doc_title} p.{page} | 종류: {chunk_type}
+#    kind 는 CHUNK_TYPE_LABELS 에서 고른다. KB 는 metadata["kb_type"], 청크는 metadata["chunk_type"] 으로 찾는다.
+#    (Hit.metadata 의 키 이름은 retriever.py 머리말의 "색인 약속"을 따른다)
+CONTEXT_ITEM = """--- id: {ref_id} | 문서: {doc_id} p.{page} | 종류: {kind}
 {text}"""
 
-# KB 항목을 [자료] 본문(text)으로 바꾸는 틀. KB JSON 을 그대로 넣지 않고 사람이 읽는 글로 바꿔
+# [자료]의 종류 이름. "고장 KB" 는 ANSWER_SYSTEM 규칙 6 과 같은 말이어야 한다.
+CHUNK_TYPE_LABELS = {
+    "troubleshooting": "고장 KB",
+    "maintenance": "점검 KB",
+    "text": "본문",
+    "table": "표",
+    "figure": "그림",
+}
+
+# KB 항목을 글로 바꾸는 틀. KB JSON 을 그대로 넣지 않고 사람이 읽는 글로 바꿔
 # 토큰을 줄이고, 원인 id 를 원인 바로 앞에 붙여 LLM 이 id 를 정확히 옮겨 쓰게 한다.
+# 색인(build_index)에서 KB 의 text 를 이 틀로 만들면 검색에 쓰는 글과 LLM 이 보는 글이 같아진다.
 #    고장 KB : KB_TROUBLESHOOTING.format(applies_to=..., symptom=..., alarm_codes=..., causes=...)
 #              causes 는 원인마다 KB_CAUSE 를 채워 "\n" 으로 이어 붙인 것
 #              alarm_codes 는 KB_ALARM_CODES 를 채운 것 (알람 코드가 없으면 "")
 #    점검 KB : KB_MAINTENANCE.format(applies_to=..., task=..., interval=..., extra=...)
 #              extra 는 KB_CRITERIA · KB_DETAILS 중 값이 있는 것만 이어 붙인 것 (없으면 "")
-KB_TROUBLESHOOTING = """고장 KB · 적용 설비: {applies_to}
+KB_TROUBLESHOOTING = """적용 설비: {applies_to}
 증상: {symptom}{alarm_codes}
 {causes}"""
 
@@ -111,7 +123,7 @@ KB_ALARM_CODES = " (알람 코드: {codes})"
 KB_CAUSE = """- 원인 id {cause_id}: {cause}
   조치 순서: {actions}"""
 
-KB_MAINTENANCE = """점검 KB · 적용 설비: {applies_to}
+KB_MAINTENANCE = """적용 설비: {applies_to}
 작업: {task}
 주기: {interval}{extra}"""
 
@@ -122,6 +134,7 @@ KB_DETAILS = "\n세부 내용: {details}"
 NO_EQUIPMENT = "지정 안 됨"        # 설비를 모를 때 {equipment}
 NO_QUESTION_TYPE = "지정 안 됨"    # 질문 유형을 모를 때 {question_type} (ANSWER_SYSTEM 규칙 6 과 같은 말)
 ALL_MODELS_TEXT = "모든 모델"      # KB applies_to 가 ["*"] 일 때 {applies_to} (ANSWER_SYSTEM 규칙 9 와 같은 말)
+NO_CONTEXT = "(검색된 자료 없음)"  # 검색 결과가 하나도 없을 때 {context} (LLM 은 규칙 2 에 따라 not_found 로 답한다)
 
 
 # ------------------------------------------------------------------------------
