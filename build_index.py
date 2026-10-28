@@ -12,7 +12,7 @@ from pydantic import TypeAdapter
 
 from chatbot.core.schemas import Chunk, KbEntry, Section
 from chatbot.rag import index_chunking, index_storage
-from chatbot.rag.document_processor import PdfExtractor
+from chatbot.rag.document_processor import KbBuilder, PdfExtractor
 from chatbot.rag.glossary import Glossary
 from chatbot.rag.index_cache import document_cache_key, write_json_atomic
 from chatbot.rag.index_items import (
@@ -78,9 +78,7 @@ class IndexBuilder:
         part_index: int,  # 해당 섹션에서 만들어진 청크의 순번
     ) -> Chunk:
         """기존 호출 형식을 유지하며 청킹 모듈에 위임한다."""
-        return index_chunking.make_chunk(
-            self, section, text, section_index, part_index
-        )
+        return index_chunking.make_chunk(self, section, text, section_index, part_index)
 
     def _count_tokens(self, text: str) -> int:
         """기존 호출 형식을 유지하며 청킹 모듈에 위임한다."""
@@ -97,7 +95,9 @@ class IndexBuilder:
     def _split_text(self, text: str, prefix: str) -> list[str]:
         """기존 호출 형식을 유지하며 청킹 모듈에 위임한다."""
         return index_chunking.split_text(
-            self, text, prefix,
+            self,
+            text,
+            prefix,
             target_tokens=CHUNK_TARGET_TOKENS,
             overlap_tokens=CHUNK_OVERLAP_TOKENS,
         )
@@ -167,6 +167,19 @@ class IndexBuilder:
         search_sections = extractor.split_sections(pages)
 
         return raw_sections, search_sections
+
+    def _build_added_pdf_kbs(
+        self,
+        raw_sections: list[Section],
+    ) -> list[dict]:
+        """관리자 추가 PDF의 원문에서 KB를 생성하고 병합한다."""
+        builder = KbBuilder(
+            models_path=str(self.root_dir / "data" / "models.csv"),
+        )
+
+        kbs = builder.from_sections(raw_sections)
+
+        return builder.merge_applies_to(kbs)
 
     def _load_initial_kbs(self, kb_dir: Path) -> list[dict]:
         """기존 초기 KB JSON을 읽고 공통 스키마로 검사한다."""
