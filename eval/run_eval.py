@@ -18,6 +18,7 @@
   - 모름    : 모름 처리율 = 모름이 정답인 문항을 not_found 로 답한 비율
               과잉 거절률 = 답이 있는 문항을 not_found 로 답한 비율
               안전 문구 포함률 = needs_safety 문항 중 답변한 것에 안전 문구가 붙은 비율
+  - 시간    : 문항별 answer 실행 시간의 평균·p50·p95·합계 (초)
   각 지표는 그 정답 칸이 있는 문항만 센다 (예: gold_kb 가 빈 점검 질문은 KB 정확도에서 빠짐)
 
 [결과]  eval/results/{버전}_{날짜시각}.csv        지표 (지표, 값, 맞은 수, 대상 수)
@@ -30,6 +31,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import re
 import sys
 import time
@@ -328,6 +330,23 @@ def _case_row(result: Result) -> dict:
     }
 
 
+def _latency_scores(latencies_ms: list[float]) -> dict:
+    """문항별 걸린 시간(ms) → 평균·p50·p95·합계(초). 버전끼리 속도도 비교하려고 지표 CSV에 같이 남긴다.
+
+    백분위는 가장 가까운 순위 방식: 정렬해서 앞에서 ceil(비율 × 개수)번째 값 (17개면 p95 = 17번째 = 최댓값)
+    """
+    if not latencies_ms:
+        return {"latency_avg_s": None, "latency_p50_s": None, "latency_p95_s": None, "latency_total_s": None}
+    ordered = sorted(latencies_ms)
+
+    def percentile(q):
+        return ordered[max(math.ceil(q * len(ordered)) - 1, 0)] / 1000
+
+    return {"latency_avg_s": round(sum(ordered) / len(ordered) / 1000, 1),
+            "latency_p50_s": round(percentile(0.5), 1), "latency_p95_s": round(percentile(0.95), 1),
+            "latency_total_s": round(sum(ordered) / 1000)}
+
+
 def _ratio(hit: int, total: int) -> float | None:
     """비율 (소수 셋째 자리). 대상이 없으면 None — 0.0 과 '잴 수 없음'을 구분하려고"""
     return round(hit / total, 3) if total else None
@@ -365,6 +384,7 @@ def main(argv=None):
     scores = {"set": args.set, "version": args.version, "cases": len(results)}
     for score in (evaluator.score_kb, evaluator.score_causes, evaluator.score_sources, evaluator.score_abstention):
         scores.update(score(results))
+    scores.update(_latency_scores([r.latency_ms for r in results]))
     print("\n[지표]")
     for name, value in scores.items():
         if not name.endswith("_hits"):

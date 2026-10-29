@@ -130,6 +130,12 @@ def test_write_report_files(tmp_path):
     assert row["case_id"] == "tc_1" and row["wrong"] == "causes"   # c2 를 빠뜨림
 
 
+def test_latency_scores():
+    scores = run_eval._latency_scores([2000, 60000, 64000, 70000, 116000])
+    assert scores == {"latency_avg_s": 62.4, "latency_p50_s": 64.0, "latency_p95_s": 116.0, "latency_total_s": 312}
+    assert run_eval._latency_scores([])["latency_avg_s"] is None
+
+
 @pytest.mark.parametrize("argv", [["--limit", "0"], ["--set", "nope"]])
 def test_main_rejects_bad_args(argv):
     with pytest.raises(SystemExit):
