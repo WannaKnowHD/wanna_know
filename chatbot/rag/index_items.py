@@ -1,4 +1,5 @@
 """청크·KB를 기존 검색 코드가 읽는 항목 형식으로 변환한다."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -35,9 +36,7 @@ def format_troubleshooting_kb(kb: dict) -> str:
     """기존 템플릿으로 고장 KB의 검색 본문을 만든다."""
     applies_to = kb["applies_to"]
     model_text = (
-        prompts.ALL_MODELS_TEXT
-        if applies_to == [ALL_MODELS]
-        else ", ".join(applies_to)
+        prompts.ALL_MODELS_TEXT if applies_to == [ALL_MODELS] else ", ".join(applies_to)
     )
 
     alarm_codes = ""
@@ -51,7 +50,7 @@ def format_troubleshooting_kb(kb: dict) -> str:
         cause_text = prompts.KB_CAUSE.format(
             cause_id=cause["cause_id"],
             cause=cause["cause"],
-            actions=" → ".join(cause["actions"]),
+            actions=prompts.KB_ACTION_SEPARATOR.join(cause["actions"]),
         )
         causes.append(cause_text)
 
@@ -67,9 +66,7 @@ def format_maintenance_kb(kb: dict) -> str:
     """기존 템플릿으로 점검 KB의 검색 본문을 만든다."""
     applies_to = kb["applies_to"]
     model_text = (
-        prompts.ALL_MODELS_TEXT
-        if applies_to == [ALL_MODELS]
-        else ", ".join(applies_to)
+        prompts.ALL_MODELS_TEXT if applies_to == [ALL_MODELS] else ", ".join(applies_to)
     )
 
     interval_parts = [kb["interval"]]
