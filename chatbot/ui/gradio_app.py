@@ -92,7 +92,7 @@ class ChatApp:
             render_user_info(user),
             AdminDashboard.render_user_info(user),
             history,
-            render_equipment(state.get("equipment")),
+            self.show_equipment(state),
             render_login_error(state.get("login_error")),
         )
 
@@ -184,7 +184,7 @@ class ChatApp:
                 else:
                     history, new_state = self.on_submit(message, history, current)
                 return (history, new_state, "", gr.update(visible=not history),
-                        render_equipment(new_state.get("equipment")), *clear_preview)
+                        self.show_equipment(new_state), *clear_preview)
 
             def attach_event(file):
                 return file, gr.update(visible=bool(file)), file
@@ -194,7 +194,7 @@ class ChatApp:
 
             def reset_event(current):
                 new_state = self.reset_conversation(current)
-                return (new_state, render_equipment(new_state.get("equipment")), *fresh_values)
+                return (new_state, self.show_equipment(new_state), *fresh_values)
 
             chat_outputs = [area.chatbot, state, area.message, area.examples, area.equipment, *preview_outputs]
             submit_inputs = [area.message, area.chatbot, state, pending_image]
@@ -403,10 +403,10 @@ class ChatApp:
         """
         예시 질문 템플릿 목록을 출력하고, 클릭한 템플릿을 입력창에 추가
 
-        Returns: list[str], str
+        Returns: list[str] (예시 질문 목록), str (입력창에 넣을 문장. 누른 칩이 없으면 "")
         """
-        # 목록은 ui/chat/chat_area.py 의 EXAMPLE_QUESTIONS (임시 문구). 3.7.3 에서 템플릿을 정하면 그쪽을 고친다.
-        return list(EXAMPLE_QUESTIONS), template or ""
+        # 목록은 ui/chat/chat_area.py 의 EXAMPLE_QUESTIONS (KB 로 답할 수 있는 질문 5개). 칩도 같은 목록으로 만든다.
+        return list(EXAMPLE_QUESTIONS), (template or "").strip()
 
     def show_history(self, state: dict):
         """
@@ -425,6 +425,18 @@ class ChatApp:
         """
         # 설비 필터는 ConversationState.clear 가 비우고, 화면의 채팅창은 build_ui 의 reset_event 가 [] 로 지움
         return self._conversation.clear(state)
+
+    def show_equipment(self, state: dict) -> str:
+        """
+        현재 설비 표시 (C-01): 명판으로 정한 설비가 있으면 모델명을 채운 칩으로, 없으면 "전체 매뉴얼"을 상단 바에 표시.
+        로그인·새로고침·로그아웃(_screen), 질문 전송, 대화 초기화 뒤에 다시 그림
+
+        Returns: str (HTML)
+        """
+        equipment = (state or {}).get("equipment")
+        if equipment is not None and not isinstance(equipment, dict):   # schemas.Model 이 그대로 들어와도 표시
+            equipment = {"model_name": getattr(equipment, "model_name", None)}
+        return render_equipment(equipment)
 
     def change_admin_mode(self, state: dict):
         """
