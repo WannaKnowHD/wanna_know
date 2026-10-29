@@ -52,6 +52,9 @@
   width: 15rem; height: 8.75rem;
   background: var(--wk-bubble-bg); border-radius: 0.5rem; color: var(--wk-chat-muted); font-size: 0.8125rem;
 }
+.wk-image { display: block; max-width: 100%; margin-top: 0.5rem; border: 1px solid var(--wk-chat-border); border-radius: 0.5rem; }
+.wk-figure .wk-image { margin-top: 0; }
+.wk-safety-source { color: var(--wk-safety-text); font-size: 0.75rem; opacity: 0.8; }
 .wk-caption { color: var(--wk-chat-muted); font-size: 0.75rem; margin-top: 0.375rem; }
 
 .wk-source { margin: 0; }

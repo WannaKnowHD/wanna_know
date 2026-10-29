@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import time
+import traceback
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -254,6 +255,7 @@ class RagPipeline:
         stage = next((s for s in ("understand", "search", "generate","verify") if s not in trace["latency_ms"]), "answer")
         trace["error"] = {"stage": stage, "code": type(error).__name__, "message": str(error)[:200]}
         print(f"[pipeline] answer 실패 ({stage}): {type(error).__name__}: {error}")
+        traceback.print_exception(error)
         return {"status": "error", "message": MSG_ERROR, "input_type": input_type,
                 "question_type": info.qtype if info else None, "trace": trace}
 
