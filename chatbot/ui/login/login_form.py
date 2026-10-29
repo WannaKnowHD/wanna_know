@@ -7,6 +7,8 @@ from pathlib import Path
 
 import gradio as gr
 
+from chatbot.ui.login.theme import THEME_TOGGLE_ENABLED
+
 LOGIN_FORM_CSS_PATH = Path(__file__).parent / "login_form.css"
 
 # 안내 문구 (기능명세서 on_login)
@@ -51,7 +53,9 @@ def build_login_form() -> LoginForm:
             error = gr.HTML("", visible=False, elem_id="login-error")
             button = gr.Button("로그인", variant="primary", elem_id="login-submit")
             gr.HTML(LOGIN_NOTE_HTML)
-            theme_button = gr.Button("라이트 / 다크 전환", elem_classes=["theme-toggle"], size="sm")
+            theme_button = gr.Button(
+                "라이트 / 다크 전환", elem_classes=["theme-toggle"], size="sm", visible=THEME_TOGGLE_ENABLED
+            )
     return LoginForm(root, employee, password, error, button, theme_button)
 
 

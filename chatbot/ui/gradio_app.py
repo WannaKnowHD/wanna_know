@@ -1,11 +1,26 @@
-"""로그인·채팅 화면 (화면 요소·스타일은 ui/login, 관리자 화면은 ui/dashboard)"""
+"""로그인·채팅 화면을 조립하고 이벤트를 연결 (화면 요소·스타일: 로그인 ui/login, 채팅 ui/chat, 관리자 ui/dashboard·ui/admin)"""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import gradio as gr
+from pydantic import ValidationError
 
+from chatbot.core.schemas import AnswerResponse
 from chatbot.core.state import ConversationState
+from chatbot.ui.chat import (
+    CHAT_CSS_PATHS,
+    EXAMPLE_QUESTIONS,
+    build_chat_screen,
+    fake_answer,
+    fake_photo_answer,
+    render_answer_card,
+    render_equipment,
+    render_history,
+    render_user_info,
+    render_user_message,
+)
 from chatbot.ui.dashboard import ADMIN_CSS_PATH, AdminDashboard
 from chatbot.ui.login import (
     LOGIN_CSS_PATHS,
@@ -14,16 +29,15 @@ from chatbot.ui.login import (
     MSG_SERVER,
     THEME_INIT_JS,
     bind_theme_toggle,
-    build_chat_shell,
     build_login_form,
-    render_history,
     render_login_error,
-    render_user_info,
 )
 
 if TYPE_CHECKING:
     from chatbot.core.auth import AuthManager
     from chatbot.core.config import Settings
+
+MSG_BAD_ANSWER = "답변 형식이 올바르지 않아 표시할 수 없습니다. 다시 질문해 주세요."   # 응답이 AnswerResponse 형식에 맞지 않을 때
 
 
 class ChatApp:
@@ -49,12 +63,12 @@ class ChatApp:
     @staticmethod
     def launch_options() -> dict:
         """app.py 가 launch(**ChatApp.launch_options()) 로 넘기는 값 (스타일 파일과 다크 모드 복원 스크립트)"""
-        return {"css_paths": [ADMIN_CSS_PATH, *LOGIN_CSS_PATHS], "js": THEME_INIT_JS}
+        return {"css_paths": [ADMIN_CSS_PATH, *LOGIN_CSS_PATHS, *CHAT_CSS_PATHS], "js": THEME_INIT_JS}
 
     def _screen(self, state: dict):
         """state 에 맞는 화면 상태를 만든다 (로그인 화면 / 채팅 화면 / 관리자 대시보드 중 하나만 보임).
 
-        Returns: (로그인 화면, 채팅 화면, 관리자 화면, 관리자 전환 버튼, 채팅 사원 정보, 관리자 사원 정보, 대화 기록, 로그인 안내)
+        Returns: (로그인 화면, 채팅 화면, 관리자 화면, 관리자 전환 버튼, 사이드바 사원 정보, 관리자 사원 정보, 대화 기록, 현재 설비, 로그인 안내)
         """
         user = state.get("user")
         admin_mode = bool(state.get("admin_mode")) and user is not None and user.is_admin
@@ -67,6 +81,7 @@ class ChatApp:
             render_user_info(user),
             AdminDashboard.render_user_info(user),
             history,
+            render_equipment(state.get("equipment")),
             render_login_error(state.get("login_error")),
         )
 
@@ -87,14 +102,24 @@ class ChatApp:
             state = gr.State({})                                                            # 로그인한 사원 등 (서버)
 
             login = build_login_form()      # ui/login/login_form.py
-            chat = build_chat_shell()       # ui/login/chat_shell.py
+            chat = build_chat_screen()      # ui/chat/chat_screen.py (사이드바 + 채팅 영역)
+            sidebar, area = chat.sidebar, chat.area
 
             # ---- 관리자 대시보드 ----
             admin_view = self._dashboard.build_admin_tab()
             admin_view.visible = False
             admin_user_info = self._dashboard.user_info_display
 
-            screen = [login.root, chat.root, admin_view, chat.admin_button, chat.user_info, admin_user_info, chat.history, login.error]
+            screen = [
+                login.root, chat.root, admin_view, area.admin_button, sidebar.user_info, admin_user_info,
+                sidebar.history, area.equipment, login.error,
+            ]
+            # 채팅창을 처음 상태(빈 채팅창 + 예시 질문)로 되돌릴 때 함께 바꾸는 요소
+            pending_image = gr.State(None)   # 첨부했지만 아직 보내지 않은 사진 경로 (미리보기 중)
+            preview_outputs = [pending_image, area.preview_row, area.preview]
+            clear_preview = (None, gr.update(visible=False), None)
+            fresh_chat = [area.chatbot, area.examples, area.message, *preview_outputs]
+            fresh_values = ([], gr.update(visible=True), "", *clear_preview)
 
             def load_event(token):
                 _, new_state = self.on_load(token)
@@ -113,7 +138,7 @@ class ChatApp:
 
             def logout_event(token, current):
                 _, new_state = self.on_logout(token, current)
-                return (None, new_state, *self._screen(new_state), "", "")
+                return (None, new_state, *self._screen(new_state), "", "", *fresh_values)
 
             def admin_event(current):
                 _, new_state = self.change_admin_mode(current)
@@ -129,12 +154,47 @@ class ChatApp:
             login.button.click(login_event, inputs=login_inputs, outputs=login_outputs)
             login.password.submit(login_event, inputs=login_inputs, outputs=login_outputs)
             login.employee.submit(login_event, inputs=login_inputs, outputs=login_outputs)
-            logout_outputs = [token_state, state, *screen, login.employee, login.password]
-            chat.logout_button.click(logout_event, inputs=[token_state, state], outputs=logout_outputs)
+            logout_outputs = [token_state, state, *screen, login.employee, login.password, *fresh_chat]
+            sidebar.logout_button.click(logout_event, inputs=[token_state, state], outputs=logout_outputs)
             self._dashboard.logout_button.click(logout_event, inputs=[token_state, state], outputs=logout_outputs)
-            chat.admin_button.click(admin_event, inputs=[state], outputs=[state, *screen])
+            area.admin_button.click(admin_event, inputs=[state], outputs=[state, *screen])
             self._dashboard.back_button.click(back_event, inputs=[state], outputs=[state, *screen])
-            bind_theme_toggle(login.theme_button, chat.theme_button)
+            bind_theme_toggle(login.theme_button, area.theme_button)
+
+            # ---- 채팅: 질문 보내기 · 사진 첨부(미리보기) · 예시 질문 · 대화 초기화 ----
+            def submit_event(message, history, current, image):
+                history = list(history or [])
+                if image and (current or {}).get("user") is not None:
+                    # 사진 분석(on_image)은 3.7.5 에서 연결. 지금은 사진 말풍선과 가짜 안내 카드만 붙임
+                    history.append({"role": "user", "content": {"path": image}})
+                    if (message or "").strip():
+                        history.append({"role": "user", "content": render_user_message(message.strip())})
+                    history.append({"role": "assistant", "content": self.render_answer(fake_photo_answer(Path(image).name))})
+                    new_state = current
+                else:
+                    history, new_state = self.on_submit(message, history, current)
+                return (history, new_state, "", gr.update(visible=not history),
+                        render_equipment(new_state.get("equipment")), *clear_preview)
+
+            def attach_event(file):
+                return file, gr.update(visible=bool(file)), file
+
+            def remove_event():
+                return None, gr.update(visible=False), None
+
+            def reset_event(current):
+                new_state = self.reset_conversation(current)
+                return (new_state, render_equipment(new_state.get("equipment")), *fresh_values)
+
+            chat_outputs = [area.chatbot, state, area.message, area.examples, area.equipment, *preview_outputs]
+            submit_inputs = [area.message, area.chatbot, state, pending_image]
+            area.send_button.click(submit_event, inputs=submit_inputs, outputs=chat_outputs)
+            area.message.submit(submit_event, inputs=submit_inputs, outputs=chat_outputs)
+            area.image_button.upload(attach_event, inputs=[area.image_button], outputs=preview_outputs)
+            area.preview_remove.click(remove_event, outputs=preview_outputs)
+            sidebar.reset_button.click(reset_event, inputs=[state], outputs=[state, area.equipment, *fresh_chat])
+            for button, template in zip(area.example_buttons, EXAMPLE_QUESTIONS):
+                button.click(lambda t=template: self.show_examples(t)[1], inputs=None, outputs=[area.message])
 
         return demo
 
@@ -196,7 +256,18 @@ class ChatApp:
 
         Returns: list, dict
         """
-        raise NotImplementedError("ChatApp.on_submit")
+        # TODO(3.7.4): 지금은 화면 확인용 가짜 응답(ui/chat/fake_answer.py). RagPipeline.answer 를 연결하면 이 한 줄만 바꾼다.
+        #   가짜 응답은 대화 기록(MySQL chat_history)에 저장하지 않는다 (실제 DB 에 가짜 답변이 쌓이지 않게)
+        message = (message or "").strip()
+        history = list(history or [])
+        state = state if state is not None else {}
+        if not message or state.get("user") is None:   # 빈 질문·로그인 전에는 처리하지 않음
+            return history, state
+        history += [
+            {"role": "user", "content": render_user_message(message)},
+            {"role": "assistant", "content": self.render_answer(fake_answer(message))},
+        ]
+        return history, state
 
     def on_image(self, image: bytes, history: list, state: dict):
         """
@@ -220,7 +291,8 @@ class ChatApp:
 
         Returns: list[str], str
         """
-        raise NotImplementedError("ChatApp.show_examples")
+        # 목록은 ui/chat/chat_area.py 의 EXAMPLE_QUESTIONS (임시 문구). 3.7.3 에서 템플릿을 정하면 그쪽을 고친다.
+        return list(EXAMPLE_QUESTIONS), template or ""
 
     def show_history(self, state: dict):
         """
@@ -237,7 +309,8 @@ class ChatApp:
 
         Returns: dict
         """
-        raise NotImplementedError("ChatApp.reset_conversation")
+        # 설비 필터는 ConversationState.clear 가 비우고, 화면의 채팅창은 build_ui 의 reset_event 가 [] 로 지움
+        return self._conversation.clear(state)
 
     def change_admin_mode(self, state: dict):
         """
@@ -260,11 +333,19 @@ class ChatApp:
         state["admin_mode"] = False
         return state
 
-    def render_answer(self, answer: dict):
+    def render_answer(self, answer: dict | AnswerResponse):
         """
         응답 JSON을 화면용 텍스트로 변환 (요약 → 안전 문구 → 원인·조치 → 출처·원문 → 그림 순서, 후속 질문 버튼 포함), 원문 보기에서
         근거가 표·그림이면 잘라 둔 이미지를 같이 표시
 
         Returns: str
         """
-        raise NotImplementedError("ChatApp.render_answer")
+        # 뼈대: 카드 모양은 ui/chat/messages.py. 원문 보기의 표·그림 이미지와 후속 질문 버튼은 3.7.4 에서 붙인다.
+        # 응답 dict 는 여기서 AnswerResponse 로 한 번만 검사한다. 형식이 틀려도 화면 전체가 깨지지 않고 안내 카드만 보인다.
+        if not isinstance(answer, AnswerResponse):
+            try:
+                answer = AnswerResponse.model_validate(answer)
+            except ValidationError as e:
+                print(f"[gradio_app] 응답 형식 오류: {e.error_count()}건")
+                answer = AnswerResponse(status="error", input_type="text", message=MSG_BAD_ANSWER)
+        return render_answer_card(answer)

@@ -16,11 +16,6 @@ body {
   --wk-tag-text: #0e1a15;
   --wk-title: #16201b;
   --wk-error: #c0392b;
-  --wk-panel-bg: #ffffff;
-  --wk-panel-border: #dce1dd;
-  --wk-header-bg: #0e1a15;
-  --wk-header-text: #eaf2ec;
-  --wk-body-bg: #f6f7f5;
 }
 
 
@@ -38,11 +33,6 @@ body.dark {
   --wk-tag-text: #6fe0a6;
   --wk-title: #6fe0a6;
   --wk-error: #ff7a6b;
-  --wk-panel-bg: #18201c;
-  --wk-panel-border: #2e3a34;
-  --wk-header-bg: #0b100e;
-  --wk-header-text: #e6ede8;
-  --wk-body-bg: #0b100e;
 }
 
 /* 라이트/다크에서 따로 보이는 글자 (시안마다 태그·제목 문구가 다름) */
