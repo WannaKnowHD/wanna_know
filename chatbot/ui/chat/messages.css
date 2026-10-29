@@ -1,0 +1,69 @@
+/* 채팅창 안의 말풍선·답변 카드·안내 (Figma 01~04). 색은 chat.css 의 변수 */
+
+/* 대화 시작 전 안내 (Figma 01) */
+.wk-welcome { text-align: left; max-width: 52rem; margin: 0 auto; padding: 2rem 0; }
+.wk-welcome-title { color: var(--wk-chat-text); font-size: 1.875rem; font-weight: 700; margin: 0 0 0.625rem; }
+.wk-welcome-text { color: var(--wk-chat-muted); font-size: 0.9375rem; margin: 0 0 0.625rem; }
+
+/* 사용자 말풍선 */
+.wk-user-text { color: var(--wk-chat-text); font-size: 0.875rem; white-space: pre-wrap; }
+
+/* 현재 설비 칩 (상단 바) */
+.wk-chip {
+  display: inline-block;
+  border: 1px solid var(--wk-chat-border);
+  border-radius: 999px;
+  background: var(--wk-chat-control-bg);
+  color: var(--wk-chat-text);
+  font-size: 0.8125rem;
+  padding: 0.3125rem 0.75rem;
+}
+.wk-chip-on { border-color: var(--wk-send-bg); color: var(--wk-send-bg); font-weight: 600; }
+
+/* 답변 카드 (Figma 02) */
+.wk-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  max-width: 51.25rem;
+  background: var(--wk-chat-bg);
+  color: var(--wk-chat-text);
+  border: 1px solid var(--wk-chat-border);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+}
+.wk-section { display: flex; flex-direction: column; gap: 0.375rem; }
+.wk-label { color: var(--wk-chat-muted); font-size: 0.75rem; font-weight: 700; }
+.wk-line { margin: 0; font-size: 0.875rem; line-height: 1.5; color: var(--wk-chat-text); }
+
+.wk-safety {
+  display: flex;
+  gap: 0.75rem;
+  background: var(--wk-safety-bg);
+  border: 1px solid var(--wk-safety-border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+.wk-safety-label { color: var(--wk-safety-text); font-size: 0.8125rem; flex: 0 0 auto; }
+.wk-safety .wk-line { color: var(--wk-safety-text); font-size: 0.8125rem; }
+
+.wk-figure-box {
+  display: flex; align-items: center; justify-content: center;
+  width: 15rem; height: 8.75rem;
+  background: var(--wk-bubble-bg); border-radius: 0.5rem; color: var(--wk-chat-muted); font-size: 0.8125rem;
+}
+.wk-caption { color: var(--wk-chat-muted); font-size: 0.75rem; margin-top: 0.375rem; }
+
+.wk-source { margin: 0; }
+.wk-source summary { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; list-style: none; }
+.wk-source summary::-webkit-details-marker { display: none; }
+.wk-link { color: var(--wk-chat-text); font-size: 0.8125rem; font-weight: 500; text-decoration: underline; }
+.wk-quote {
+  margin: 0.5rem 0 0; padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--wk-chat-border); color: var(--wk-chat-muted); font-size: 0.8125rem;
+}
+
+/* 안내 카드: 근거 부족(되묻기)·명판 결과·재촬영 (Figma 03·04) */
+.wk-notice { gap: 0.75rem; }
+.wk-notice-title { color: var(--wk-chat-text); font-size: 1rem; font-weight: 700; }
+.wk-notice-text { color: var(--wk-chat-text); font-size: 0.875rem; margin: 0; }
