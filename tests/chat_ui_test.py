@@ -70,9 +70,24 @@ def test_answer_card_order_and_escape():
     html = render_answer_card(fake_answer("벨트"))
     positions = [html.index(w) for w in ("요약", "안전", "원인·조치", "그림", "출처·원문")]
     assert positions == sorted(positions)             # 요약 → 안전 문구 → 원인·조치 → 그림 → 출처·원문
-    assert "①" in html and "원문 보기" in html
+    assert "wk-cause" in html and "<ol class='wk-actions'>" in html and "원문 보기" in html
     evil = fake_answer("벨트").model_copy(update={"summary": "<img src=x onerror=alert(1)>"})
     assert "<img" not in render_answer_card(evil)
+
+
+def test_answer_card_merges_duplicate_causes():
+    """같은 원인이 KB마다 반복되면 한 블록으로 합치고, 조치는 중복 없이 순서대로 보인다"""
+    from chatbot.core.schemas import Cause
+
+    base = fake_answer("벨트")
+    causes = [
+        Cause(id="TS-HYTROL138ACC-T01-04#c1", cause="과부하", actions=["물량 줄이기", "전압 확인"]),
+        Cause(id="TS-HYTROL138ACC-T01-05#c1", cause="과부하", actions=["전압 확인", "용량 확인"]),
+        Cause(id="TS-HYTROL138ACC-T01-04#c2", cause="윤활 부족", actions=["재윤활"]),
+    ]
+    html = render_answer_card(base.model_copy(update={"causes": causes}))
+    assert html.count("wk-cause-head") == 2 and html.count("<li>전압 확인</li>") == 1
+    assert html.index("물량 줄이기") < html.index("용량 확인") < html.index("윤활 부족")
 
 
 def test_answer_card_notice_for_not_found():

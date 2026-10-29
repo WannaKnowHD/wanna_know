@@ -86,15 +86,27 @@ def _section(label: str, body: str) -> str:
     return f"<div class='wk-section'><div class='wk-label'>{escape(label)}</div>{body}</div>"
 
 
-def _render_causes(causes: list[Cause]) -> str:
-    """원인마다 '원인: …' 한 줄과 '조치: ① … ② …' 한 줄"""
-    parts = []
+def _merge_causes(causes: list[Cause]) -> list[tuple[str, list[str]]]:
+    """같은 원인 문장은 하나로 합치고 조치는 순서를 지키며 중복을 뺀다 (KB 여러 개가 같은 원인을 돌려줄 때 반복돼 보이지 않게)"""
+    merged: dict[str, list[str]] = {}
     for cause in causes:
-        actions = " ".join(f"{_circled(i)} {escape(a)}" for i, a in enumerate(cause.actions, start=1))
-        parts.append(f"<p class='wk-line'><b>원인</b> {escape(cause.cause)}</p>")
-        if actions:
-            parts.append(f"<p class='wk-line'><b>조치</b> {actions}</p>")
-    return "".join(parts)
+        actions = merged.setdefault(cause.cause.strip(), [])
+        actions.extend(a for a in cause.actions if a not in actions)
+    return list(merged.items())
+
+
+def _render_causes(causes: list[Cause]) -> str:
+    """원인마다 번호 붙은 제목 한 줄과, 그 아래 조치 목록 (순서대로 점검)"""
+    blocks = []
+    for number, (cause, actions) in enumerate(_merge_causes(causes), start=1):
+        steps = "".join(f"<li>{escape(a)}</li>" for a in actions)
+        action_list = f"<ol class='wk-actions'>{steps}</ol>" if steps else ""
+        blocks.append(
+            "<div class='wk-cause'>"
+            f"<div class='wk-cause-head'><span class='wk-cause-no'>{number}</span>{escape(cause)}</div>"
+            f"{action_list}</div>"
+        )
+    return "".join(blocks)
 
 
 def _render_safety_note(note: SafetyNote) -> str:
