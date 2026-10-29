@@ -53,9 +53,11 @@ SAVE_REVIEW_SQL = (
     "ON DUPLICATE KEY UPDATE reviewed = %s, kb_update_needed = %s, reviewed_by = %s, reviewed_at = NOW()"
 )
 
-# 기간 선택: 이름 → 오늘을 포함한 일수. 운영 현황·답변 품질 탭이 같은 기간의 로그를 씀
+# 기간 선택: 이름 → 오늘을 포함한 일수. 운영 현황·답변 품질 탭이 같은 기간의 로그를 씀 (Figma 기본: 최근 7일)
 PERIODS = {"오늘": 1, "최근 7일": 7, "최근 30일": 30}
 DEFAULT_PERIOD = "최근 7일"
+ADMIN_TITLE = "관리자 대시보드"       # Figma 06~09 상단 바 왼쪽 제목
+BACK_LABEL = "뒤로가기 (채팅 화면)"   # Figma 상단 바 버튼 · 화면설계서 SCR-05 3번
 
 # chat_logs.input_type → 화면 이름 (usage_tab.INPUT_TYPE_ORDER 와 같은 순서)
 INPUT_TYPE_LABELS = {"text": "텍스트 질문", "nameplate": "명판 사진", "damage": "손상 사진", "other": "그 외 사진"}
@@ -191,20 +193,20 @@ class AdminDashboard:
     def not_found_list(self, logs: DataFrame):
         """
         답변 품질 탭 하위: chat_logs에서 답을 못 찾은 질문(not_found=true, source='user')과 kb_gaps의 검토 상태를 합쳐
-        목록(시각·질문·설비·검색 점수·담당자 확인·KB 업데이트 필요) 출력. 검토 상태는 load_logs가 kb_gaps를 LEFT JOIN해
-        담아 둔 reviewed·kb_update_needed 열을 사용. 담당자 확인·KB 업데이트 필요는 체크박스 열로 표시
+        목록(Figma 07: 날짜·질문·설비·담당자 확인·KB 업데이트 필요) 출력. 검토 상태는 load_logs가 kb_gaps를 LEFT JOIN해
+        담아 둔 reviewed·kb_update_needed 열을 사용. 담당자 확인·KB 업데이트 필요는 체크박스 열로 표시.
+        맨 뒤 No(log_id)는 저장할 때 행을 찾는 열이라 화면에서는 숨김
 
         Returns: DataFrame (열은 quality_tab.NOT_FOUND_HEADERS, load_logs 와 같은 최신순)
         """
         rows = logs[logs["not_found"].astype(bool)].sort_values(["created_at", "log_id"], ascending=False)
         return pd.DataFrame({
-            "No": rows["log_id"].astype(int),
-            "시각": pd.to_datetime(rows["created_at"]).dt.strftime("%m/%d %H:%M"),
+            "날짜": pd.to_datetime(rows["created_at"]).dt.strftime("%m/%d %H:%M"),
             "질문": rows["question"].fillna(""),
-            "설비": rows["equipment_model"].fillna(NO_MODEL_LABEL),
-            "검색 점수": pd.to_numeric(rows["top_score"]).round(2),   # 점수가 모두 비면 숫자 열이 아니라서 바꿔 둠
+            "설비": rows["equipment_model"].fillna(NO_MODEL_LABEL).replace("", NO_MODEL_LABEL),
             REVIEWED: rows["reviewed"].astype(bool),
             KB_UPDATE_NEEDED: rows["kb_update_needed"].astype(bool),
+            "No": rows["log_id"].astype(int),
         }).reset_index(drop=True)
 
     def save_review(
@@ -313,74 +315,42 @@ class AdminDashboard:
 
     def build_admin_tab(self, state: gr.State | None = None):
         """
-        관리자 대시보드 화면 구성 (운영 현황·답변 품질·시스템·KB 현황 4개 탭, gr.Dataframe·gr.BarPlot·gr.LinePlot).
-        관리자 모드일 때만 표시. 기간 선택·새로고침은 운영 현황·답변 품질 탭을 함께 갱신(refresh).
-        state 는 ChatApp 의 대화 상태(gr.State). 새로고침·검토 저장 때 state["user"] 로 관리자 권한을 다시 확인
+        관리자 대시보드 화면 구성 (Figma 06~09): 상단 바(제목 · 관리자 모드 · 관리자 정보 · 뒤로가기 · 로그아웃) 아래에
+        운영 현황 · 답변 품질 · 시스템 · KB 현황 4개 탭. 기간 선택은 운영 현황 탭 맨 위의 기간 표시에 있고, 고르면 운영 현황 ·
+        답변 품질 탭을 함께 갱신(refresh). state 는 ChatApp 의 대화 상태(gr.State). 갱신 · 검토 저장 때 state["user"] 로 관리자
+        권한을 다시 확인
 
         Returns: gr.Column
         """
-
-        # 관리자 화면 공통 레이아웃 (스타일: ADMIN_CSS_PATH)
-        # 화면 전환은 ChatApp에서 visible로 처리하므로 상위 탭 없이 Column으로 구성
+        # 화면 전환은 ChatApp 이 visible 로 처리하므로 상위 탭 없이 Column 으로 구성 (스타일: ADMIN_CSS_PATH)
         with gr.Column(elem_id="admin-root") as admin_view:
-            # 관리자 공통 헤더: 로고·관리자 모드 / 사원 정보·채팅 복귀·로그아웃
             with gr.Row(elem_id="admin-header", equal_height=True):
                 gr.HTML(
                     "<div class='admin-brand-inner'>"
-                    "<span class='admin-brand-logo'>WANNA KNOW</span>"
+                    f"<span class='admin-brand-title'>{ADMIN_TITLE}</span>"
                     "<span class='admin-mode-chip'>관리자 모드</span>"
                     "</div>",
                     elem_classes=["admin-brand"],
                 )
-                # 로그인한 사원 정보는 ChatApp에서 render_user_info로 갱신
+                # 로그인한 사원 정보는 ChatApp 이 render_user_info 로 갱신
                 self.user_info_display = gr.HTML(self.render_user_info(None))
-                self.back_button = gr.Button(
-                    "채팅 화면으로",
-                    elem_classes=["admin-header-button"],
-                )
-                self.logout_button = gr.Button(
-                    "로그아웃",
-                    elem_classes=["admin-header-button"],
-                )
+                self.back_button = gr.Button(BACK_LABEL, elem_classes=["admin-header-button"])
+                self.logout_button = gr.Button("로그아웃", elem_classes=["admin-header-button"])
 
-            # 기간 선택: 운영 현황·답변 품질 탭이 같은 기간의 로그를 씀
-            with gr.Row(elem_id="admin-toolbar", equal_height=True):
-                self.period_input = gr.Radio(
-                    choices=list(PERIODS),
-                    value=DEFAULT_PERIOD,
-                    show_label=False,
-                    container=False,
-                    elem_classes=["admin-period"],
-                )
-                self.refresh_button = gr.Button(
-                    "새로고침",
-                    size="sm",
-                    elem_classes=["admin-toolbar-button"],
-                )
-                self.updated_note = gr.Markdown(elem_classes=["admin-note"])
-
-            # 관리자 내부 탭 구성
             with gr.Tabs(elem_id="admin-tabs"):
-                # 운영 현황 탭
-                usage_tab = build_usage_tab()
-
-                # 답변 품질 탭
-                quality_tab = build_quality_tab()
-
-                # 시스템 현황 탭
-                build_system_tab()
-
-                # KB 현황 탭
-                kb_tab = build_kb_tab()
+                usage_tab = build_usage_tab(list(PERIODS), DEFAULT_PERIOD)   # 운영 현황 (기간 선택 포함)
+                quality_tab = build_quality_tab()                           # 답변 품질
+                build_system_tab()                                          # 시스템 (3.8.5)
+                kb_tab = build_kb_tab()                                     # KB 현황 (3.8.6, _wire_kb_tab 이 연결)
 
         session_state = state if state is not None else gr.State({})
         # 마지막으로 그린 "답 못 찾은 질문 목록". 체크박스가 바뀐 행을 찾을 때 비교 기준
         review_snapshot = gr.State(None)
         # ChatApp 은 관리자 전환 뒤 .then(self.refresh, self.refresh_inputs, self.refresh_outputs) 로 처음 값을 채움
+        self.period_input = usage_tab.period
         self.refresh_inputs = [self.period_input, session_state]
-        self.refresh_outputs = [*usage_tab.outputs(), *quality_tab.outputs(), review_snapshot, self.updated_note]
+        self.refresh_outputs = [*usage_tab.outputs(), *quality_tab.outputs(), review_snapshot]
         self.period_input.change(fn=self.refresh, inputs=self.refresh_inputs, outputs=self.refresh_outputs)
-        self.refresh_button.click(fn=self.refresh, inputs=self.refresh_inputs, outputs=self.refresh_outputs)
         quality_tab.not_found_table.input(
             fn=self.on_review_input,
             inputs=[quality_tab.not_found_table, review_snapshot, session_state],
@@ -393,26 +363,25 @@ class AdminDashboard:
 
     def refresh(self, period: str, state: dict | None):
         """
-        선택한 기간의 로그를 load_logs 로 한 번 읽어 운영 현황·답변 품질 탭 값을 함께 만듦 (기간 선택·새로고침·관리자 전환 직후).
+        선택한 기간의 로그를 load_logs 로 한 번 읽어 운영 현황·답변 품질 탭 값을 함께 만듦 (기간 선택·관리자 전환 직후).
         관리자 함수는 화면에서 숨겨도 API 로 불릴 수 있어 함수 안에서 관리자 권한 확인 (아니면 gr.Error)
 
         Returns: list (refresh_outputs 순서의 화면 값)
         """
         _require_admin(state)
+        period = period if period in PERIODS else DEFAULT_PERIOD   # 화면 밖에서 이상한 값이 와도 기본 기간으로
         start, end = period_range(period, date.today())
         try:
             logs = self.load_logs(start, end, self.db)
         except Exception as error:
             # DB 가 끊겨도 화면이 멈추지 않게 안내만 띄움 (문구는 4.2.6 · 6.1.1 에서 확정)
             logger.exception("관리자 대시보드 로그 조회 실패")
-            raise gr.Error("로그를 불러오지 못했습니다. 잠시 후 새로고침해 주세요.") from error
+            raise gr.Error("로그를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.") from error
         not_found = self.not_found_list(logs)
-        period_label = f"{period} ({start:%m/%d}~{end:%m/%d})"
         return [
-            *render_usage_tab(self.usage_stats(logs, start, end), period_label),
-            *render_quality_tab(self.quality_stats(logs), not_found),
+            *render_usage_tab(self.usage_stats(logs, start, end), start, end),
+            *render_quality_tab(self.quality_stats(logs), not_found, period),
             not_found,
-            f"마지막 갱신 {datetime.now():%H:%M:%S}",
         ]
 
     def on_review_input(self, table: DataFrame, previous: DataFrame | None, state: dict | None):
