@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from datetime import date, datetime, time, timedelta
 from html import escape
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import gradio as gr
+import pandas as pd
 
 from chatbot.ui.admin.usage_tab import build_usage_tab
 from chatbot.ui.admin.quality_tab import build_quality_tab
@@ -22,6 +25,23 @@ if TYPE_CHECKING:
 # 관리자 화면 스타일. Gradio 6은 css를 launch(css_paths=[ADMIN_CSS_PATH])로 넘김
 ADMIN_CSS_PATH = Path(__file__).parent / "admin" / "admin.css"
 
+# load_logs 가 돌려주는 열 (chat_logs 열 + kb_gaps 검토 상태). 통계 함수(usage_stats · quality_stats · not_found_list)가 이 이름을 씀
+LOG_TABLE_COLUMNS = [
+    "log_id", "created_at", "employee_id", "question", "input_type", "question_type", "equipment_model",
+    "kb_ids", "top_score", "not_found", "safety_included", "confidence", "latency_ms", "tokens_in",
+    "tokens_out", "error", "reviewed", "kb_update_needed",
+]
+LOG_JSON_COLUMNS = ("kb_ids", "latency_ms")
+LOG_BOOL_COLUMNS = ("not_found", "safety_included", "reviewed", "kb_update_needed")
+LOAD_LOGS_SQL = (
+    "SELECT l.log_id, l.created_at, l.employee_id, l.question, l.input_type, l.question_type, "
+    "l.equipment_model, l.kb_ids, l.top_score, l.not_found, l.safety_included, l.confidence, "
+    "l.latency_ms, l.tokens_in, l.tokens_out, l.error, "
+    "COALESCE(g.reviewed, 0) AS reviewed, COALESCE(g.kb_update_needed, 0) AS kb_update_needed "
+    "FROM chat_logs l LEFT JOIN kb_gaps g ON g.log_id = l.log_id "
+    "WHERE l.source = 'user' AND l.created_at >= %s AND l.created_at < %s "
+    "ORDER BY l.created_at DESC, l.log_id DESC"
+)
 
 class AdminDashboard:
     """AdminDashboard (기능명세서 기준 뼈대)."""
@@ -50,7 +70,24 @@ class AdminDashboard:
 
         Returns: DataFrame
         """
-        raise NotImplementedError("AdminDashboard.load_logs")
+        start, end = _as_date(start), _as_date(end)
+        if start > end:
+            start, end = end, start
+        # end 당일 기록까지 포함: end 다음 날 00:00 미만
+        begin = datetime.combine(start, time.min).strftime("%Y-%m-%d %H:%M:%S")
+        until = datetime.combine(end + timedelta(days=1), time.min).strftime("%Y-%m-%d %H:%M:%S")
+        rows = db.fetch(LOAD_LOGS_SQL, (begin, until))
+
+        logs = pd.DataFrame(rows, columns=LOG_TABLE_COLUMNS)
+        if logs.empty:
+            return logs
+        logs["created_at"] = pd.to_datetime(logs["created_at"])
+        for column in LOG_JSON_COLUMNS:   # MySQL(db.fetch)는 이미 풀어 주고, sqlite 는 글자로 옴
+            empty = [] if column == "kb_ids" else {}
+            logs[column] = logs[column].map(lambda v, empty=empty: _from_json(v, empty))
+        for column in LOG_BOOL_COLUMNS:   # MySQL BOOLEAN 은 0 · 1 로 옴
+            logs[column] = logs[column].fillna(0).astype(bool)
+        return logs
 
     def usage_stats(self, logs: DataFrame):
         """
@@ -160,3 +197,23 @@ class AdminDashboard:
                 build_kb_tab()
 
         return admin_view
+
+def _as_date(value) -> date:
+    """date · datetime · "YYYY-MM-DD" 를 date 로"""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
+
+
+def _from_json(value, empty):
+    """JSON 칸 값: 글자면 풀고, 비어 있으면 empty"""
+    if value is None or value == "":
+        return empty
+    if isinstance(value, (bytes, str)):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return empty
+    return value
