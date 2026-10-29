@@ -18,7 +18,14 @@ from chatbot.ui.chat.messages import (
     render_user_message,
     render_welcome,
 )
-from chatbot.ui.chat.sidebar import SIDEBAR_CSS_PATH, Sidebar, build_sidebar, render_history, render_user_info
+from chatbot.ui.chat.sidebar import (
+    SIDEBAR_CSS_PATH,
+    Sidebar,
+    build_sidebar,
+    history_key,
+    render_history,
+    render_user_info,
+)
 
 # launch(css_paths=...) 에 넘기는 스타일 파일. 색 변수를 정의한 chat.css 가 먼저 와야 한다.
 CHAT_CSS_PATHS = [CHAT_CSS_PATH, SIDEBAR_CSS_PATH, CHAT_AREA_CSS_PATH, MESSAGES_CSS_PATH]
@@ -26,7 +33,7 @@ CHAT_CSS_PATHS = [CHAT_CSS_PATH, SIDEBAR_CSS_PATH, CHAT_AREA_CSS_PATH, MESSAGES_
 __all__ = [
     "CHAT_CSS_PATHS", "EXAMPLE_QUESTIONS",
     "ChatScreen", "build_chat_screen", "ChatArea", "build_chat_area", "Sidebar", "build_sidebar",
-    "render_history", "render_user_info",
+    "history_key", "render_history", "render_user_info",
     "render_answer_card", "render_equipment", "render_user_message", "render_welcome",
     "fake_answer", "fake_photo_answer",
 ]

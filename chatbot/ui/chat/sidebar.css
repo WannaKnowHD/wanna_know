@@ -44,6 +44,17 @@
 .history-list li { display: flex; flex-direction: column; gap: 0.125rem; padding: 0.5rem 0.625rem; border-radius: 0.5rem; }
 .history-list li:hover { background: var(--wk-sb-item-bg); }
 .history-question { color: var(--wk-sb-text); font-size: 0.8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#chat-sidebar > #sb-history { flex: 1 1 auto !important; overflow-y: auto; min-height: 0; }
+/* 대화 기록 항목 (Figma Sidebar/Item 228x51: 질문 + 시각). 누르면 그 대화를 채팅창에 보여 줌, 고른 항목은 배경을 채움 */
+.history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.history-item {
+  display: flex; flex-direction: column; gap: 0.125rem;
+  padding: 0.625rem 0.75rem; border-radius: 0.5rem; cursor: pointer;
+}
+.history-item:hover,
+.history-item.is-active { background: var(--wk-sb-item-bg); }
+.history-item:focus-visible { outline: 2px solid var(--wk-sb-brand); outline-offset: -2px; }
+.history-question { color: var(--wk-sb-text); font-size: 0.8125rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-time { color: var(--wk-sb-muted); font-size: 0.6875rem; }
 .sb-empty { color: var(--wk-sb-muted); font-size: 0.8125rem; margin: 0; }
 

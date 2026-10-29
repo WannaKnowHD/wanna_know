@@ -1,6 +1,7 @@
 """로그인·채팅 화면을 조립하고 이벤트를 연결 (화면 요소·스타일: 로그인 ui/login, 채팅 ui/chat, 관리자 ui/dashboard·ui/admin)"""
 from __future__ import annotations
 
+import json
 import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -14,6 +15,7 @@ from chatbot.ui.chat import (
     CHAT_CSS_PATHS,
     EXAMPLE_QUESTIONS,
     build_chat_screen,
+    history_key,
     render_answer_card,
     render_equipment,
     render_history,
@@ -199,7 +201,7 @@ class ChatApp:
 
             def answer_event(pending, history, current):
                 if pending is None:
-                    return history, current, gr.update(visible=not history), self.show_equipment(current)
+                    return history, current, gr.update(visible=not history), self.show_equipment(current), gr.update()
                 if pending["image"]:
                     # 사진 말풍선은 이미 보였으므로 on_image(3.7.5)에는 말풍선까지 붙인 기록을 넘겨 답변 카드만 붙게 함
                     shown = list(pending["history"]) + [{"role": "user", "content": {"path": pending["image"]}}]
@@ -208,13 +210,22 @@ class ChatApp:
                     history, new_state = self.on_image(Path(pending["image"]).read_bytes(), shown, current)
                 else:
                     history, new_state = self.on_submit(pending["message"], pending["history"], current)
-                return history, new_state, gr.update(visible=not history), self.show_equipment(new_state)
+                # 방금 저장한 대화가 사이드바 대화 기록 맨 위에 보이게 다시 그림
+                return (history, new_state, gr.update(visible=not history), self.show_equipment(new_state),
+                        render_history(self.show_history(new_state)))
 
             def attach_event(file):
                 return file, gr.update(visible=bool(file)), file
 
             def remove_event():
                 return None, gr.update(visible=False), None
+
+            def history_event(current, evt: gr.EventData):   # 대화 기록 항목을 누르면 그 대화를 채팅창에 보여 줌 (C-03)
+                data = evt._data if isinstance(evt._data, dict) else {}
+                messages = self.open_history(current, data.get("index"), data.get("key"))
+                if messages is None:   # 그사이 기록이 바뀌어 찾지 못하면 채팅창은 그대로
+                    return gr.update(), gr.update()
+                return messages, gr.update(visible=False)
 
             def reset_event(current):
                 new_state = self.reset_conversation(current)
@@ -224,7 +235,7 @@ class ChatApp:
             question_outputs = [area.chatbot, pending_question, area.message, area.examples, *preview_outputs]
             question_inputs = [area.message, area.chatbot, state, pending_image]
             answer_inputs = [pending_question, area.chatbot, state]
-            answer_outputs = [area.chatbot, state, area.examples, area.equipment]
+            answer_outputs = [area.chatbot, state, area.examples, area.equipment, sidebar.history]
             for trigger in (area.send_button.click, area.message.submit):
                 trigger(show_question_event, inputs=question_inputs, outputs=question_outputs).then(
                     answer_event, inputs=answer_inputs, outputs=answer_outputs
@@ -232,6 +243,7 @@ class ChatApp:
             area.image_button.upload(attach_event, inputs=[area.image_button], outputs=preview_outputs)
             area.preview_remove.click(remove_event, outputs=preview_outputs)
             sidebar.reset_button.click(reset_event, inputs=[state], outputs=[state, area.equipment, *fresh_chat])
+            sidebar.history.click(history_event, inputs=[state], outputs=[area.chatbot, area.examples])
             for button, template in zip(area.example_buttons, EXAMPLE_QUESTIONS):
                 button.click(lambda t=template: self.show_examples(t)[1], inputs=None, outputs=[area.message])
 
@@ -479,6 +491,34 @@ class ChatApp:
         """
         user = state.get("user")
         return self._conversation.load_history(user.employee_id) if user is not None else []
+
+    def open_history(self, state: dict, index, key: str | None = None):
+        """
+        대화 기록 목록의 항목을 누르면 그 대화의 질문·답변을 채팅창에 다시 보여 줌 (C-03). index 는 목록 순서(최신순),
+        key 는 항목에 달아 둔 history_key(저장 시각 + 질문). 목록을 그린 뒤 새 대화가 저장돼 순서가 밀렸으면 key 로 다시 찾음
+
+        Returns: list | None (채팅창 기록: 질문 말풍선 + 답변 카드. 찾지 못하면 None)
+        """
+        rows = self.show_history(state or {})
+        try:
+            index = int(index)
+        except (TypeError, ValueError):
+            index = -1
+        row = rows[index] if 0 <= index < len(rows) else None
+        if key is not None and (row is None or history_key(row) != key):
+            row = next((r for r in rows if history_key(r) == key), None)
+        if row is None:
+            return None
+        answer = row.get("answer")
+        if isinstance(answer, (str, bytes)):   # DB 드라이버에 따라 JSON 칸이 글자로 올 수 있음
+            try:
+                answer = json.loads(answer)
+            except ValueError:
+                answer = None
+        return [
+            {"role": "user", "content": render_user_message(str(row.get("question") or ""))},
+            {"role": "assistant", "content": self.render_answer(answer or {})},   # 깨진 답변은 안내 카드로 보임
+        ]
 
     def reset_conversation(self, state: dict):
         """
