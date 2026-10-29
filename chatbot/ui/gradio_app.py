@@ -1,6 +1,7 @@
 """로그인·채팅 화면을 조립하고 이벤트를 연결 (화면 요소·스타일: 로그인 ui/login, 채팅 ui/chat, 관리자 ui/dashboard·ui/admin)"""
 from __future__ import annotations
 
+import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,7 +14,6 @@ from chatbot.ui.chat import (
     CHAT_CSS_PATHS,
     EXAMPLE_QUESTIONS,
     build_chat_screen,
-    fake_answer,
     render_answer_card,
     render_equipment,
     render_history,
@@ -35,8 +35,11 @@ from chatbot.ui.login import (
 if TYPE_CHECKING:
     from chatbot.core.auth import AuthManager
     from chatbot.core.config import Settings
+    from chatbot.pipeline import RagPipeline
 
 MSG_BAD_ANSWER = "답변 형식이 올바르지 않아 표시할 수 없습니다. 다시 질문해 주세요."   # 응답이 AnswerResponse 형식에 맞지 않을 때
+MSG_NO_PIPELINE = "답변 기능을 아직 사용할 수 없습니다. 관리자에게 문의해 주세요."     # RagPipeline 을 만들지 못했을 때 (색인 없음 등)
+MSG_ANSWER_ERROR = "답변을 만드는 중 문제가 생겼어요. 잠시 후 다시 질문해 주세요."     # RagPipeline.answer 밖에서 예외가 났을 때
 
 # ---- 사진 첨부 (on_image, WBS 3.7.5) ----
 IMAGE_MIN_CONFIDENCE = 0.6   # 사진 종류 판별 확신도가 이보다 낮으면 재촬영 (명판·손상 분석과 같은 기준)
@@ -60,6 +63,7 @@ class ChatApp:
         auth: AuthManager | None = None,
         conversation: ConversationState | None = None,
         dashboard: AdminDashboard | None = None,
+        pipeline: RagPipeline | None = None,
     ):
         """
         받는 것:
@@ -67,11 +71,13 @@ class ChatApp:
           auth         : 로그인·세션 (core.auth.AuthManager)
           conversation : 사용자별 대화 상태 (core.state.ConversationState). 없으면 DB 없이 화면 상태만 다룸
           dashboard    : 관리자 대시보드 (ui.dashboard.AdminDashboard). 없으면 DB 없이 화면 틀만 만듦
+          pipeline     : 질문 처리 (pipeline.RagPipeline, 앱 시작 때 1번 만든 것). 없으면 질문마다 "사용할 수 없음" 안내 카드를 보여 줌
         """
         self._settings = settings
         self._auth = auth
         self._conversation = conversation or ConversationState()
         self._dashboard = dashboard or AdminDashboard()
+        self._pipeline = pipeline
 
     @staticmethod
     def launch_options() -> dict:
@@ -270,18 +276,51 @@ class ChatApp:
 
         Returns: list, dict
         """
-        # TODO(3.7.4): 지금은 화면 확인용 가짜 응답(ui/chat/fake_answer.py). RagPipeline.answer 를 연결하면 이 한 줄만 바꾼다.
-        #   가짜 응답은 대화 기록(MySQL chat_history)에 저장하지 않는다 (실제 DB 에 가짜 답변이 쌓이지 않게)
         message = (message or "").strip()
         history = list(history or [])
         state = state if state is not None else {}
         if not message or state.get("user") is None:   # 빈 질문·로그인 전에는 처리하지 않음
             return history, state
+        answer = self._answer(message, state)
         history += [
             {"role": "user", "content": render_user_message(message)},
-            {"role": "assistant", "content": self.render_answer(fake_answer(message))},
+            {"role": "assistant", "content": self.render_answer(answer)},
         ]
+        # 질문·답변을 MySQL chat_history 에 저장 (사이드바 대화 기록). 오류 안내도 사진 답변(on_image)과 같이 남긴다
+        state = self._conversation.save_history(state, {"question": message, "answer": answer.model_dump(mode="json")})
         return history, state
+
+    def _answer(self, question: str, state: dict, input_type: str = "text") -> AnswerResponse:
+        """RagPipeline.answer 를 불러 AnswerResponse 로 만든다. 파이프라인이 없거나 예외·형식 오류여도 안내 응답을 돌려줘서 화면이 멈추지 않게 한다.
+
+        RagPipeline.answer 는 chat_logs(요청 기록)를 스스로 저장하므로 여기서는 저장하지 않는다.
+        """
+        print(f"[gradio_app] 질문 받음 ({input_type}): {question!r}")
+        if self._pipeline is None:
+            print("[gradio_app] 파이프라인이 없습니다 (app.py 시작 로그의 '[app] 질문 처리 파이프라인을 만들지 못했습니다' 확인)")
+            return AnswerResponse(status="error", input_type=input_type, message=MSG_NO_PIPELINE)
+        try:
+            raw = self._pipeline.answer(question, state, input_type)
+            self._log_answer(raw)
+            return AnswerResponse.model_validate(raw)
+        except ValidationError as e:   # answer 는 스스로 형식을 검사하므로 거의 없음. 있으면 화면 전체가 깨지지 않게 안내만 보여 줌
+            print(f"[gradio_app] 응답 형식 오류: {e.error_count()}건 {e}")
+            return AnswerResponse(status="error", input_type=input_type, message=MSG_BAD_ANSWER)
+        except Exception as e:  # noqa: BLE001 — answer 가 예외를 밖으로 내지 않는 게 원칙이지만, 어떤 경우에도 화면은 계속 동작
+            print(f"[gradio_app] 답변 생성 실패: {type(e).__name__}: {e}")
+            traceback.print_exc()
+            return AnswerResponse(status="error", input_type=input_type, message=MSG_ANSWER_ERROR)
+
+    @staticmethod
+    def _log_answer(raw: dict) -> None:
+        """파이프라인이 돌려준 응답을 한 줄로 찍는다 (답을 못 만든 원인 찾기용). status 가 answered 가 아니면 trace 도 함께."""
+        raw = raw or {}
+        trace = raw.get("trace") or {}
+        print(f"[gradio_app] 응답 status={raw.get('status')} type={raw.get('question_type')} "
+              f"top_score={trace.get('top_score')} threshold={trace.get('threshold')} latency_ms={trace.get('latency_ms')}")
+        if raw.get("status") != "answered":
+            print(f"[gradio_app]   message={raw.get('message')!r} error={trace.get('error')} "
+                  f"queries_en={trace.get('queries_en')} hits={[(h.get('id'), h.get('score')) for h in trace.get('hits') or []]}")
 
     def on_image(self, image: bytes, history: list, state: dict):
         """
@@ -322,7 +361,8 @@ class ChatApp:
             llm = LLMClient(self._settings or Settings.load())
             self._vision_parts = {
                 "router": ImageRouter(llm), "reader": NameplateReader(llm), "analyzer": DamageAnalyzer(llm),
-                "models": Glossary().load_models("data/models.csv"), "pipeline": RagPipeline(llm),
+                "models": Glossary().load_models("data/models.csv"),
+                "pipeline": self._pipeline or RagPipeline(llm),   # 손상 사진 답변도 텍스트 질문과 같은 파이프라인을 씀
             }
         return self._vision_parts
 

@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT / "tests"))  # login_ui_test.FakeDb (users·sessions
 import pytest
 
 from chatbot.core.auth import AuthManager
-from chatbot.core.schemas import Model
+from chatbot.core.schemas import Model, SafetyNote
 from chatbot.core.state import ConversationState
 from chatbot.ui.chat import (
     CHAT_CSS_PATHS,
@@ -29,11 +29,25 @@ from chatbot.ui.gradio_app import ChatApp
 from login_ui_test import FakeDb
 
 
+class FakePipeline:
+    """RagPipeline 대신 쓰는 가짜: answer 와 같은 모양(AnswerResponse dict)으로 가짜 응답을 돌려주고, 받은 값을 기록한다."""
+
+    def __init__(self):
+        self.calls = []
+        self.result = None   # 예외 객체를 넣으면 던지고, dict 를 넣으면 그대로 돌려줌
+
+    def answer(self, question, state, input_type):
+        self.calls.append((question, input_type))
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result if self.result is not None else fake_answer(question).model_dump()
+
+
 @pytest.fixture
 def env():
     db = FakeDb()
     conversation = ConversationState(db)
-    app = ChatApp(auth=AuthManager(db, session_hours=8), conversation=conversation)
+    app = ChatApp(auth=AuthManager(db, session_hours=8), conversation=conversation, pipeline=FakePipeline())
     _, state = app.on_login("e1", "pw-eng", {})
     return app, state, db
 
@@ -66,6 +80,34 @@ def test_answer_card_notice_for_not_found():
     assert "문서에서 확인되지 않았습니다" in html and "다시 질문해주세요" in html
 
 
+def test_answer_card_shows_table_and_figure_images(tmp_path):
+    """표·그림 근거는 원문 보기 안에, 답변 그림은 그림 칸에 잘라 둔 이미지를 넣는다 (파일이 없으면 글자만)"""
+    image = tmp_path / "crop.png"
+    image.write_bytes(b"\x89PNG fake")
+    base = fake_answer("벨트")
+    source = base.sources[0].model_copy(update={"chunk_type": "table", "image_path": str(image)})
+    figure = base.figures[0].model_copy(update={"image_path": str(image)})
+    html = render_answer_card(base.model_copy(update={"sources": [source], "figures": [figure]}))
+    assert html.count("data:image/png;base64,") == 2
+
+    text_source = source.model_copy(update={"chunk_type": "text"})          # 본문 근거에는 이미지를 넣지 않음
+    assert "<img" not in render_answer_card(base.model_copy(update={"sources": [text_source], "figures": []}))
+
+    missing = str(tmp_path / "none.png")
+    broken = base.model_copy(update={"sources": [source.model_copy(update={"image_path": missing})],
+                                     "figures": [figure.model_copy(update={"image_path": missing})]})
+    html = render_answer_card(broken)
+    assert "<img" not in html and "이미지를 불러올 수 없습니다" in html and "원문 보기" in html
+
+
+def test_answer_card_safety_shows_source():
+    note = SafetyNote(rule_id="loto", text="잠금 후 작업하세요.", doc_title="Hytrol 138ACC 매뉴얼", page=3)
+    html = render_answer_card(fake_answer("벨트").model_copy(update={"safety": [note]}))
+    assert "Hytrol 138ACC 매뉴얼 · p.3" in html
+    bare = SafetyNote(rule_id="loto", text="잠금 후 작업하세요.")             # 출처가 없으면 문구만
+    assert "wk-safety-source" not in render_answer_card(fake_answer("벨트").model_copy(update={"safety": [bare]}))
+
+
 def test_render_answer_validates_dict_responses(env):
     """파이프라인이 돌려주는 응답 dict 는 ChatApp.render_answer 가 AnswerResponse 로 검사해서 그린다"""
     app, _, _ = env
@@ -83,12 +125,37 @@ def test_equipment_chip():
 
 
 # ---------------- ChatApp 동작 ----------------
-def test_submit_appends_question_and_fake_answer(env):
+def test_submit_calls_pipeline_and_saves_history(env):
     app, state, db = env
     history, state = app.on_submit("  3라인 벨트가 쏠려요  ", [], state)
     assert [m["role"] for m in history] == ["user", "assistant"]
     assert "3라인 벨트가 쏠려요" in history[0]["content"] and "wk-card" in history[1]["content"]
-    assert db.history == []                           # 가짜 응답은 DB 대화 기록에 저장하지 않음
+    assert app._pipeline.calls == [("3라인 벨트가 쏠려요", "text")]   # 앞뒤 공백을 지운 질문, 입력 유형 text
+    assert len(db.history) == 1                                       # 질문·답변을 대화 기록에 저장
+
+
+def test_submit_shows_not_found_notice(env):
+    app, state, _ = env
+    app._pipeline.result = fake_answer("이상한 소리가 나요").model_dump()
+    history, _ = app.on_submit("질문", [], state)
+    assert "문서에서 확인되지 않았습니다" in history[1]["content"]
+
+
+def test_submit_without_pipeline_shows_notice(env):
+    app, state, _ = env
+    app._pipeline = None
+    history, _ = app.on_submit("벨트가 쏠려요", [], state)
+    assert "답변 기능을 아직 사용할 수 없습니다" in history[1]["content"]
+
+
+def test_submit_survives_pipeline_error_and_bad_response(env):
+    app, state, _ = env
+    app._pipeline.result = RuntimeError("boom")
+    history, _ = app.on_submit("질문", [], state)
+    assert "답변을 만드는 중 문제가 생겼어요" in history[1]["content"]
+    app._pipeline.result = {"status": "answered"}          # summary·sources 가 없는 형식 오류
+    history, _ = app.on_submit("질문", [], state)
+    assert "답변 형식이 올바르지 않아" in history[1]["content"]
 
 
 def test_submit_ignores_empty_question_and_logged_out(env):
