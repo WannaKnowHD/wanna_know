@@ -217,7 +217,7 @@ class StrictModel(BaseModel):
 
 
 class Cause(StrictModel):
-    """원인 1개와 조치. 문장은 검색된 KB의 KbCause를 그대로 복사한다."""
+    """원인 1개와 조치. KB 원인·조치(영어)를 한국어로 옮긴 문장. id·조치 개수·순서는 KB와 같아야 한다."""
 
     id: str = Field(pattern=CAUSE_ID_PATTERN)
     cause: str  # KbCause.cause
@@ -241,7 +241,7 @@ class LLMAnswer(StrictModel):
 
     not_found: bool
     summary: str
-    cause_ids: list[str]  # 원인 문장은 코드가 KB에서 복사한다
+    causes: list[Cause]  # 원인 id는 KB 그대로, 원인·조치는 한국어로 옮김
     actions: list[ActionStep]
     sources: list[LLMSource]
 
