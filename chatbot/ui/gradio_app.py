@@ -59,17 +59,19 @@ class ChatApp:
         settings: Settings | None = None,
         auth: AuthManager | None = None,
         conversation: ConversationState | None = None,
+        dashboard: AdminDashboard | None = None,
     ):
         """
         받는 것:
           settings     : 세션 저장 키·암호 키(BROWSER_STORAGE_KEY, BROWSER_SECRET)를 읽음
           auth         : 로그인·세션 (core.auth.AuthManager)
           conversation : 사용자별 대화 상태 (core.state.ConversationState). 없으면 DB 없이 화면 상태만 다룸
+          dashboard    : 관리자 대시보드 (ui.dashboard.AdminDashboard). 없으면 DB 없이 화면 틀만 만듦
         """
         self._settings = settings
         self._auth = auth
         self._conversation = conversation or ConversationState()
-        self._dashboard = AdminDashboard()
+        self._dashboard = dashboard or AdminDashboard()
 
     @staticmethod
     def launch_options() -> dict:
@@ -117,7 +119,7 @@ class ChatApp:
             sidebar, area = chat.sidebar, chat.area
 
             # ---- 관리자 대시보드 ----
-            admin_view = self._dashboard.build_admin_tab()
+            admin_view = self._dashboard.build_admin_tab(state)   # 새로고침 · 검토 저장 때 관리자인지 다시 확인
             admin_view.visible = False
             admin_user_info = self._dashboard.user_info_display
 
@@ -168,7 +170,9 @@ class ChatApp:
             logout_outputs = [token_state, state, *screen, login.employee, login.password, *fresh_chat]
             sidebar.logout_button.click(logout_event, inputs=[token_state, state], outputs=logout_outputs)
             self._dashboard.logout_button.click(logout_event, inputs=[token_state, state], outputs=logout_outputs)
-            area.admin_button.click(admin_event, inputs=[state], outputs=[state, *screen])
+            area.admin_button.click(admin_event, inputs=[state], outputs=[state, *screen]).then(
+                self._dashboard.refresh, inputs=self._dashboard.refresh_inputs, outputs=self._dashboard.refresh_outputs
+            )   # 대시보드로 넘어가면 기본 기간(최근 7일) 값을 채움
             self._dashboard.back_button.click(back_event, inputs=[state], outputs=[state, *screen])
             bind_theme_toggle(login.theme_button, area.theme_button)
 
