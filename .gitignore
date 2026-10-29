@@ -26,3 +26,7 @@ CLAUDE.md
 CLAUDE.local.md
 CLAUDE.local.md.example
 docs/
+
+.chroma_db.rebuild.lock
+.chroma_db.stage-*/
+.chroma_db.backup-*/
