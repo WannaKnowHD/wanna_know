@@ -20,7 +20,7 @@ NOTICE_TITLES: dict[Status, str] = {
     "error": "답변을 만들지 못했습니다",
 }
 
-NO_EQUIPMENT_TEXT = "전체 매뉴얼"   # 설비를 정하지 않았을 때 (대화 초기화한 상태)
+NO_EQUIPMENT_TEXT = "전체 매뉴얼"   # 설비를 정하지 않았을 때 (대화 초기화한 상태, Figma 다크 시안 01)
 
 
 def _circled(number: int) -> str:
@@ -45,7 +45,8 @@ def render_user_message(text: str) -> str:
 
 
 def render_equipment(equipment: dict | None) -> str:
-    """상단 바의 현재 설비 표시. equipment 는 state["equipment"] ({"model_name", ...}) 이거나 None"""
+    """상단 바의 현재 설비 표시 (C-01, Figma: '설비' + 칩). equipment 는 state["equipment"] ({"model_name", ...}) 이거나 None.
+    설비가 있으면 칩을 채워서 모델명을, 없으면 "전체 매뉴얼"을 보여 줌"""
     name = (equipment or {}).get("model_name") if equipment else None
     chip_class = "wk-chip wk-chip-on" if name else "wk-chip"
     return (

@@ -7,14 +7,13 @@ from typing import TYPE_CHECKING
 import gradio as gr
 from pydantic import ValidationError
 
-from chatbot.core.schemas import AnswerResponse
+from chatbot.core.schemas import AnswerResponse, DamageResult, Equipment, ImageResult, NameplateResult
 from chatbot.core.state import ConversationState
 from chatbot.ui.chat import (
     CHAT_CSS_PATHS,
     EXAMPLE_QUESTIONS,
     build_chat_screen,
     fake_answer,
-    fake_photo_answer,
     render_answer_card,
     render_equipment,
     render_history,
@@ -39,6 +38,18 @@ if TYPE_CHECKING:
 
 MSG_BAD_ANSWER = "답변 형식이 올바르지 않아 표시할 수 없습니다. 다시 질문해 주세요."   # 응답이 AnswerResponse 형식에 맞지 않을 때
 
+# ---- 사진 첨부 (on_image, WBS 3.7.5) ----
+IMAGE_MIN_CONFIDENCE = 0.6   # 사진 종류 판별 확신도가 이보다 낮으면 재촬영 (명판·손상 분석과 같은 기준)
+MSG_PHOTO_OTHER = "명판이나 손상 부위를 가까이 찍어 주세요."          # 기능명세서 I-01 문구
+MSG_PHOTO_ERROR = "사진을 분석하지 못했습니다. 잠시 후 다시 시도해 주세요."
+MSG_NAMEPLATE_RETAKE = "명판 글자가 잘 보이지 않습니다. 명판을 정면에서 가까이 다시 찍어 주세요."
+MSG_DAMAGE_RETAKE = "손상 부위가 잘 보이지 않습니다. 손상된 곳을 가까이, 밝은 곳에서 다시 찍어 주세요."
+PHOTO_QUESTIONS = {   # 대화 기록(로그창)에 남길 질문 칸 (사진은 글자가 없으므로)
+    "nameplate_photo": "(사진) 명판",
+    "damage_photo": "(사진) 손상 부위",
+    "other_photo": "(사진)",
+}
+
 
 class ChatApp:
     """ChatApp (기능명세서 기준 뼈대)."""
@@ -48,17 +59,19 @@ class ChatApp:
         settings: Settings | None = None,
         auth: AuthManager | None = None,
         conversation: ConversationState | None = None,
+        dashboard: AdminDashboard | None = None,
     ):
         """
         받는 것:
           settings     : 세션 저장 키·암호 키(BROWSER_STORAGE_KEY, BROWSER_SECRET)를 읽음
           auth         : 로그인·세션 (core.auth.AuthManager)
           conversation : 사용자별 대화 상태 (core.state.ConversationState). 없으면 DB 없이 화면 상태만 다룸
+          dashboard    : 관리자 대시보드 (ui.dashboard.AdminDashboard). 없으면 DB 없이 화면 틀만 만듦
         """
         self._settings = settings
         self._auth = auth
         self._conversation = conversation or ConversationState()
-        self._dashboard = AdminDashboard()
+        self._dashboard = dashboard or AdminDashboard()
 
     @staticmethod
     def launch_options() -> dict:
@@ -81,7 +94,7 @@ class ChatApp:
             render_user_info(user),
             AdminDashboard.render_user_info(user),
             history,
-            render_equipment(state.get("equipment")),
+            self.show_equipment(state),
             render_login_error(state.get("login_error")),
         )
 
@@ -106,7 +119,7 @@ class ChatApp:
             sidebar, area = chat.sidebar, chat.area
 
             # ---- 관리자 대시보드 ----
-            admin_view = self._dashboard.build_admin_tab()
+            admin_view = self._dashboard.build_admin_tab(state)   # 새로고침 · 검토 저장 때 관리자인지 다시 확인
             admin_view.visible = False
             admin_user_info = self._dashboard.user_info_display
 
@@ -157,7 +170,9 @@ class ChatApp:
             logout_outputs = [token_state, state, *screen, login.employee, login.password, *fresh_chat]
             sidebar.logout_button.click(logout_event, inputs=[token_state, state], outputs=logout_outputs)
             self._dashboard.logout_button.click(logout_event, inputs=[token_state, state], outputs=logout_outputs)
-            area.admin_button.click(admin_event, inputs=[state], outputs=[state, *screen])
+            area.admin_button.click(admin_event, inputs=[state], outputs=[state, *screen]).then(
+                self._dashboard.refresh, inputs=self._dashboard.refresh_inputs, outputs=self._dashboard.refresh_outputs
+            )   # 대시보드로 넘어가면 기본 기간(최근 7일) 값을 채움
             self._dashboard.back_button.click(back_event, inputs=[state], outputs=[state, *screen])
             bind_theme_toggle(login.theme_button, area.theme_button)
 
@@ -165,16 +180,15 @@ class ChatApp:
             def submit_event(message, history, current, image):
                 history = list(history or [])
                 if image and (current or {}).get("user") is not None:
-                    # 사진 분석(on_image)은 3.7.5 에서 연결. 지금은 사진 말풍선과 가짜 안내 카드만 붙임
+                    # 사진 말풍선을 붙이고 on_image(3.7.5)가 판별·명판·손상 처리 후 답변 카드를 붙임 (명판이면 설비도 바뀜)
                     history.append({"role": "user", "content": {"path": image}})
                     if (message or "").strip():
                         history.append({"role": "user", "content": render_user_message(message.strip())})
-                    history.append({"role": "assistant", "content": self.render_answer(fake_photo_answer(Path(image).name))})
-                    new_state = current
+                    history, new_state = self.on_image(Path(image).read_bytes(), history, current)
                 else:
                     history, new_state = self.on_submit(message, history, current)
                 return (history, new_state, "", gr.update(visible=not history),
-                        render_equipment(new_state.get("equipment")), *clear_preview)
+                        self.show_equipment(new_state), *clear_preview)
 
             def attach_event(file):
                 return file, gr.update(visible=bool(file)), file
@@ -184,7 +198,7 @@ class ChatApp:
 
             def reset_event(current):
                 new_state = self.reset_conversation(current)
-                return (new_state, render_equipment(new_state.get("equipment")), *fresh_values)
+                return (new_state, self.show_equipment(new_state), *fresh_values)
 
             chat_outputs = [area.chatbot, state, area.message, area.examples, area.equipment, *preview_outputs]
             submit_inputs = [area.message, area.chatbot, state, pending_image]
@@ -273,9 +287,113 @@ class ChatApp:
         """
         업로드한 사진을 입력 판별 후 명판이면 설비 설정(설비 표시), 손상 사진이면 답변 생성, 그 외·확신도 미달이면 재촬영 안내
 
+        받는 것:
+          image   : 사진 파일 내용 (bytes)
+          history : 채팅창 기록 (Gradio messages). 사진 말풍선은 화면(build_ui)이 붙이고, 여기서는 답변 카드만 붙인다
+          state   : 대화 상태. 명판이 models.csv 모델과 정확히 맞을 때만 state["equipment"] 를 바꾼다
+        결과는 응답 스키마(AnswerResponse)로 만들어 render_answer 로 그린다 (텍스트 답변과 같은 카드 모양).
         Returns: list, dict
         """
-        raise NotImplementedError("ChatApp.on_image")
+        history = list(history or [])
+        state = state if state is not None else {}
+        if not image or state.get("user") is None:   # 빈 사진·로그인 전에는 처리하지 않음 (on_submit 과 같은 규칙)
+            return history, state
+        try:
+            answer, state = self._analyze_photo(image, state)
+        except Exception as e:  # 비전 API 오류 등: 화면이 멈추지 않고 안내 카드만 보여 줌
+            print(f"[gradio_app] 사진 분석 실패: {type(e).__name__}: {e}")
+            answer = AnswerResponse(status="error", input_type="other_photo", message=MSG_PHOTO_ERROR)
+        history.append({"role": "assistant", "content": self.render_answer(answer)})
+        turn = {"question": PHOTO_QUESTIONS[answer.input_type], "answer": answer.model_dump(mode="json")}
+        state = self._conversation.save_history(state, turn)
+        return history, state
+
+    def _vision(self):
+        """사진 처리에 쓰는 객체를 처음 사진이 올 때 한 번 만든다 (on_image 전용).
+        ChatApp.__init__ 을 바꾸지 않으려고 여기서 만든다. 테스트는 self._vision_parts 에 가짜 객체를 넣어 둔다."""
+        if getattr(self, "_vision_parts", None) is None:
+            # 무거운 모듈(LangChain 등)은 사진을 처음 받을 때만 불러온다 (로그인 화면만 쓸 때는 필요 없음)
+            from chatbot.core.config import Settings
+            from chatbot.pipeline import RagPipeline
+            from chatbot.rag.glossary import Glossary
+            from chatbot.rag.llm import LLMClient
+            from chatbot.vision.vision import DamageAnalyzer, ImageRouter, NameplateReader
+
+            llm = LLMClient(self._settings or Settings.load())
+            self._vision_parts = {
+                "router": ImageRouter(llm), "reader": NameplateReader(llm), "analyzer": DamageAnalyzer(llm),
+                "models": Glossary().load_models("data/models.csv"), "pipeline": RagPipeline(llm),
+            }
+        return self._vision_parts
+
+    def _analyze_photo(self, image, state):
+        """사진 종류 판별 → 명판 / 손상 / 그 외로 나눔. Returns: (AnswerResponse, state)"""
+        kind, confidence = self._vision()["router"].classify_image(image)
+        if kind == "other" or confidence < IMAGE_MIN_CONFIDENCE:
+            return AnswerResponse(status="retake", input_type="other_photo", message=MSG_PHOTO_OTHER,
+                                  image=ImageResult(kind=kind, confidence=confidence)), state
+        if kind == "nameplate":
+            return self._nameplate_answer(image, confidence, state)
+        return self._damage_answer(image, confidence, state)
+
+    def _nameplate_answer(self, image, confidence, state):
+        """명판 판독 → models.csv 매칭. 정확히 맞을 때만 설비를 설정한다. Returns: (AnswerResponse, state)"""
+        reader, models = self._vision()["reader"], self._vision()["models"]
+        read = reader.read_nameplate(image)
+        model, match = (None, "none") if read["retake"] else reader.match_model(read["raw_text"], models)
+        result = NameplateResult(raw_text=read["raw_text"], serial=read["serial"], maker=read["maker"],
+                                 matched_model=model.model_name if model else None, match=match,
+                                 confidence=read["confidence"])
+        image_result = ImageResult(kind="nameplate", confidence=confidence, nameplate=result)
+
+        def reply(status, message, equipment=None):
+            return AnswerResponse(status=status, input_type="nameplate_photo", message=message,
+                                  equipment=equipment, image=image_result)
+
+        if read["retake"] or (match == "none" and self._several_near(reader, read["raw_text"], models)):
+            # 한 글자 차이 후보가 여럿이면(L800 → L400·L500) 목록에 있는 모델을 잘못 읽었을 가능성이 커서 다시 찍게 한다
+            return reply("retake", MSG_NAMEPLATE_RETAKE), state
+        if match == "exact":
+            state = self._conversation.set_equipment(state, model)
+            equipment = Equipment(model=model.model_name, doc_ids=model.doc_ids, source="nameplate")
+            return reply("nameplate", f"명판에서 {model.model_name} 설비를 확인했습니다. "
+                                      f"이제부터 {model.model_name} 매뉴얼 기준으로 답변합니다.", equipment), state
+        if match == "near":
+            # 되묻기(다음 입력이 이 질문에 기대는 것)는 하지 않는다. 모델명을 넣어 질문하면 질문 이해 단계가 설비를 잡는다
+            return reply("nameplate", f"명판을 {read['raw_text']}(으)로 읽었습니다. {model.model_name} 설비가 맞다면 "
+                                      f"질문에 모델명을 넣어 물어봐 주세요 (예: {model.model_name} 벨트가 미끄러져요). "
+                                      "아니면 명판을 다시 찍어 주세요."), state
+        current = (state.get("equipment") or {}).get("model_name") or "전체 매뉴얼"
+        return reply("nameplate", f"명판의 모델 {read['raw_text']}은(는) 등록된 매뉴얼 목록에 없습니다. "
+                                  f"설비는 바꾸지 않고 {current} 기준으로 답변합니다."), state
+
+    def _several_near(self, reader, raw_text, models):
+        """모델명·별칭 중 한 글자 차이인 모델이 둘 이상인지 (match_model 이 none 을 돌려준 이유가 '후보가 여럿'인지 구분)"""
+        target = reader.normalize_model(raw_text)
+        names = {m.model_name for key, m in models.items()
+                 if reader._one_char_apart(target, reader.normalize_model(key))}
+        return len(names) >= 2
+
+    def _damage_answer(self, image, confidence, state):
+        """손상 분석 → 증상 문장으로 RagPipeline.answer. Returns: (AnswerResponse, state)"""
+        parts = self._vision()
+        damage = parts["analyzer"].describe_damage(image)
+        image_result = ImageResult(kind="belt_damage", confidence=confidence, damage=DamageResult(
+            label=damage["label"], symptom_ko=damage["symptom_ko"], confidence=damage["confidence"]))
+        if damage["retake"]:
+            return AnswerResponse(status="retake", input_type="damage_photo", message=MSG_DAMAGE_RETAKE,
+                                  image=image_result), state
+        try:
+            # 증상 문장을 질문처럼 검색한다. damage_map 의 KB 후보를 넘길 자리는 answer 에 아직 없음 (파이프라인 담당과 협의)
+            answer = parts["pipeline"].answer(damage["symptom_ko"], state, "damage_photo")
+            if not isinstance(answer, AnswerResponse):
+                answer = AnswerResponse.model_validate(answer)
+            answer = answer.model_copy(update={"image": image_result})   # 화면·로그에서 사진 분석 결과도 함께 보이게
+        except NotImplementedError:
+            # RagPipeline.answer 가 아직 없으면 분석 결과만 알려 준다 (answer 가 완성되면 코드 수정 없이 답변이 나옴)
+            answer = AnswerResponse(status="error", input_type="damage_photo", image=image_result,
+                                    message=f"사진 분석: {damage['symptom_ko']} (답변 기능 준비 중)")
+        return answer, state
 
     def on_follow_up(self, question: str, history: list, state: dict):
         """
@@ -289,10 +407,10 @@ class ChatApp:
         """
         예시 질문 템플릿 목록을 출력하고, 클릭한 템플릿을 입력창에 추가
 
-        Returns: list[str], str
+        Returns: list[str] (예시 질문 목록), str (입력창에 넣을 문장. 누른 칩이 없으면 "")
         """
-        # 목록은 ui/chat/chat_area.py 의 EXAMPLE_QUESTIONS (임시 문구). 3.7.3 에서 템플릿을 정하면 그쪽을 고친다.
-        return list(EXAMPLE_QUESTIONS), template or ""
+        # 목록은 ui/chat/chat_area.py 의 EXAMPLE_QUESTIONS (KB 로 답할 수 있는 질문 5개). 칩도 같은 목록으로 만든다.
+        return list(EXAMPLE_QUESTIONS), (template or "").strip()
 
     def show_history(self, state: dict):
         """
@@ -311,6 +429,18 @@ class ChatApp:
         """
         # 설비 필터는 ConversationState.clear 가 비우고, 화면의 채팅창은 build_ui 의 reset_event 가 [] 로 지움
         return self._conversation.clear(state)
+
+    def show_equipment(self, state: dict) -> str:
+        """
+        현재 설비 표시 (C-01): 명판으로 정한 설비가 있으면 모델명을 채운 칩으로, 없으면 "전체 매뉴얼"을 상단 바에 표시.
+        로그인·새로고침·로그아웃(_screen), 질문 전송, 대화 초기화 뒤에 다시 그림
+
+        Returns: str (HTML)
+        """
+        equipment = (state or {}).get("equipment")
+        if equipment is not None and not isinstance(equipment, dict):   # schemas.Model 이 그대로 들어와도 표시
+            equipment = {"model_name": getattr(equipment, "model_name", None)}
+        return render_equipment(equipment)
 
     def change_admin_mode(self, state: dict):
         """
