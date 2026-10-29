@@ -28,15 +28,15 @@ ADMIN_CSS_PATH = Path(__file__).parent / "admin" / "admin.css"
 # load_logs 가 돌려주는 열 (chat_logs 열 + kb_gaps 검토 상태). 통계 함수(usage_stats · quality_stats · not_found_list)가 이 이름을 씀
 LOG_TABLE_COLUMNS = [
     "log_id", "created_at", "employee_id", "question", "input_type", "question_type", "equipment_model",
-    "kb_ids", "top_score", "not_found", "safety_included", "confidence", "latency_ms", "tokens_in",
-    "tokens_out", "error", "reviewed", "kb_update_needed",
+    "kb_ids", "top_score", "not_found", "safety_included", "confidence", "latency_ms",
+    "error", "reviewed", "kb_update_needed",
 ]
 LOG_JSON_COLUMNS = ("kb_ids", "latency_ms")
 LOG_BOOL_COLUMNS = ("not_found", "safety_included", "reviewed", "kb_update_needed")
 LOAD_LOGS_SQL = (
     "SELECT l.log_id, l.created_at, l.employee_id, l.question, l.input_type, l.question_type, "
     "l.equipment_model, l.kb_ids, l.top_score, l.not_found, l.safety_included, l.confidence, "
-    "l.latency_ms, l.tokens_in, l.tokens_out, l.error, "
+    "l.latency_ms, l.error, "
     "COALESCE(g.reviewed, 0) AS reviewed, COALESCE(g.kb_update_needed, 0) AS kb_update_needed "
     "FROM chat_logs l LEFT JOIN kb_gaps g ON g.log_id = l.log_id "
     "WHERE l.source = 'user' AND l.created_at >= %s AND l.created_at < %s "
