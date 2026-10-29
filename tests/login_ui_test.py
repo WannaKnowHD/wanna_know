@@ -17,8 +17,9 @@ from auth_test import FakeDb as AuthFakeDb
 from chatbot.core.auth import AuthManager
 from chatbot.core.schemas import Model, User
 from chatbot.core.state import ConversationState
+from chatbot.ui.chat import render_history, render_user_info
 from chatbot.ui.gradio_app import ChatApp
-from chatbot.ui.login import MSG_EMPTY, MSG_INVALID, render_history, render_user_info
+from chatbot.ui.login import MSG_EMPTY, MSG_INVALID
 
 
 class FakeDb(AuthFakeDb):

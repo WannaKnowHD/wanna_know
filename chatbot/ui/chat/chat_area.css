@@ -1,0 +1,129 @@
+/* 채팅 영역 (Figma 채팅 영역 1180px: 상단 바·메시지·예시 질문·입력 바). 색은 chat.css 의 변수 */
+#chat-area {
+  background: var(--wk-chat-bg);
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  height: 100vh;
+  gap: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+#chat-area .block,
+#chat-area .form {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* 상단 바: 현재 설비 표시 + 관리자 전환 + 라이트/다크 */
+#chat-topbar {
+  flex: 0 0 auto !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 0.5rem !important;
+  padding: 0.75rem 1.5rem !important;
+  background: var(--wk-bar-bg);
+}
+#chat-equipment { flex: 1 1 auto !important; padding: 0 !important; }
+.wk-equipment { display: flex; align-items: center; gap: 0.5rem; }
+.wk-equipment-label { color: var(--wk-chat-muted); font-size: 0.8125rem; font-weight: 500; }
+
+.ca-button {
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+  width: auto !important;
+  background: var(--wk-chat-control-bg) !important;
+  color: var(--wk-chat-text) !important;
+  border: 1px solid var(--wk-chat-border) !important;
+  border-radius: 0.5rem !important;
+  box-shadow: none !important;
+  font-size: 0.8125rem;
+}
+
+/* 채팅창은 남는 높이를 모두 차지 */
+#chat-messages {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 1.5rem;
+}
+
+/* gr.Chatbot 기본 모양을 걷어 내고 Figma 말풍선으로 맞춤 (Gradio 6 클래스: .bubble-wrap · .message.user · .message.bot) */
+#chat-messages .bubble-wrap { background: transparent !important; }
+#chat-messages .icon-button-wrapper { display: none !important; }   /* 휴지통(대화 지우기): 지우기는 사이드바 '대화 초기화'로만 */
+#chat-messages .message.user {
+  background: var(--wk-bubble-bg) !important;
+  color: var(--wk-chat-text) !important;
+  border: none !important;
+  border-radius: 0.75rem !important;
+}
+#chat-messages .message.bot {
+  background: transparent !important;   /* 답변은 messages.css 의 .wk-card 가 테두리를 가짐 */
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* 예시 질문: 알약 모양 */
+#chat-examples {
+  flex: 0 0 auto !important;
+  flex-wrap: wrap !important;
+  align-items: center;
+  gap: 0.5rem !important;
+  padding: 0 1.5rem 0.75rem !important;
+}
+#chat-examples > * { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important; }   /* 라벨과 칩이 늘어나 오른쪽으로 밀리지 않게 */
+.ca-label { color: var(--wk-chat-muted); font-size: 0.75rem; font-weight: 500; }
+.ca-chip {
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+  width: auto !important;
+  background: var(--wk-chat-control-bg) !important;
+  color: var(--wk-chat-text) !important;
+  border: 1px solid var(--wk-chat-border) !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+  font-size: 0.8125rem;
+}
+
+/* 첨부한 사진 미리보기 (입력 바 바로 위) */
+#chat-preview {
+  flex: 0 0 auto !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 0.75rem !important;
+  padding: 0.5rem 1.5rem 0 !important;
+}
+#chat-preview > * { flex: 0 0 auto !important; }
+#chat-preview-image { width: 8rem !important; min-width: 0 !important; border-radius: 0.5rem; overflow: hidden; }
+
+/* 입력 바: 사진 첨부 + 질문 입력 + 전송 */
+#chat-inputbar {
+  flex: 0 0 auto !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 0.75rem !important;
+  padding: 1rem 1.5rem !important;
+  background: var(--wk-bar-bg);
+  border-top: 1px solid var(--wk-chat-border);
+}
+#chat-input { flex: 1 1 auto !important; min-width: 0 !important; }
+#chat-input textarea,
+#chat-input input {
+  background: var(--wk-chat-control-bg) !important;
+  color: var(--wk-chat-text) !important;
+  border: 1px solid var(--wk-chat-border) !important;
+  border-radius: 0.5rem !important;
+  box-shadow: none !important;
+}
+#chat-send {
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+  width: auto !important;
+  background: var(--wk-send-bg) !important;
+  color: var(--wk-send-text) !important;
+  border: none !important;
+  border-radius: 0.5rem !important;
+  box-shadow: none !important;
+}
