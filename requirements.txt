@@ -14,3 +14,5 @@ pytest
 langchain-core
 langchain-openai
 python-dotenv
+tiktoken
+filelock
