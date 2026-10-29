@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 import csv
 import json
-import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -370,15 +369,14 @@ class IndexBuilder:
 
     def main(self):
         """
-        data/raw/의 모든 PDF로 색인을 처음부터 다시 만듦.
-        새 PDF만 추출·KB 변환하고 기존 문서는 캐시 재사용 → 청킹 →
-        벡터·BM25 색인 생성. 새 색인은 임시 위치에 만든 뒤 완성되면 교체.
-        개발자 실행(python build_index.py)과 관리자 PDF 추가에서 같이 사용.
-        재생성이 이미 돌고 있으면 끝날 때까지 기다림(동시에 두 번 실행하지 않음).
-        실패하면 기존 색인을 그대로 둠
+        전체 PDF와 KB로 새 버전의 Chroma·BM25 색인을 생성한다.
+        생성·검증이 성공한 경우에만 활성 버전 JSON을 갱신한다.
+        기존 색인 폴더는 이동하거나 삭제하지 않는다.
+        재생성 요청은 잠금으로 순차 처리한다.
+        실패한 버전 폴더는 조사용으로 보존한다.
+        검색기의 활성 버전 읽기 및 재로딩 연결이 별도로 필요하다.
 
         Returns: None
-        챗봇이 중지된 상태에서 전체 색인을 재생성한다.
         """
         from chatbot.core.config import Settings
         from chatbot.rag.llm import LLMClient
@@ -404,7 +402,7 @@ class IndexBuilder:
             bm25_relative = bm25_path.relative_to(target_dir)
         except ValueError as error:
             raise ValueError(
-                "폴더 단위 교체를 위해 BM25 파일은 Chroma 폴더 내부에 있어야 합니다."
+                "동일 버전으로 게시하기 위해 BM25 파일은 Chroma 폴더 내부에 있어야 합니다."
             ) from error
 
         if bm25_relative == Path("."):
@@ -416,13 +414,6 @@ class IndexBuilder:
         cache_root = settings.interim_dir / "index_cache"
 
         with index_storage.rebuild_lock(lock_path):
-            backups = list(target_dir.parent.glob(f".{target_dir.name}.backup-*"))
-            if not target_dir.exists() and backups:
-                raise RuntimeError(
-                    "기존 경로는 없지만 색인 백업이 남아 있습니다. "
-                    "이전 교체가 중단됐는지 확인하고 복구하세요."
-                )
-
             if self.llm is None:
                 self.llm = LLMClient(settings, cache_path="")
 
@@ -433,30 +424,25 @@ class IndexBuilder:
                 vision_model=settings.model_vision,
             )
 
-            with tempfile.TemporaryDirectory(
-                dir=target_dir.parent,
-                prefix=f".{target_dir.name}.stage-",
-            ) as temporary_dir:
-                staged_dir = Path(temporary_dir)
+            version_dir = index_storage.make_version_directory(target_dir)
 
-                index_storage.run_staged_index_worker(
-                    items=items,
-                    settings=settings,
-                    chroma_dir=staged_dir,
-                    bm25_path=staged_dir / bm25_relative,
-                )
+            index_storage.run_staged_index_worker(
+                items=items,
+                settings=settings,
+                chroma_dir=version_dir,
+                bm25_path=version_dir / bm25_relative,
+            )
 
-                backup_dir = index_storage.replace_staged_indexes(
-                    staged_dir,
-                    target_dir,
-                )
+            manifest_path = index_storage.publish_index_version(
+                target_dir=target_dir,
+                version_dir=version_dir,
+                bm25_relative=bm25_relative,
+            )
 
             print(f"색인 재생성 완료: {len(items)}개 항목")
-            print(f"Chroma: {target_dir}")
-            print(f"BM25: {bm25_path}")
-
-            if backup_dir is not None:
-                print(f"기존 색인 백업: {backup_dir}")
+            print(f"Chroma: {version_dir}")
+            print(f"BM25: {version_dir / bm25_relative}")
+            print(f"활성 색인 정보: {manifest_path}")
 
 
 if __name__ == "__main__":
