@@ -21,8 +21,11 @@ sys.path.insert(0, str(ROOT / "tests"))  # sqlite_db
 from sqlite_db import SqliteDb  # noqa: E402
 
 from chatbot.core.schemas import User  # noqa: E402
-from chatbot.ui.admin.quality_tab import NOT_FOUND_HEADERS  # noqa: E402
+from chatbot.ui.admin.quality_tab import NOT_FOUND_HEADERS, render_quality_tab  # noqa: E402
+from chatbot.ui.admin.usage_tab import render_usage_tab  # noqa: E402
 from chatbot.ui.dashboard import (  # noqa: E402
+    ADMIN_TITLE,
+    BACK_LABEL,
     AdminDashboard,
     find_review_changes,
     load_kb_symptoms,
@@ -115,19 +118,19 @@ def test_quality_stats(logs):
 def test_not_found_list(logs):
     table = AdminDashboard().not_found_list(logs)
     assert list(table.columns) == NOT_FOUND_HEADERS
-    assert list(table["No"]) == [5, 4]  # 최신순
+    assert list(table["No"]) == [5, 4]  # 최신순 (No 는 저장용, 화면에서는 숨김)
+    assert list(table["날짜"]) == ["10/27 09:00", "10/25 09:00"]   # Figma 07: 날짜 · 질문 · 설비 · 체크박스 2개
     assert table.loc[0, "설비"] == "138-ACC" and table.loc[1, "설비"] == "미지정(전체)"
-    assert table.loc[0, "검색 점수"] == pytest.approx(0.41)
     assert bool(table.loc[0, "담당자 확인"]) and not table.loc[1, "담당자 확인"]  # kb_gaps 검토 상태
 
 
 def test_not_found_list_without_search_score(db):
-    """기간 안의 검색 점수가 모두 비어 있으면 load_logs 표의 top_score 가 숫자 열이 아님 → 빈 칸으로 표시"""
+    """기간 안의 검색 점수가 모두 비어 있어도(top_score 가 숫자 열이 아님) 목록 · 지표가 깨지지 않음"""
     add_log(db, datetime(2026, 9, 1, 9, 0), question="점수 없음", not_found=1, top_score=None)
     dashboard = AdminDashboard()
     logs = dashboard.load_logs(date(2026, 9, 1), date(2026, 9, 1), db)
     table = dashboard.not_found_list(logs)
-    assert list(table["질문"]) == ["점수 없음"] and table["검색 점수"].isna().all()
+    assert list(table["질문"]) == ["점수 없음"]
     assert dashboard.quality_stats(logs)["answered"] == 0
 
 
@@ -210,10 +213,58 @@ def test_build_admin_tab_and_refresh(db):
         state = gr.State({"user": ADMIN})
         view = dashboard.build_admin_tab(state)
     assert isinstance(view, gr.Column)
+    assert dashboard.back_button.value == BACK_LABEL == "뒤로가기 (채팅 화면)"   # Figma 상단 바
+    assert dashboard.period_input.value == "최근 7일"                            # 운영 현황 탭 맨 위 기간 표시
     values = dashboard.refresh("최근 30일", {"user": ADMIN})
     assert len(values) == len(dashboard.refresh_outputs)
+    assert len(dashboard.refresh("이상한 기간", {"user": ADMIN})) == len(values)   # 모르는 기간 → 기본 기간
     with pytest.raises(gr.Error):
         dashboard.refresh("최근 7일", {"user": ENGINEER})
+
+
+# ---------------- 화면 HTML (Figma 06 · 07) ----------------
+def test_render_usage_tab_cards(logs):
+    stats = AdminDashboard(kb_symptoms={"TS-HYTROL138ACC-T01-04": "<b>과열</b>"}).usage_stats(logs, WEEK_START, TODAY)
+    caption, daily, input_types, models, top = render_usage_tab(stats, WEEK_START, TODAY)
+    assert "10/21~10/27 · 질문 7건" in caption
+    assert daily.count("class='adm-bar'") == 7 and "10/27 · 5건" in daily          # 날마다 막대 1개, 건수는 막대 위
+    assert "텍스트 질문" in input_types and "그 외 사진" not in input_types         # 그 외 사진은 0건이면 숨김 (Figma 3가지)
+    assert "미지정(전체)" in models and "5건" in models
+    assert "<b>과열</b>" not in top and "&lt;b&gt;과열" in top                       # 증상 글자는 escape
+
+
+def test_render_usage_tab_escapes_model_and_shows_other_photo(db):
+    add_log(db, datetime(2026, 10, 26, 9, 0), input_type="other", equipment_model="<i>CV</i>")
+    dashboard = AdminDashboard()
+    stats = dashboard.usage_stats(dashboard.load_logs(WEEK_START, TODAY, db), WEEK_START, TODAY)
+    _, _, input_types, models, _ = render_usage_tab(stats, WEEK_START, TODAY)
+    assert "그 외 사진" in input_types                                                # 있으면 4번째로 보임
+    assert "<i>CV</i>" not in models and "&lt;i&gt;CV&lt;/i&gt;" in models
+
+
+def test_render_usage_tab_long_period_and_no_logs(db):
+    dashboard = AdminDashboard()
+    month_start = TODAY - timedelta(days=29)
+    stats = dashboard.usage_stats(dashboard.load_logs(month_start, TODAY, db), month_start, TODAY)
+    _, daily, *_ = render_usage_tab(stats, month_start, TODAY)
+    assert "is-dense" in daily and daily.count("class='adm-bar'") == 30               # 30일: 막대 위 숫자 대신 title
+    empty = dashboard.usage_stats(dashboard.load_logs(date(2026, 1, 1), date(2026, 1, 7), db), TODAY, TODAY)
+    caption, _, input_types, models, top = render_usage_tab(empty, TODAY, TODAY)
+    assert "이 기간에는 질문이 없습니다" in caption and "이 기간에는 질문이 없습니다" in models + top + input_types
+
+
+def test_render_quality_tab_kpi_cards(logs):
+    dashboard = AdminDashboard()
+    not_found = dashboard.not_found_list(logs)
+    kpis, table, status = render_quality_tab(dashboard.quality_stats(logs), not_found, "최근 7일")
+    assert kpis.count("class='adm-kpi'") == 2 and "답을 못 찾은 비율" in kpis and "28.6%" in kpis
+    assert "최근 7일 · 7건 중 2건" in kpis                                              # Figma 설명 "최근 7일 · 812건 중 68건"
+    assert "최근 7일 · 답변 3건 중 2건" in kpis
+    assert table is not_found and status == ""
+
+
+def test_admin_title_matches_figma():
+    assert ADMIN_TITLE == "관리자 대시보드"
 
 
 if __name__ == "__main__":
