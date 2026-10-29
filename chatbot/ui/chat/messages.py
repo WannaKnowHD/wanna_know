@@ -5,10 +5,12 @@
 """
 from __future__ import annotations
 
+import base64
+from functools import lru_cache
 from html import escape
 from pathlib import Path
 
-from chatbot.core.schemas import ActionStep, AnswerResponse, Cause, Figure, Source, Status
+from chatbot.core.schemas import ActionStep, AnswerResponse, Cause, Figure, SafetyNote, Source, Status
 
 MESSAGES_CSS_PATH = Path(__file__).parent / "messages.css"
 
@@ -21,6 +23,9 @@ NOTICE_TITLES: dict[Status, str] = {
 }
 
 NO_EQUIPMENT_TEXT = "전체 매뉴얼"   # 설비를 정하지 않았을 때 (대화 초기화한 상태, Figma 다크 시안 01)
+NO_IMAGE_TEXT = "이미지를 불러올 수 없습니다"   # image_path 의 파일이 없거나 읽을 수 없을 때 (카드는 깨지지 않고 글자만 보임)
+IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}   # 이 확장자만 화면에 넣음
+TABLE_FIGURE_TYPES = ("table", "figure")   # 원문 보기에 잘라 둔 이미지를 같이 보여 주는 근거 종류
 
 
 def _circled(number: int) -> str:
@@ -57,6 +62,26 @@ def render_equipment(equipment: dict | None) -> str:
     )
 
 
+@lru_cache(maxsize=64)
+def _data_uri(path: str) -> str | None:
+    """잘라 둔 이미지(crop_regions 가 만든 파일)를 data URI 로 바꿈. 없거나 읽을 수 없으면 None.
+    채팅창은 로컬 파일 주소를 바로 열 수 없어서 HTML 안에 이미지를 넣는다. 한 번 읽은 파일은 기억해 둔다."""
+    file = Path(path)
+    mime = IMAGE_TYPES.get(file.suffix.lower())
+    if mime is None:
+        return None
+    try:
+        return f"data:{mime};base64,{base64.b64encode(file.read_bytes()).decode('ascii')}"
+    except OSError:
+        return None
+
+
+def _image(path: str | None, alt: str) -> str:
+    """이미지 <img> 한 개. 이미지를 못 읽으면 빈 글자 (호출하는 쪽이 대체 글자를 정함)"""
+    uri = _data_uri(path) if path else None
+    return f"<img class='wk-image' src='{uri}' alt='{escape(alt)}'>" if uri else ""
+
+
 def _section(label: str, body: str) -> str:
     return f"<div class='wk-section'><div class='wk-label'>{escape(label)}</div>{body}</div>"
 
@@ -72,31 +97,40 @@ def _render_causes(causes: list[Cause]) -> str:
     return "".join(parts)
 
 
+def _render_safety_note(note: SafetyNote) -> str:
+    """안전 문구 한 줄. 매뉴얼 출처(문서 · 페이지)가 있으면 뒤에 붙임 (E-02)"""
+    origin = ""
+    if note.doc_title and note.page is not None:
+        origin = f" <span class='wk-safety-source'>({escape(note.doc_title)} · p.{note.page})</span>"
+    return f"<p class='wk-line'>{escape(note.text)}{origin}</p>"
+
+
 def _render_steps(steps: list[ActionStep]) -> str:
     """점검·절차 답변(actions 만 있는 경우)의 단계 목록"""
     return "".join(f"<p class='wk-line'>{_circled(i)} {escape(s.text)}</p>" for i, s in enumerate(steps, start=1))
 
 
 def _render_sources(sources: list[Source]) -> str:
-    """출처 칩 + 원문 보기 (눌러서 펼치는 <details>, 자바스크립트 없이 동작)"""
-    return "".join(
-        "<details class='wk-source'>"
-        f"<summary><span class='wk-chip'>{escape(f'{s.doc_title} · p.{s.page}')}</span><span class='wk-link'>원문 보기</span></summary>"
-        f"<blockquote class='wk-quote'>{escape(s.quote)}</blockquote>"
-        "</details>"
-        for s in sources
-    )
+    """출처 칩 + 원문 보기 (눌러서 펼치는 <details>, 자바스크립트 없이 동작). 근거가 표·그림이면 잘라 둔 이미지도 같이 보여 줌"""
+    parts = []
+    for s in sources:
+        picture = _image(s.image_path, f"{s.doc_title} p.{s.page}") if s.chunk_type in TABLE_FIGURE_TYPES else ""
+        parts.append(
+            "<details class='wk-source'>"
+            f"<summary><span class='wk-chip'>{escape(f'{s.doc_title} · p.{s.page}')}</span><span class='wk-link'>원문 보기</span></summary>"
+            f"{picture}<blockquote class='wk-quote'>{escape(s.quote)}</blockquote>"
+            "</details>"
+        )
+    return "".join(parts)
 
 
 def _render_figures(figures: list[Figure]) -> str:
-    """그림은 자리 표시만 (실제 이미지는 3.7.4 에서 image_path 로 불러옴)"""
-    return "".join(
-        "<div class='wk-figure'>"
-        "<div class='wk-figure-box'>그림</div>"
-        f"<div class='wk-caption'>{escape(f.label)} · {escape(f.caption)}</div>"
-        "</div>"
-        for f in figures
-    )
+    """그림: image_path 의 이미지와 '그림 번호 · 설명'. 이미지를 못 읽으면 자리 표시 글자만 보임"""
+    parts = []
+    for f in figures:
+        picture = _image(f.image_path, f.caption) or f"<div class='wk-figure-box'>{NO_IMAGE_TEXT}</div>"
+        parts.append(f"<div class='wk-figure'>{picture}<div class='wk-caption'>{escape(f.label)} · {escape(f.caption)}</div></div>")
+    return "".join(parts)
 
 
 def render_answer_card(answer: AnswerResponse) -> str:
@@ -117,7 +151,7 @@ def render_answer_card(answer: AnswerResponse) -> str:
     if answer.summary:
         sections.append(_section("요약", f"<p class='wk-line'>{escape(answer.summary)}</p>"))
     if answer.safety:
-        notes = "".join(f"<p class='wk-line'>{escape(n.text)}</p>" for n in answer.safety)
+        notes = "".join(_render_safety_note(n) for n in answer.safety)
         sections.append(f"<div class='wk-safety'><b class='wk-safety-label'>안전</b><div>{notes}</div></div>")
     if answer.causes:
         sections.append(_section("원인·조치", _render_causes(answer.causes)))
