@@ -26,8 +26,6 @@ CREATE TABLE chat_logs (
   safety_included  INTEGER NOT NULL DEFAULT 0,
   confidence       REAL,
   latency_ms       TEXT,
-  tokens_in        INTEGER,
-  tokens_out       INTEGER,
   error            TEXT CHECK (length(error) <= 255)
 );
 CREATE TABLE kb_gaps (
