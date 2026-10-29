@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 LOG_COLUMNS = ("source", "employee_id", "question", "input_type", "question_type", "equipment_model", "kb_ids", "top_score",
-               "not_found", "safety_included", "confidence", "latency_ms", "tokens_in", "tokens_out", "error")
+               "not_found", "safety_included", "confidence", "latency_ms", "error")
 JSON_COLUMNS = ("kb_ids", "latency_ms")
 INSERT_LOG_SQL = f"INSERT INTO chat_logs ({', '.join(LOG_COLUMNS)}) VALUES ({', '.join(['%s'] * len(LOG_COLUMNS))})"
 SOURCES = ("user", "eval")
@@ -34,7 +34,6 @@ class RequestLogger:
         if input_type not in INPUT_TYPES:
             raise ValueError(f"알 수 없는 input_type: {input_type!r}")
         trace = answer.get("trace") or {}
-        tokens = trace.get("tokens") or {}
         return {
             "source": source,
             "employee_id": employee_id,
@@ -48,8 +47,6 @@ class RequestLogger:
             "safety_included": bool(answer.get("safety")),
             "confidence": (answer.get("image") or {}).get("confidence"),
             "latency_ms": dict(trace.get("latency_ms") or {}),
-            "tokens_in": tokens.get("input_tokens"),
-            "tokens_out": tokens.get("output_tokens"),
             "error": _error_text(answer),
         }
 

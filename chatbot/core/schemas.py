@@ -324,8 +324,6 @@ class Trace(StrictModel):
     threshold: float | None = None
     # 키: understand, vision, search, generate, verify, safety, total
     latency_ms: dict[str, int] = {}
-    # 키: input_tokens, output_tokens (llm.chat · vision의 usage와 같은 이름, 합계)
-    tokens: dict[str, int] = {}
     schema_retries: int = 0
     removed_cause_ids: list[str] = []
     replaced_quote_refs: list[str] = []
