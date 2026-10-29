@@ -84,7 +84,7 @@ def _kind_label(hit: Hit) -> str:
 def load_kb(kb_dir) -> dict[str, dict]:
     """kb/troubleshooting · kb/maintenance 의 *.json 을 읽어 {kb_id: KB dict} 로 만든다. (앱 시작 때 1번)
 
-    answer 가 원인 id(cause_ids)로 원인 문장·조치를 복사하고, 안전 문구 판단 재료로 넘길 때 쓴다.
+    answer 가 답변에 쓴 KB 를 찾아 안전 문구 판단 재료(SafetyRules.attach_safety)로 넘길 때 쓴다.
     schemas 의 KB 형식(TroubleshootingKB · MaintenanceKB)으로 검사해서, 틀린 파일이 있으면 바로 오류를 낸다.
     """
     entries: dict[str, dict] = {}
@@ -109,13 +109,6 @@ def _response_equipment(state: dict | None, info: QueryInfo) -> dict | None:
     if info and info.equipment_hint:
         return Equipment(model=info.equipment_hint, doc_ids=[], source="question").model_dump()
     return None
-
-def _add_tokens(trace: dict, usage: dict | None) -> None:
-    """LLM 토큰 수를 trace.tokens 에 더한다 (재요청하면 두 번 합)"""
-    for key in ("input_tokens", "output_tokens"):
-        if usage and usage.get(key) is not None:
-            trace["tokens"][key] = trace["tokens"].get(key, 0) + int(usage[key])
-
 
 def _replaced_quote_refs(before: dict, after: dict) -> list[str]:
     """검증 때 인용문이 원문 문장으로 바뀐 출처의 ref_id (지워진 출처는 넣지 않음)"""
@@ -163,7 +156,7 @@ class RagPipeline:
         Returns: dict (응답 JSON)
         """
         started = time.perf_counter()
-        trace: dict = {"latency_ms": {}, "tokens": {}}
+        trace: dict = {"latency_ms": {}}
         info = None
         try:
             # 1) 질문 이해
@@ -200,28 +193,28 @@ class RagPipeline:
             # 4) 근거 검증: KB 에 없는 원인 id 제거, 원문에 없는 인용문 교체
             step = time.perf_counter()
             checked = self.validator.verify_quote(self.validator.verify_causes(parsed, hits), hits)
-            trace["removed_cause_ids"] = [c for c in parsed["cause_ids"] if c not in checked["cause_ids"]]
+            kept_ids = {cause["id"] for cause in checked["causes"]}
+            trace["removed_cause_ids"] = [c["id"] for c in parsed["causes"] if c["id"] not in kept_ids]
             trace["replaced_quote_refs"] = _replaced_quote_refs(parsed, checked)
             trace["latency_ms"]["verify"] = _ms(step)
-            if not checked["cause_ids"] and not checked["actions"]:
+            if not checked["causes"] and not checked["actions"]:
                 return self._finish(self._not_found(input_type, info, equipment, trace, MSG_NOT_FOUND,
                                                     filter_released), question, state, started, kb_used=[])
 
-                        # 5) 응답 조립: 원인·조치 문장은 KB 에서 그대로 복사
+            # 5) 응답 조립: 원인·조치 문장은 KB 에서 그대로 복사
             assembled = self._answered(input_type, info, equipment, filter_released, checked, hits, trace)
             if assembled is None:
                 return self._finish(self._not_found(input_type, info, equipment, trace, MSG_NOT_FOUND,
                                                     filter_released), question, state, started, kb_used=[])
             response, kb_used = assembled
             return self._finish(response, question, state, started, kb_used=kb_used)
-            raise NotImplementedError("RagPipeline.answer: 응답 조립")
         except Exception as e:  # noqa: BLE001 — 어느 단계에서 실패해도 예외를 밖으로 내지 않고 error 응답
             return self._finish(self._error(input_type, info, trace, e), question, state, started, kb_used=[])
     def _answered(self, input_type: str, info: QueryInfo, equipment, filter_released: bool,
                   checked: dict, hits: list, trace: dict) -> tuple[dict, list[dict]] | None:
         """검증된 LLM 답 → answered 응답과 답변에 쓴 KB. 출처나 원인·조치가 하나도 없으면 None (→ 확인되지 않음)"""
         by_id = {hit.id: hit for hit in hits}
-        causes = [c for c in (self._cause(cause_id) for cause_id in checked["cause_ids"]) if c]
+        causes = checked["causes"]
         actions = [] if info.qtype == "troubleshooting" else checked["actions"]   # 고장 답변은 causes 로만
         sources = [_source(s, by_id[s["ref_id"]]) for s in checked["sources"]]
         if not sources or not (causes or actions):
@@ -234,19 +227,11 @@ class RagPipeline:
                     "sources": sources, "kb_ids": kb_ids, "trace": trace}
         return response, [self.kb[kb_id] for kb_id in kb_ids if kb_id in self.kb]
 
-    def _cause(self, cause_id: str) -> dict | None:
-        """원인 id → schemas.Cause 모양 (KB 의 원인·조치 문장 그대로). KB 에 없으면 None"""
-        kb = self.kb.get(cause_id.split("#", 1)[0]) or {}
-        for cause in kb.get("causes") or []:
-            if cause["cause_id"] == cause_id:
-                return {"id": cause_id, "cause": cause["cause"], "actions": list(cause["actions"])}
-        return None
     
     def _generate_checked(self, messages: list[dict], trace: dict) -> dict | None:
         """generate → 형식·한국어 검사. 틀리면 1회 다시 요청, 또 틀리면 None (→ 확인되지 않음)"""
         for _ in range(2):
             result = self.generate(messages)
-            _add_tokens(trace, result.get("usage"))
             parsed = result.get("parsed")
             if self.validator.validate_schema(parsed):
                 if parsed["not_found"]:            # LLM 이 자료에 없다고 답함 → 다시 묻지 않음

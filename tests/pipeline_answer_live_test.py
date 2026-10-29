@@ -63,7 +63,7 @@ def show(out):
     print("③ 검색 결과  : 1위", t["top_score"], "/ 기준", t["threshold"], "/ 설비 필터 풀림:", out["filter_released"])
     for hit in t["hits"]:
         print(f"     {hit['score']:.3f}  {hit['id']}  ({hit['doc_id']} p.{hit['page']})")
-    print("④ 생성       : 토큰", t["tokens"], "(호출마다 위의 [llm] 줄 참고)")
+    print("④ 생성       : 위의 [llm] chat 줄 참고 (호출마다 모델 · 걸린 시간)")
     print("⑤ 검증       : 재요청", t["schema_retries"], "/ 지운 원인", t["removed_cause_ids"],
           "/ 바꾼 인용", t["replaced_quote_refs"])
     print("⑥ 응답       :", out["status"], "-", out["summary"] or out["message"])
