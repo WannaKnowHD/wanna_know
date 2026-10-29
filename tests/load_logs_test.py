@@ -71,7 +71,7 @@ def test_kb_gaps_review_state_joined(board, db):
 def test_columns_and_types(board, db):
     add_log(db, "2026-10-28 10:00:00", input_type="nameplate", question_type="troubleshooting",
             equipment_model="138-ACC", kb_ids=["TS-HYTROL138ACC-T01-04"], top_score=0.82,
-            latency_ms={"total": 3200}, tokens_in=1200, tokens_out=300)
+            latency_ms={"total": 3200})
     logs = board.load_logs(date(2026, 10, 28), date(2026, 10, 28), db)
     assert list(logs.columns) == LOG_TABLE_COLUMNS
     row = logs.iloc[0]

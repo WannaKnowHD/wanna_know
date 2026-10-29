@@ -3,6 +3,7 @@ from chatbot.core.auth import AuthManager
 from chatbot.core.config import Settings
 from chatbot.core.state import ConversationState
 from chatbot.db.db import Database
+from chatbot.ui.dashboard import AdminDashboard, load_kb_symptoms
 from chatbot.ui.gradio_app import ChatApp
 
 if __name__ == "__main__":
@@ -17,6 +18,7 @@ if __name__ == "__main__":
         settings=settings,
         auth=AuthManager(db, session_hours=settings.session_hours),
         conversation=ConversationState(db),
+        dashboard=AdminDashboard(db, load_kb_symptoms(settings.kb_dir)),
     )
     try:
         app.build_ui().launch(**app.launch_options())
