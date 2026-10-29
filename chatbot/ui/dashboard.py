@@ -16,6 +16,7 @@ from chatbot.ui.admin.usage_tab import build_usage_tab, render_usage_tab
 from chatbot.ui.admin.quality_tab import KB_UPDATE_NEEDED, REVIEWED, build_quality_tab, render_quality_tab
 from chatbot.ui.admin.system_tab import build_system_tab
 from chatbot.ui.admin.kb_tab import build_kb_tab
+from chatbot.ui.admin.kb_files import KB_STATUS_COLUMNS, KbIndexer, load_documents
 
 if TYPE_CHECKING:
     from chatbot.core.schemas import User
@@ -232,18 +233,83 @@ class AdminDashboard:
         """
         KB 현황 탭: MySQL 문서 테이블에서 현재 청킹된 PDF 목록(문서명, 페이지 수, 청크 수, 색인 시각, 상태) 출력
 
+        받는 것: Database
+        돌려주는 것: DataFrame (문서명 · 파일명 · 구분 · 쪽 수 · 청크 수 · 색인 시각 · 상태 · 실패 사유)
         Returns: DataFrame
         """
-        raise NotImplementedError("AdminDashboard.kb_status")
+        return load_documents(db)
 
-    def add_pdf(self, pdf: bytes, filename: str):
+    def add_pdf(self, pdf: bytes, filename: str, user: User | None = None):
         """
         업로드한 PDF를 data/raw/admin_add/에 저장 → documents 상태를 '색인 중'으로 기록 → IndexBuilder.main 호출
         (전체 재생성, 캐시 재사용) → 완료/실패와 사유 기록 → 목록 상태 표시. 재생성 중에는 기존 색인으로 답변
 
+        받는 것: PDF 내용(bytes), 파일 이름, 로그인 사원
+        돌려주는 것: (색인을 시작했는지, 화면 안내 문구)
+        관리자 함수는 화면에서 숨겨도 API 로 불릴 수 있어 함수 안에서 관리자 권한 확인.
+        검사(PDF 아님 · 깨짐 · 암호 · 스캔본 · 이름 겹침)에서 걸리면 저장도 색인도 하지 않음 (kb_files.check_pdf)
         Returns: bool, str
         """
-        raise NotImplementedError("AdminDashboard.add_pdf")
+        if user is None or not user.is_admin:
+            return False, "관리자만 PDF 를 추가할 수 있습니다."
+        if self.db is None:
+            return False, "DB 에 연결되지 않아 PDF 를 추가할 수 없습니다."
+        return self._kb_indexer().add_pdf(self.db, pdf, filename)
+
+    def _kb_indexer(self) -> KbIndexer:
+        """PDF 추가 · 색인을 맡는 KbIndexer. 앱에 하나만 두고 처음 쓸 때 만든다 (색인은 한 번에 하나)"""
+        if getattr(self, "_kb", None) is None:
+            self._kb = KbIndexer()
+        return self._kb
+
+    def _kb_table(self) -> DataFrame:
+        """KB 현황 목록. DB 가 없으면 빈 표, 읽지 못하면 화면에 안내 (refresh 와 같은 방식)"""
+        if self.db is None:
+            return pd.DataFrame(columns=KB_STATUS_COLUMNS)
+        try:
+            return self.kb_status(self.db)
+        except Exception as error:
+            logger.exception("KB 현황 조회 실패")
+            raise gr.Error("문서 목록을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.") from error
+
+    def _wire_kb_tab(self, kb_tab, state: gr.State):
+        """
+        KB 현황 탭(kb_tab.KbTab)의 탭 열기 · 목록 새로고침 · PDF 추가하기 · 자동 갱신을 kb_status · add_pdf 에 연결.
+        build_admin_tab 에서 1번 부른다. 모든 동작은 state["user"] 로 관리자 권한을 다시 확인
+
+        Returns: None
+        """
+        indexer = self._kb_indexer()
+
+        def status_values() -> tuple:
+            # 목록 · 자동 갱신(색인 중일 때만 켜짐) · 추가 버튼(색인 중이면 잠금) · 진행 안내
+            running = indexer.is_running()
+            return (self._kb_table(), gr.Timer(active=running), gr.Button(interactive=not running),
+                    indexer.progress_text())
+
+        def show(current: dict | None):
+            _require_admin(current)
+            if self.db is not None:
+                try:   # 목록에 없는 PDF(초기 문서 등)를 지금 색인 기준으로 채움. 색인 중이면 건너뜀
+                    indexer.fill_missing_documents(self.db)
+                except Exception:
+                    logger.exception("KB 현황 목록 채우기 실패")
+            return status_values()
+
+        def add(path: str | None, current: dict | None):
+            user = _require_admin(current)
+            if not path:
+                return ("추가할 PDF 를 먼저 선택해 주세요.", *status_values(), gr.skip())
+            file = Path(path)
+            started, message = self.add_pdf(file.read_bytes(), file.name, user)
+            return (message if started else f"⚠️ {message}", *status_values(), None if started else gr.skip())
+
+        status_outputs = [kb_tab.table, kb_tab.timer, kb_tab.add_button, kb_tab.progress]
+        kb_tab.tab.select(fn=show, inputs=[state], outputs=status_outputs)
+        kb_tab.refresh_button.click(fn=show, inputs=[state], outputs=status_outputs)
+        kb_tab.timer.tick(fn=show, inputs=[state], outputs=status_outputs)
+        kb_tab.add_button.click(fn=add, inputs=[kb_tab.upload, state],
+                                outputs=[kb_tab.message, *status_outputs, kb_tab.upload])
 
     def build_admin_tab(self, state: gr.State | None = None):
         """
@@ -305,7 +371,7 @@ class AdminDashboard:
                 build_system_tab()
 
                 # KB 현황 탭
-                build_kb_tab()
+                kb_tab = build_kb_tab()
 
         session_state = state if state is not None else gr.State({})
         # 마지막으로 그린 "답 못 찾은 질문 목록". 체크박스가 바뀐 행을 찾을 때 비교 기준
@@ -320,6 +386,8 @@ class AdminDashboard:
             inputs=[quality_tab.not_found_table, review_snapshot, session_state],
             outputs=[quality_tab.not_found_table, review_snapshot, quality_tab.review_status],
         )
+
+        self._wire_kb_tab(kb_tab, session_state)   # KB 현황 탭 (WBS 3.8.6)
 
         return admin_view
 
