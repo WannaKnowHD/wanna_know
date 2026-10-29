@@ -11,6 +11,8 @@ data/interim/*
 index/*
 !index/.gitkeep
 chroma_db/
+chroma_db_versions/
+chroma_db_current.json
 
 # 파이썬·도구
 __pycache__/
