@@ -77,6 +77,17 @@ class IndexBuilder:
                 if model.model_name not in names:
                     names.append(model.model_name)
 
+    @classmethod
+    def from_settings(cls, settings: Settings) -> IndexBuilder:
+        """CLI와 PDF 추가 화면에서 동일한 색인 설정을 사용한다."""
+        return cls(
+            embedding_model=settings.embedding_model,
+            bm25_path=settings.bm25_path,
+            chroma_dir=settings.chroma_dir,
+            common_doc_ids={"fenner_belt"},
+            settings=settings,
+        )
+
     def _make_prefix(self, section: Section) -> str:
         """기존 호출 형식을 유지하며 청킹 모듈에 위임한다."""
         return index_chunking.make_prefix(self, section)
@@ -211,6 +222,7 @@ class IndexBuilder:
             cache_root=cache_root,
             cache_key=cache_key,
             extract_sections=self._extract_pdf_sections,
+            region_cache_root=cache_root.parent,
         )
 
         chunks = self.chunk_sections(search_sections)
@@ -451,12 +463,5 @@ if __name__ == "__main__":
     from chatbot.core.config import Settings
 
     settings = Settings.load()
-
-    builder = IndexBuilder(
-        embedding_model=settings.embedding_model,
-        bm25_path=settings.bm25_path,
-        chroma_dir=settings.chroma_dir,
-        common_doc_ids={"fenner_belt"},
-        settings=settings,
-    )
+    builder = IndexBuilder.from_settings(settings)
     builder.main()

@@ -117,6 +117,8 @@ def load_or_extract_sections(
         [Path, Path],
         tuple[list[Section], list[Section]],
     ],
+    *,
+    region_cache_root: Path | None = None,
 ) -> tuple[list[Section], list[Section]]:
     """정상 섹션 캐시를 재사용하거나 PDF를 추출한다."""
     cache_dir = cache_root.resolve() / cache_key
@@ -136,9 +138,15 @@ def load_or_extract_sections(
         if raw_sections and search_sections and section_assets_ready(search_sections):
             return raw_sections, search_sections
 
+    regions_dir = (
+        region_cache_root.resolve()
+        if region_cache_root is not None
+        else cache_dir / "regions"
+    )
+
     raw_sections, search_sections = extract_sections(
         pdf_path,
-        cache_dir / "regions",
+        regions_dir,
     )
 
     if not raw_sections or not search_sections:
