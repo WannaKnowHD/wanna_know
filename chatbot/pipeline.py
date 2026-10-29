@@ -219,7 +219,6 @@ class RagPipeline:
         돌려주는 것: dict (LLMClient.chat 의 결과 그대로)
           parsed     : LLMAnswer 형식의 dict (not_found · summary · cause_ids · actions · sources).
                        형식이 깨지면 None → 다시 요청할지는 AnswerValidator.validate_schema 가 정한다
-          usage      : 토큰 수 {"input_tokens", "output_tokens", ...} → trace.tokens
           latency_ms : 걸린 시간(ms) → trace.latency_ms["generate"]
           model · text : 사용한 모델 이름, 원래 답 글자
         temperature 0 · 30초 제한 · 3번 재시도는 llm.py 에 정해져 있다.

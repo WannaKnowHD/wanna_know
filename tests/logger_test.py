@@ -86,7 +86,6 @@ ANSWER = {
             "generate": 2100,
             "total": 3800,
         },
-        "tokens": {"input_tokens": 2350, "output_tokens": 410},
         "schema_retries": 0,
         "removed_cause_ids": [],
         "replaced_quote_refs": [],
@@ -126,8 +125,6 @@ def test_build_record_maps_answer():
             "generate": 2100,
             "total": 3800,
         },
-        "tokens_in": 2350,
-        "tokens_out": 410,
         "error": None,
     }
 

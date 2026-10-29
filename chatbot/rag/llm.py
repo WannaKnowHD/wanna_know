@@ -13,7 +13,7 @@
   - temperature=0       : 같은 질문엔 항상 같은 답 (평가 점수를 비교하려면 꼭 필요)
   - timeout=30          : 30초 안에 답이 없으면 실패로 본다
   - max_retries=3       : 실패하면 기다리는 시간을 늘려 가며 3번까지 다시 시도한다
-  - 호출마다 토큰 수와 걸린 시간을 출력하고, 결과에도 담아 준다
+  - 호출마다 걸린 시간을 출력하고, 결과에도 담아 준다
   - 키·모델명은 코드에 쓰지 않고 Settings 에서 받는다
 
 [사용 예]
@@ -99,7 +99,6 @@ class LLMClient:
           text       : 답 글자
           parsed     : 형식에 맞춰 받은 답을 dict 로 (json_schema 를 안 넣었거나 형식이 깨지면 None)
           model      : 사용한 모델 이름
-          usage      : 토큰 수 {"input_tokens", "output_tokens", "total_tokens"}
           latency_ms : 걸린 시간 (밀리초, 정수)  → trace.latency_ms 에 그대로 넣을 수 있음
         """
         llm = self.text_llm
@@ -175,10 +174,10 @@ class LLMClient:
         return [self.cache[text] for text in texts]
 
     # ==========================================================================
-    # 공통 : 모델 호출 + 시간·토큰 기록
+    # 공통 : 모델 호출 + 시간 기록
     # ==========================================================================
     def call(self, llm, messages, json_schema, name):
-        """LLM 을 부르고, 걸린 시간과 토큰 수를 함께 돌려준다."""
+        """LLM 을 부르고, 걸린 시간을 함께 돌려준다."""
         start = time.time()
 
         if json_schema is None:
@@ -202,14 +201,12 @@ class LLMClient:
                 parsed = None
 
         latency_ms = int((time.time() - start) * 1000)
-        usage = response.usage_metadata or {}
-        print(f"[llm] {name}: {llm.model_name} · {latency_ms} ms · 토큰 {usage.get('total_tokens')}")
+        print(f"[llm] {name}: {llm.model_name} · {latency_ms} ms")
 
         return {
             "text": response.content if isinstance(response.content, str) else str(response.content),
             "parsed": parsed,
             "model": llm.model_name,
-            "usage": dict(usage),
             "latency_ms": latency_ms,
         }
 

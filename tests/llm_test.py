@@ -95,7 +95,7 @@ def test_chat_text(client):
     FakeOpenAI.replies = ["안녕하세요"]
     out = client.chat([{"role": "user", "content": "안녕"}])
     assert out["text"] == "안녕하세요" and out["parsed"] is None
-    assert out["usage"]["total_tokens"] == 15 and out["model"] == "text-model"
+    assert out["model"] == "text-model"
 
 
 def test_chat_json_schema(client):
