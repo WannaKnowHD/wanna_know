@@ -10,19 +10,24 @@ import copy
 import pytest
 
 from chatbot.core.schemas import Hit
-from chatbot.rag.prompts import KB_CAUSE, KB_TROUBLESHOOTING
+from chatbot.rag.prompts import KB_ACTION_SEPARATOR, KB_CAUSE, KB_TROUBLESHOOTING
 from chatbot.rag.validator import MAX_QUOTE_CHARS, AnswerValidator
 
 KB_ID = "TS-HYTROL138ACC-T01-01"
 KB_TEXT = KB_TROUBLESHOOTING.format(
     applies_to="138-ACC", symptom="Motor overheats", alarm_codes="",
     causes="\n".join([
-        KB_CAUSE.format(cause_id=f"{KB_ID}#c1", cause="Conveyor overloaded.", actions="Reduce load → Check amperage"),
+        KB_CAUSE.format(cause_id=f"{KB_ID}#c1", cause="Conveyor overloaded.",
+                        actions=KB_ACTION_SEPARATOR.join(["Reduce load", "Check amperage"])),
         KB_CAUSE.format(cause_id=f"{KB_ID}#c2", cause="Low supply voltage.", actions="Check supply voltage"),
     ]),
 )
 CHUNK_TEXT = ("Lubricate the drive chain every 2,080 hours with ISO VG 220 oil.\n"
               "Check the belt tension monthly. Replace worn sprockets.")
+
+# KB 원인을 한국어로 옮긴 정상 답 (c1 은 조치 2개, c2 는 조치 1개)
+CAUSE_C1 = {"id": f"{KB_ID}#c1", "cause": "컨베이어 과부하", "actions": ["부하를 줄이세요.", "모터 전류를 확인하세요."]}
+CAUSE_C2 = {"id": f"{KB_ID}#c2", "cause": "공급 전압이 낮음", "actions": ["공급 전압을 확인하세요."]}
 
 
 def kb_hit():
@@ -35,12 +40,16 @@ def chunk_hit():
                metadata={"doc_id": "hytrol_138acc", "page": 30, "chunk_type": "text"})
 
 
+def cause(cause_id, n_actions=1, text="원인입니다"):
+    return {"id": cause_id, "cause": text, "actions": [f"{i + 1}번 조치를 하세요." for i in range(n_actions)]}
+
+
 def llm_answer(**changes):
     """규칙대로 만든 정상 LLM 답. 필요한 칸만 바꿔 쓴다."""
     answer = {
         "not_found": False,
         "summary": "모터 과열은 컨베이어 과부하가 가장 먼저 확인할 원인입니다.",
-        "cause_ids": [f"{KB_ID}#c1"],
+        "causes": [copy.deepcopy(CAUSE_C1)],
         "actions": [],
         "sources": [{"ref_id": KB_ID, "quote": "Conveyor overloaded."}],
     }
@@ -64,7 +73,10 @@ def test_schema_ok(validator):
     None,                                                   # generate 에서 형식이 깨진 경우
     {"summary": "요약"},                                    # 칸이 빠짐
     {**llm_answer(), "follow_ups": []},                     # 정의에 없는 칸
-    llm_answer(cause_ids="TS-A-T01-01#c1"),                 # 목록이 아님
+    {**llm_answer(), "cause_ids": []},                      # 예전 칸 이름 (v0.5)
+    llm_answer(causes="TS-A-T01-01#c1"),                    # 목록이 아님
+    llm_answer(causes=[{"id": "hytrol_138acc_ts_04#c1", "cause": "원인", "actions": []}]),   # 원인 id 형식 틀림
+    llm_answer(causes=[{"id": f"{KB_ID}#c1", "cause": "원인"}]),                              # actions 빠짐
     llm_answer(actions=[{"text": "점검"}]),                 # ref_id 빠짐
 ])
 def test_schema_broken(validator, broken):
@@ -75,17 +87,19 @@ def test_schema_broken(validator, broken):
 # check_language
 # ------------------------------------------------------------------------------
 def test_korean_with_english_terms_passes(validator):
-    answer = llm_answer(actions=[{"text": "구동 체인(drive chain)에 ISO VG 220 오일을 바르세요.", "ref_id": "x"}])
+    answer = llm_answer(causes=[], actions=[{"text": "구동 체인(drive chain)에 ISO VG 220 오일을 바르세요.", "ref_id": "x"}])
     assert validator.check_language(answer)
 
 
 def test_not_found_sentence_passes(validator):
-    assert validator.check_language(llm_answer(not_found=True, summary="자료에서 확인되지 않습니다.", cause_ids=[], sources=[]))
+    assert validator.check_language(llm_answer(not_found=True, summary="자료에서 확인되지 않습니다.", causes=[], sources=[]))
 
 
 @pytest.mark.parametrize("answer", [
     llm_answer(summary="The conveyor is overloaded. Reduce the load."),
-    llm_answer(actions=[{"text": "Reduce the load on the conveyor.", "ref_id": "x"}]),   # 단계 하나라도 영어면 실패
+    llm_answer(causes=[{**CAUSE_C1, "cause": "Conveyor overloaded."}]),                          # 원인이 영어
+    llm_answer(causes=[{**CAUSE_C1, "actions": ["부하를 줄이세요.", "Check amperage."]}]),       # 조치 하나가 영어
+    llm_answer(actions=[{"text": "Reduce the load on the conveyor.", "ref_id": "x"}]),
     llm_answer(summary="   "),
 ])
 def test_not_korean_fails(validator, answer):
@@ -101,33 +115,52 @@ def test_english_quote_is_not_checked(validator):
 # verify_causes
 # ------------------------------------------------------------------------------
 def test_causes_keep_only_ids_in_kb_text(validator):
-    answer = llm_answer(cause_ids=[
-        f"{KB_ID}#c2",
-        f"{KB_ID}#c9",                    # KB 글에 없는 순번 → 지어낸 id
-        "TS-OTHER-T01-01#c1",             # 검색되지 않은 KB
-        "hytrol_138acc_ts_04#c1",         # 옛 형식
-        f"{KB_ID}#c2",                    # 중복
+    answer = llm_answer(causes=[
+        copy.deepcopy(CAUSE_C2),
+        cause(f"{KB_ID}#c9"),                 # KB 글에 없는 순번 → 지어낸 id
+        cause("TS-OTHER-T01-01#c1"),          # 검색되지 않은 KB
+        cause("hytrol_138acc_ts_04#c1"),      # 옛 형식
+        copy.deepcopy(CAUSE_C2),              # 중복
     ])
     checked = validator.verify_causes(answer, [kb_hit(), chunk_hit()])
-    assert checked["cause_ids"] == [f"{KB_ID}#c2"]
+    assert checked["causes"] == [CAUSE_C2]
+
+
+def test_translated_sentences_are_kept(validator):
+    checked = validator.verify_causes(llm_answer(causes=[copy.deepcopy(CAUSE_C1)]), [kb_hit()])
+    assert checked["causes"] == [CAUSE_C1]     # 한국어로 옮긴 원인·조치 문장은 그대로 남는다
+
+
+@pytest.mark.parametrize("n_actions", [1, 3])
+def test_action_count_must_match_kb(validator, n_actions):
+    # c1 의 KB 조치는 2개 ("Reduce load → Check amperage")
+    answer = llm_answer(causes=[cause(f"{KB_ID}#c1", n_actions)])
+    assert validator.verify_causes(answer, [kb_hit()])["causes"] == []
+
+
+def test_action_count_skipped_without_action_line(validator):
+    hit = kb_hit()
+    hit.text = f"- 원인 id {KB_ID}#c1: Conveyor overloaded."     # 조치 순서 줄이 없는 KB 글
+    answer = llm_answer(causes=[cause(f"{KB_ID}#c1", 5)])
+    assert len(validator.verify_causes(answer, [hit])["causes"]) == 1
 
 
 def test_cause_id_prefix_does_not_match_longer_number(validator):
     hit = kb_hit()
     hit.text = hit.text.replace(f"{KB_ID}#c1:", f"{KB_ID}#c10:")
-    checked = validator.verify_causes(llm_answer(cause_ids=[f"{KB_ID}#c1"]), [hit])
-    assert checked["cause_ids"] == []     # "#c1" 이 "#c10" 안에서 찾아지면 안 된다
+    checked = validator.verify_causes(llm_answer(), [hit])
+    assert checked["causes"] == []     # "#c1" 이 "#c10" 안에서 찾아지면 안 된다
 
 
 def test_causes_need_kb_hit(validator):
     # 같은 id 가 본문 청크에 적혀 있어도 KB 가 아니면 인정하지 않는다
     chunk = chunk_hit()
     chunk.text += f"\n{KB_ID}#c1"
-    assert validator.verify_causes(llm_answer(), [chunk])["cause_ids"] == []
+    assert validator.verify_causes(llm_answer(), [chunk])["causes"] == []
 
 
 def test_verify_causes_does_not_change_input(validator):
-    answer = llm_answer(cause_ids=["TS-OTHER-T01-01#c1"])
+    answer = llm_answer(causes=[cause("TS-OTHER-T01-01#c1")])
     before = copy.deepcopy(answer)
     validator.verify_causes(answer, [kb_hit()])
     assert answer == before
@@ -163,7 +196,7 @@ def test_kb_quote_replaced_without_korean_label(validator):
 
 def test_unknown_source_and_its_action_removed(validator):
     answer = llm_answer(
-        cause_ids=[],
+        causes=[],
         actions=[{"text": "체인을 윤활하세요.", "ref_id": "hytrol-p30-c2"},
                  {"text": "모터를 교체하세요.", "ref_id": "made-up-id"}],
         sources=[{"ref_id": "hytrol-p30-c2", "quote": "Replace worn sprockets."},
@@ -183,7 +216,7 @@ def test_long_replacement_is_cut(validator):
 
 
 def test_checked_answer_still_matches_schema(validator):
-    answer = llm_answer(cause_ids=[f"{KB_ID}#c1", "TS-OTHER-T01-01#c1"],
+    answer = llm_answer(causes=[copy.deepcopy(CAUSE_C1), cause("TS-OTHER-T01-01#c1")],
                         sources=[{"ref_id": KB_ID, "quote": "overloaded conveyor"}])
     hits = [kb_hit(), chunk_hit()]
     checked = validator.verify_quote(validator.verify_causes(answer, hits), hits)

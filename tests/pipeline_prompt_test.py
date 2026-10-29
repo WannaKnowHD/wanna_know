@@ -116,7 +116,8 @@ def test_generate_asks_llm_answer_schema():
 
 
 def test_generate_returns_chat_result_as_is():
-    parsed = {"not_found": False, "summary": "요약", "cause_ids": ["TS-A-T01-01#c1"], "actions": [],
+    parsed = {"not_found": False, "summary": "요약",
+              "causes": [{"id": "TS-A-T01-01#c1", "cause": "과부하", "actions": ["부하를 줄이세요."]}], "actions": [],
               "sources": [{"ref_id": "TS-A-T01-01", "quote": "Conveyor overloaded"}]}
     result = {"text": "{...}", "parsed": parsed, "model": "fake", "latency_ms": 5}
     assert RagPipeline(FakeLLM(result)).generate([]) == result
