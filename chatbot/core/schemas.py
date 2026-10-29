@@ -99,7 +99,7 @@ class SourceRef(BaseModel):
     판(version)은 두지 않음: sources.csv에 문서마다 판이 하나뿐이라 doc_id로 구분된다."""
     model_config = ConfigDict(extra="forbid")
     doc_id: str
-    page: int = Field(ge=1)  # 원본 PDF(sources.csv의 original_file) 쪽. 잘라 낸 파일 쪽·인쇄 쪽 아님
+    page: int = Field(ge=1)  # 매뉴얼 하단에 인쇄된 쪽 번호 (sources.csv page_map 으로 맞춤). 잘라 낸 파일 쪽 아님
     ref: str  # "Table 8", "Section 4.1"
 
 
