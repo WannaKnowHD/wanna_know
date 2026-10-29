@@ -15,7 +15,7 @@
 PROMPT_VERSION = "v0"
 
 # 답변 생성 프롬프트(3번) 버전. 팀 기준: 처음 완성된 챗봇 = v0, 이후 개선할 때마다 v1, v2 …
-#   v0 : 첫 완성본 (응답 스키마 v0.5 LLMAnswer 기준)
+#   v0 : 첫 완성본 (LLMAnswer 기준. 원인·조치는 LLM 이 KB 를 한국어로 옮김)
 ANSWER_PROMPT_VERSION = "v0"
 
 
@@ -51,8 +51,9 @@ Question: {question}"""
 
 # ------------------------------------------------------------------------------
 # 3. 답변 생성 (build_prompt · generate) → schemas.LLMAnswer
-#    LLM 은 LLMAnswer 다섯 칸(not_found · summary · cause_ids · actions · sources)만 채운다.
-#    원인 문장·출처 문서명·쪽·그림·안전 문구는 코드가 KB 와 검색 결과에서 채운다 (AnswerResponse).
+#    LLM 은 LLMAnswer 다섯 칸(not_found · summary · causes · actions · sources)만 채운다.
+#    원인·조치는 LLM 이 KB 영어 원문을 한국어로 옮겨 쓰고, id·조치 개수·순서가 KB 와 같은지는 validator 가 확인한다.
+#    출처 문서명·쪽·그림·안전 문구는 코드가 KB 와 검색 결과에서 채운다 (AnswerResponse).
 #    사용: system = ANSWER_SYSTEM
 #          human  = ANSWER_HUMAN.format(context=자료, question_type=질문 유형, equipment=설비, question=질문)
 # ------------------------------------------------------------------------------
@@ -63,24 +64,25 @@ ANSWER_SYSTEM = """당신은 물류 컨베이어 현장 정비를 돕는 도우�
 [규칙]
 1. [자료]에 있는 내용만 근거로 답하세요. 자료에 없는 원인·수치·절차는 만들지 마세요.
 2. not_found
-   - [자료]로 질문에 답할 수 없으면 true 로 하고, summary 는 "자료에서 확인되지 않습니다." 한 문장, cause_ids·actions·sources 는 모두 빈 목록으로 두세요.
+   - [자료]로 질문에 답할 수 없으면 true 로 하고, summary 는 "자료에서 확인되지 않습니다." 한 문장, causes·actions·sources 는 모두 빈 목록으로 두세요.
    - 답할 수 있으면 false 입니다.
 3. summary : 한국어 1~2문장으로 쓰세요. 고장 질문이면 증상과 가장 먼저 확인할 원인을, 점검·절차 질문이면 주기나 핵심 단계를 씁니다.
-4. cause_ids : [질문 유형]이 troubleshooting 일 때만 채우세요.
-   - [자료]에 적힌 "원인 id"를 한 글자도 바꾸지 말고 그대로 쓰세요 (예: TS-HYTROL138ACC-T01-01#c1). 새 id 를 만들지 마세요.
+4. causes : [질문 유형]이 troubleshooting 일 때만 채우세요. 원인 하나마다 id · cause · actions 를 씁니다.
+   - id 는 [자료]에 적힌 "원인 id"를 한 글자도 바꾸지 말고 그대로 쓰세요 (예: TS-HYTROL138ACC-T01-01#c1). 새 id 를 만들지 마세요.
    - 질문한 증상과 관련 있는 원인만, 자료에 적힌 순서대로 쓰세요.
-   - 원인·조치 문장은 쓰지 마세요. 코드가 KB 에서 그대로 가져옵니다.
+   - cause 는 그 원인 문장을, actions 는 "조치 순서"의 조치를 한국어로 옮겨 쓰세요.
+   - 조치는 빼거나 더하거나 합치지 말고, 자료와 같은 개수·같은 순서로 하나씩 옮기세요.
 5. actions : [질문 유형]이 maintenance 또는 procedure 일 때만 채우세요. troubleshooting 이면 빈 목록입니다.
    - 한 단계씩 순서대로, 한국어 한 문장으로 쓰세요. 주기·기준값이 있으면 그 단계에 함께 쓰세요.
    - ref_id 는 그 단계의 근거가 된 [자료]의 id 입니다.
-6. [질문 유형]이 "지정 안 됨"이면 근거로 쓴 자료가 고장 KB 일 때 cause_ids 를, 그 밖의 자료일 때 actions 를 채우세요.
+6. [질문 유형]이 "지정 안 됨"이면 근거로 쓴 자료가 고장 KB 일 때 causes 를, 그 밖의 자료일 때 actions 를 채우세요.
 7. sources : 답에 쓴 [자료]마다 하나씩 쓰세요.
-   - ref_id 는 [자료]의 id 입니다. cause_ids 를 가져온 KB 의 id 와 actions 의 ref_id 는 모두 sources 에도 있어야 합니다.
+   - ref_id 는 [자료]의 id 입니다. causes 를 가져온 KB 의 id 와 actions 의 ref_id 는 모두 sources 에도 있어야 합니다.
    - quote 는 그 자료 본문에서 근거가 되는 영어 한 문장을 한 글자도 바꾸지 말고 그대로 복사하세요. 번역·요약·생략하지 마세요.
 8. 수치·단위·모델명·알람 코드는 원문 그대로 쓰세요 (예: 2,080 hours, ISO VG 220, 138-ACC, E12).
 9. [설비]가 지정되어 있으면 "적용 설비"가 그 설비이거나 "모든 모델"인 자료를 우선하세요.
 10. 안전 문구(LOTO, 자격자 작업, 말림 주의 등)는 쓰지 마세요. 코드가 규칙에 따라 붙입니다.
-11. 질문이 한국어가 아니어도 summary 와 actions 는 한국어로 쓰세요."""
+11. 질문이 한국어가 아니어도 summary · causes · actions 는 한국어로 쓰세요."""
 
 ANSWER_HUMAN = """[자료]
 {context}
@@ -111,6 +113,7 @@ CHUNK_TYPE_LABELS = {
 # 색인(build_index)에서 KB 의 text 를 이 틀로 만들면 검색에 쓰는 글과 LLM 이 보는 글이 같아진다.
 #    고장 KB : KB_TROUBLESHOOTING.format(applies_to=..., symptom=..., alarm_codes=..., causes=...)
 #              causes 는 원인마다 KB_CAUSE 를 채워 "\n" 으로 이어 붙인 것
+#              KB_CAUSE 의 actions 는 조치들을 KB_ACTION_SEPARATOR 로 이어 붙인 것
 #              alarm_codes 는 KB_ALARM_CODES 를 채운 것 (알람 코드가 없으면 "")
 #    점검 KB : KB_MAINTENANCE.format(applies_to=..., task=..., interval=..., extra=...)
 #              extra 는 KB_CRITERIA · KB_DETAILS 중 값이 있는 것만 이어 붙인 것 (없으면 "")
@@ -122,6 +125,8 @@ KB_ALARM_CODES = " (알람 코드: {codes})"
 
 KB_CAUSE = """- 원인 id {cause_id}: {cause}
   조치 순서: {actions}"""
+# 조치를 잇는 기호. validator 가 이 기호로 KB 조치 개수를 센다 (LLM 이 옮긴 조치 개수와 비교)
+KB_ACTION_SEPARATOR = " → "
 
 KB_MAINTENANCE = """적용 설비: {applies_to}
 작업: {task}

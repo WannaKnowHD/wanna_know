@@ -217,7 +217,7 @@ class RagPipeline:
 
         받는 것: build_prompt 가 만든 messages
         돌려주는 것: dict (LLMClient.chat 의 결과 그대로)
-          parsed     : LLMAnswer 형식의 dict (not_found · summary · cause_ids · actions · sources).
+          parsed     : LLMAnswer 형식의 dict (not_found · summary · causes · actions · sources).
                        형식이 깨지면 None → 다시 요청할지는 AnswerValidator.validate_schema 가 정한다
           latency_ms : 걸린 시간(ms) → trace.latency_ms["generate"]
           model · text : 사용한 모델 이름, 원래 답 글자
