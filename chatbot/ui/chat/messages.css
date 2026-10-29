@@ -18,7 +18,7 @@
   font-size: 0.8125rem;
   padding: 0.3125rem 0.75rem;
 }
-.wk-chip-on { border-color: var(--wk-send-bg); color: var(--wk-send-bg); font-weight: 600; }
+.wk-chip-on { background: var(--wk-send-bg); border-color: var(--wk-send-bg); color: var(--wk-send-text); font-weight: 600; }   /* 설비가 정해진 칩은 채움 (Figma 04) */
 
 /* 답변 카드 (Figma 02) */
 .wk-card {

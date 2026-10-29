@@ -11,12 +11,14 @@ from chatbot.ui.login.theme import THEME_TOGGLE_ENABLED
 
 CHAT_AREA_CSS_PATH = Path(__file__).parent / "chat_area.css"
 
-# 예시 질문 템플릿 (Q-06). 임시 문구 — show_examples(3.7.3)가 진짜 목록을 정하면 그쪽에서 가져옴
+# 예시 질문 템플릿 (Q-06, show_examples 가 돌려줌). 지금 매뉴얼 3종의 KB 로 답할 수 있는 질문만 둔다
+# (화면설계서 시안의 "E-102 알람이 떠요"는 KB 에 없는 알람 코드라 "확인되지 않음"이 나와서 뺌)
 EXAMPLE_QUESTIONS = (
-    "3라인 벨트가 한쪽으로 쏠려요",
-    "모터가 뜨거워요",
-    "체인이 늘어났어요",
-    "알람 코드 E-05",
+    "모터가 너무 뜨거워요",        # TS-HYTROL138ACC-T01-04 · TS-PRECOLSERIES-T04-03
+    "벨트가 한쪽으로 쏠려요",      # TS-FENNERBELT-T01-02 · TS-PRECOLSERIES-T04-04
+    "벨트가 미끄러져요",           # TS-FENNERBELT-T01-07 · TS-HYTROL138ACC-T02-01
+    "벨트 가장자리가 닳았어요",    # TS-FENNERBELT-T01-18
+    "주간 점검 뭐 해야 해?",       # maintenance KB 중 interval "weekly" 6개
 )
 INPUT_PLACEHOLDER = "증상이나 알람 코드를 입력하세요"
 
