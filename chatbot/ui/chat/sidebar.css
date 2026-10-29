@@ -1,0 +1,58 @@
+/* 사이드바 (Figma 대화 기록창 260px). 색은 chat.css 의 변수 */
+#chat-sidebar {
+  background: var(--wk-sb-bg);
+  flex: 0 0 16.25rem !important;
+  width: 16.25rem;
+  min-width: 16.25rem !important;
+  height: 100vh;
+  padding: 1.25rem 0.75rem !important;
+  gap: 0.75rem !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+#chat-sidebar .block,
+#chat-sidebar .form {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.sb-brand { color: var(--wk-sb-brand); font-size: 0.9375rem; font-weight: 700; }
+.sb-label { color: var(--wk-sb-muted); font-size: 0.75rem; font-weight: 500; }
+
+.sb-button {
+  flex: 0 0 auto !important;   /* 세로 flex 안에서 버튼이 늘어나지 않게 */
+  height: auto !important;
+  width: 100%;
+  background: var(--wk-sb-item-bg) !important;
+  color: var(--wk-sb-text) !important;
+  border: 1px solid var(--wk-sb-border) !important;
+  border-radius: 0.5rem !important;
+  box-shadow: none !important;
+  font-size: 0.8125rem;
+}
+
+/* 세로 flex 안에서 요소가 늘어나 간격이 벌어지지 않게, 대화 기록만 남는 높이를 차지하고 길어지면 이 안에서만 스크롤 */
+#chat-sidebar > * { flex: 0 0 auto !important; }
+#chat-sidebar > #sb-history { flex: 1 1 auto !important; overflow-y: auto; min-height: 0; }
+.history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.history-list li { display: flex; flex-direction: column; gap: 0.125rem; padding: 0.5rem 0.625rem; border-radius: 0.5rem; }
+.history-list li:hover { background: var(--wk-sb-item-bg); }
+.history-question { color: var(--wk-sb-text); font-size: 0.8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-time { color: var(--wk-sb-muted); font-size: 0.6875rem; }
+.sb-empty { color: var(--wk-sb-muted); font-size: 0.8125rem; margin: 0; }
+
+/* 아래쪽: 사원 정보 + 로그아웃 */
+#sb-footer {
+  flex: 0 0 auto !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 0.5rem !important;
+  border-top: 1px solid var(--wk-sb-border);
+  padding-top: 0.75rem !important;
+}
+#sb-footer .sb-logout { width: auto; flex: 0 0 auto !important; min-width: 0 !important; }
+.sb-user { display: flex; flex-direction: column; gap: 0.125rem; }
+.sb-user-name { color: var(--wk-sb-text); font-size: 0.8125rem; font-weight: 500; }
+.sb-user-id { color: var(--wk-sb-muted); font-size: 0.6875rem; }
