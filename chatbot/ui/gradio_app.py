@@ -183,18 +183,32 @@ class ChatApp:
             bind_theme_toggle(login.theme_button, area.theme_button)
 
             # ---- 채팅: 질문 보내기 · 사진 첨부(미리보기) · 예시 질문 · 대화 초기화 ----
-            def submit_event(message, history, current, image):
+            # 질문 말풍선을 먼저 보여 주고(show_question_event), 이어서 답변을 만들어 붙인다(answer_event)
+            def show_question_event(message, history, current, image):
                 history = list(history or [])
-                if image and (current or {}).get("user") is not None:
-                    # 사진 말풍선을 붙이고 on_image(3.7.5)가 판별·명판·손상 처리 후 답변 카드를 붙임 (명판이면 설비도 바뀜)
-                    history.append({"role": "user", "content": {"path": image}})
-                    if (message or "").strip():
-                        history.append({"role": "user", "content": render_user_message(message.strip())})
-                    history, new_state = self.on_image(Path(image).read_bytes(), history, current)
+                message = (message or "").strip()
+                if (current or {}).get("user") is None or not (message or image):   # 로그인 전·빈 입력은 처리하지 않음
+                    return history, None, gr.update(), gr.update(), *clear_preview
+                pending = {"message": message, "image": image, "history": history}   # 답변 단계에서 이 기록에 질문+답변을 붙임
+                shown = list(history)
+                if image:
+                    shown.append({"role": "user", "content": {"path": image}})
+                if message:
+                    shown.append({"role": "user", "content": render_user_message(message)})
+                return shown, pending, "", gr.update(visible=False), *clear_preview
+
+            def answer_event(pending, history, current):
+                if pending is None:
+                    return history, current, gr.update(visible=not history), self.show_equipment(current)
+                if pending["image"]:
+                    # 사진 말풍선은 이미 보였으므로 on_image(3.7.5)에는 말풍선까지 붙인 기록을 넘겨 답변 카드만 붙게 함
+                    shown = list(pending["history"]) + [{"role": "user", "content": {"path": pending["image"]}}]
+                    if pending["message"]:
+                        shown.append({"role": "user", "content": render_user_message(pending["message"])})
+                    history, new_state = self.on_image(Path(pending["image"]).read_bytes(), shown, current)
                 else:
-                    history, new_state = self.on_submit(message, history, current)
-                return (history, new_state, "", gr.update(visible=not history),
-                        self.show_equipment(new_state), *clear_preview)
+                    history, new_state = self.on_submit(pending["message"], pending["history"], current)
+                return history, new_state, gr.update(visible=not history), self.show_equipment(new_state)
 
             def attach_event(file):
                 return file, gr.update(visible=bool(file)), file
@@ -206,10 +220,15 @@ class ChatApp:
                 new_state = self.reset_conversation(current)
                 return (new_state, self.show_equipment(new_state), *fresh_values)
 
-            chat_outputs = [area.chatbot, state, area.message, area.examples, area.equipment, *preview_outputs]
-            submit_inputs = [area.message, area.chatbot, state, pending_image]
-            area.send_button.click(submit_event, inputs=submit_inputs, outputs=chat_outputs)
-            area.message.submit(submit_event, inputs=submit_inputs, outputs=chat_outputs)
+            pending_question = gr.State(None)   # 질문은 보였지만 아직 답변이 붙지 않은 요청
+            question_outputs = [area.chatbot, pending_question, area.message, area.examples, *preview_outputs]
+            question_inputs = [area.message, area.chatbot, state, pending_image]
+            answer_inputs = [pending_question, area.chatbot, state]
+            answer_outputs = [area.chatbot, state, area.examples, area.equipment]
+            for trigger in (area.send_button.click, area.message.submit):
+                trigger(show_question_event, inputs=question_inputs, outputs=question_outputs).then(
+                    answer_event, inputs=answer_inputs, outputs=answer_outputs
+                )
             area.image_button.upload(attach_event, inputs=[area.image_button], outputs=preview_outputs)
             area.preview_remove.click(remove_event, outputs=preview_outputs)
             sidebar.reset_button.click(reset_event, inputs=[state], outputs=[state, area.equipment, *fresh_chat])
