@@ -5,6 +5,10 @@
   width: 16.25rem;
   min-width: 16.25rem !important;
   height: 100vh;
+  height: 100dvh;   /* 주소창 등으로 100vh 가 실제 화면보다 커지는 브라우저에서 아래쪽(사원 정보·로그아웃)이 잘리지 않게 */
+  flex-wrap: nowrap !important;   /* Gradio 기본 wrap 이면 대화 기록이 길 때 기록·푸터가 오른쪽 새 열로 밀려나 안 보임 */
+  box-sizing: border-box;   /* padding 이 height 에 더해져 사이드바가 화면보다 커지지 않게 */
+  overflow: hidden;
   padding: 1.25rem 0.75rem !important;
   gap: 0.75rem !important;
   border: none !important;
@@ -35,7 +39,7 @@
 
 /* 세로 flex 안에서 요소가 늘어나 간격이 벌어지지 않게, 대화 기록만 남는 높이를 차지하고 길어지면 이 안에서만 스크롤 */
 #chat-sidebar > * { flex: 0 0 auto !important; }
-#chat-sidebar > #sb-history { flex: 1 1 auto !important; overflow-y: auto; min-height: 0; }
+#chat-sidebar > #sb-history { flex: 1 1 0 !important; overflow-y: auto !important; min-height: 0 !important; }   /* Gradio .block 의 overflow: visible 을 이겨야 기록 안에서만 스크롤됨 */
 .history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
 .history-list li { display: flex; flex-direction: column; gap: 0.125rem; padding: 0.5rem 0.625rem; border-radius: 0.5rem; }
 .history-list li:hover { background: var(--wk-sb-item-bg); }
@@ -46,6 +50,7 @@
 /* 아래쪽: 사원 정보 + 로그아웃 */
 #sb-footer {
   flex: 0 0 auto !important;
+  margin-top: auto;   /* 대화 기록이 짧아도 항상 사이드바 맨 아래에 붙음 */
   flex-wrap: nowrap !important;
   align-items: center;
   gap: 0.5rem !important;
