@@ -45,8 +45,6 @@ CREATE TABLE IF NOT EXISTS chat_logs (
   safety_included   BOOLEAN     NOT NULL DEFAULT FALSE COMMENT '안전 문구 포함 여부',
   confidence        FLOAT       NULL COMMENT '사진 판별 확신도',
   latency_ms        JSON        NULL COMMENT '단계별 응답 시간(ms)',
-  tokens_in         INT         NULL COMMENT '입력 토큰',
-  tokens_out        INT         NULL COMMENT '출력 토큰',
   error             VARCHAR(255) NULL COMMENT '오류 내용',
   PRIMARY KEY (log_id),
   INDEX idx_logs_created (created_at),

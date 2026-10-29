@@ -17,7 +17,7 @@ class FakeLLM:
 
     def __init__(self, result=None):
         self.calls = []
-        self.result = result or {"text": "{}", "parsed": None, "model": "fake", "usage": {}, "latency_ms": 1}
+        self.result = result or {"text": "{}", "parsed": None, "model": "fake", "latency_ms": 1}
 
     def chat(self, messages, model=None, json_schema=None):
         self.calls.append({"messages": messages, "json_schema": json_schema})
@@ -116,12 +116,13 @@ def test_generate_asks_llm_answer_schema():
 
 
 def test_generate_returns_chat_result_as_is():
-    parsed = {"not_found": False, "summary": "요약", "cause_ids": ["TS-A-T01-01#c1"], "actions": [],
+    parsed = {"not_found": False, "summary": "요약",
+              "causes": [{"id": "TS-A-T01-01#c1", "cause": "과부하", "actions": ["부하를 줄이세요."]}], "actions": [],
               "sources": [{"ref_id": "TS-A-T01-01", "quote": "Conveyor overloaded"}]}
-    result = {"text": "{...}", "parsed": parsed, "model": "fake", "usage": {"input_tokens": 10}, "latency_ms": 5}
+    result = {"text": "{...}", "parsed": parsed, "model": "fake", "latency_ms": 5}
     assert RagPipeline(FakeLLM(result)).generate([]) == result
 
 
 def test_generate_keeps_none_when_format_broken():
-    result = {"text": "not json", "parsed": None, "model": "fake", "usage": {}, "latency_ms": 5}
+    result = {"text": "not json", "parsed": None, "model": "fake", "latency_ms": 5}
     assert RagPipeline(FakeLLM(result)).generate([])["parsed"] is None

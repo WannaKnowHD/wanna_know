@@ -7,8 +7,8 @@
   generate 가 받은 LLM 답(schemas.LLMAnswer 형식의 dict)을 화면에 내보내기 전에 걸러낸다.
   프롬프트로 "지어내지 마"라고 해도 LLM 이 틀릴 수 있으므로 코드로 한 번 더 확인한다.
     - validate_schema : LLMAnswer 다섯 칸 형식인지
-    - check_language  : summary · actions 가 한국어인지
-    - verify_causes   : 원인 id 가 검색된 KB [자료]에 실제로 있는지 (없으면 제거)
+    - check_language  : summary · causes · actions 가 한국어인지
+    - verify_causes   : 원인 id 가 검색된 KB [자료]에 실제로 있고, 조치 개수가 KB 와 같은지 (아니면 제거)
     - verify_quote    : 인용문이 [자료] 원문에 그대로 있는지 (없으면 원문 문장으로 교체)
   LLM · DB 를 쓰지 않는다. 다시 요청할지는 이 파일이 아니라 RagPipeline.answer 가 정한다.
 
@@ -22,9 +22,9 @@
     checked = validator.verify_quote(validator.verify_causes(parsed, hits), hits)
 
   trace 에 남길 값은 검증 전(parsed)과 후(checked)를 비교해서 구한다.
-    trace.removed_cause_ids   = parsed 에는 있고 checked 에는 없는 cause_ids
+    trace.removed_cause_ids   = parsed 에는 있고 checked 에는 없는 causes 의 id
     trace.replaced_quote_refs = quote 가 바뀐 sources 의 ref_id
-  ※ checked 의 cause_ids · actions 가 모두 비면 AnswerResponse(answered)를 만들 수 없으므로
+  ※ checked 의 causes · actions 가 모두 비면 AnswerResponse(answered)를 만들 수 없으므로
     answer 가 확인되지 않음(not_found)으로 처리한다.
 ==============================================================================
 """
@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING
 from pydantic import ValidationError
 
 from chatbot.core.schemas import CAUSE_ID_PATTERN, LLMAnswer
+from chatbot.rag.prompts import KB_ACTION_SEPARATOR
 
 if TYPE_CHECKING:
     from chatbot.core.schemas import Hit
@@ -64,7 +65,7 @@ class AnswerValidator:
         pydantic 모델(schemas.LLMAnswer)로 LLM 답 형식 검사. 실패하면 answer 가 1회 재요청 후 not_found
 
         받는 것: generate 결과의 parsed (형식이 깨졌으면 None)
-        돌려주는 것: bool (다섯 칸이 모두 있고 타입이 맞으면 True)
+        돌려주는 것: bool (다섯 칸이 모두 있고 타입이 맞으면 True. 원인 id 형식도 여기서 검사된다)
         """
         if not isinstance(answer, dict):
             return False
@@ -79,24 +80,33 @@ class AnswerValidator:
         답변의 원인 id가 검색된 KB에 있는지 확인하고 없으면 제거
 
         받는 것: LLM 답(dict), 검색 결과(build_prompt 에 넣은 hits)
-        돌려주는 것: cause_ids 를 정리한 새 dict (받은 dict 는 바꾸지 않는다)
-        남기는 원인 id 의 조건:
-          - 형식이 {kb_id}#c{순번} 이고
+        돌려주는 것: causes 를 정리한 새 dict (받은 dict 는 바꾸지 않는다)
+        남기는 원인의 조건:
+          - id 형식이 {kb_id}#c{순번} 이고
           - 그 kb_id 의 KB 가 검색 결과에 있고
-          - 그 KB 의 [자료] 글에 그 id 가 그대로 적혀 있다 (LLM 이 본 글에 없는 id 는 지어낸 것)
+          - 그 KB 의 [자료] 글에 그 id 가 그대로 적혀 있고 (LLM 이 본 글에 없는 id 는 지어낸 것)
+          - 조치(actions) 개수가 KB 의 "조치 순서" 개수와 같다 (한국어로 옮기며 빼거나 더한 것을 막음)
+            ※ [자료] 글에서 그 원인의 조치 순서를 찾지 못하면 개수 확인은 건너뛴다
         같은 id 가 여러 번 나오면 처음 하나만 남긴다.
         """
         result = copy.deepcopy(answer)
         kb_texts = {hit.id: hit.text for hit in hits or [] if hit.metadata.get("chunk_type") == "kb"}
-        kept: list[str] = []
-        for cause_id in answer.get("cause_ids") or []:
-            if cause_id in kept or not _CAUSE_ID.match(cause_id):
+        kept: list[dict] = []
+        seen: set[str] = set()
+        for cause in answer.get("causes") or []:
+            cause_id = cause.get("id") or ""
+            if cause_id in seen or not _CAUSE_ID.match(cause_id):
                 continue
             text = kb_texts.get(cause_id.split("#", 1)[0])
             # (?!\d) : "…#c1" 이 "…#c10" 안에서 잘못 찾아지지 않게
-            if text is not None and re.search(re.escape(cause_id) + r"(?!\d)", text):
-                kept.append(cause_id)
-        result["cause_ids"] = kept
+            if text is None or not re.search(re.escape(cause_id) + r"(?!\d)", text):
+                continue
+            expected = _kb_action_count(text, cause_id)
+            if expected is not None and len(cause.get("actions") or []) != expected:
+                continue
+            seen.add(cause_id)
+            kept.append(copy.deepcopy(cause))
+        result["causes"] = kept
         return result
 
     def verify_quote(self, answer: dict, hits: list[Hit]):
@@ -134,13 +144,16 @@ class AnswerValidator:
         답변 언어가 한국어인지 확인, 아니면 answer 가 재요청
 
         받는 것: LLM 답(dict)
-        돌려주는 것: bool (summary 와 actions 의 문장이 모두 한국어면 True)
+        돌려주는 것: bool (summary · causes 의 원인과 조치 · actions 의 문장이 모두 한국어면 True)
         sources 의 quote 는 영어 원문을 그대로 옮기는 칸이라 검사하지 않는다.
         """
         summary = (answer or {}).get("summary") or ""
         if not summary.strip():
             return False
-        texts = [summary] + [step.get("text") or "" for step in answer.get("actions") or []]
+        texts = [summary]
+        for cause in answer.get("causes") or []:
+            texts += [cause.get("cause") or "", *(cause.get("actions") or [])]
+        texts += [step.get("text") or "" for step in answer.get("actions") or []]
         return all(_is_korean(text) for text in texts)
 
 
@@ -152,6 +165,17 @@ def _is_korean(text: str) -> bool:
     hangul = len(_HANGUL_WORD.findall(text))
     latin = len(_LATIN_WORD.findall(text))
     return hangul > 0 and hangul / (hangul + latin) >= KOREAN_MIN_RATIO
+
+
+def _kb_action_count(text: str, cause_id: str) -> int | None:
+    """[자료] 글에서 그 원인의 "조치 순서" 개수를 센다. 못 찾으면 None.
+
+    prompts.KB_CAUSE 형식을 읽는다:  "- 원인 id {cause_id}: …" 다음 줄 "  조치 순서: A → B"
+    """
+    match = re.search(re.escape(cause_id) + r"(?!\d)[^\n]*\n[ \t]*조치 순서:[ \t]*([^\n]*)", text)
+    if not match:
+        return None
+    return len([action for action in match.group(1).split(KB_ACTION_SEPARATOR.strip()) if action.strip()])
 
 
 def _squash(text: str) -> str:

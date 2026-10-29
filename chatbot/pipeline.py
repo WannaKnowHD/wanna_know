@@ -2,12 +2,23 @@
 from __future__ import annotations
 
 import re
+import time
 from functools import lru_cache
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import tiktoken
+from pydantic import TypeAdapter
 
-from chatbot.core.schemas import LLMAnswer, Model, QueryInfo
+from chatbot.core.schemas import (
+    AnswerResponse,
+    Equipment,
+    KbEntry,
+    LLMAnswer,
+    Model,
+    QueryInfo,
+    TraceHit,
+)
 from chatbot.rag.prompts import (
     ANSWER_HUMAN,
     ANSWER_SYSTEM,
@@ -19,6 +30,7 @@ from chatbot.rag.prompts import (
     QUESTION_TYPE,
     REWRITE_QUERY,
 )
+from chatbot.rag.validator import AnswerValidator
 
 if TYPE_CHECKING:
     from chatbot.core.schemas import Hit
@@ -39,7 +51,12 @@ HINT_INSTRUCTION = """
 MAX_CONTEXT_TOKENS = 4000
 # 토큰을 세는 규칙. gpt-4o · gpt-4.1 계열 모델이 쓰는 규칙(o200k_base)
 TOKEN_ENCODING = "o200k_base"
-
+# KB JSON 한 개를 schemas 형식(고장 KB · 점검 KB 중 하나)으로 검사하는 도구
+_KB_ADAPTER = TypeAdapter(KbEntry)
+# "확인되지 않음" 안내 (요구사항 Q-03: 지어내지 않고, 설비명 입력·명판 촬영을 안내)
+MSG_NOT_FOUND = "자료에서 확인되지 않습니다. 설비 모델명(예: 138-ACC)과 증상을 구체적으로 적거나, 명판 사진을 올려 주세요."
+MSG_OUT_OF_SCOPE = "컨베이어 정비(고장 원인·점검 주기·조정 절차)에 관한 질문에만 답할 수 있어요."
+MSG_ERROR = "답변을 만드는 중 문제가 생겼어요. 잠시 후 다시 질문해 주세요."
 
 @lru_cache(maxsize=1)
 def _encoding():
@@ -64,16 +81,71 @@ def _kind_label(hit: Hit) -> str:
     key = hit.metadata.get("kb_type", "") if chunk_type == "kb" else chunk_type
     return CHUNK_TYPE_LABELS.get(key, key)
 
+def load_kb(kb_dir) -> dict[str, dict]:
+    """kb/troubleshooting · kb/maintenance 의 *.json 을 읽어 {kb_id: KB dict} 로 만든다. (앱 시작 때 1번)
+
+    answer 가 답변에 쓴 KB 를 찾아 안전 문구 판단 재료(SafetyRules.attach_safety)로 넘길 때 쓴다.
+    schemas 의 KB 형식(TroubleshootingKB · MaintenanceKB)으로 검사해서, 틀린 파일이 있으면 바로 오류를 낸다.
+    """
+    entries: dict[str, dict] = {}
+    for path in sorted(Path(kb_dir).glob("*/*.json")):
+        entry = _KB_ADAPTER.validate_json(path.read_text(encoding="utf-8")).model_dump()
+        if entry["kb_id"] in entries:
+            raise ValueError(f"KB id 가 겹칩니다: {entry['kb_id']} ({path})")
+        entries[entry["kb_id"]] = entry
+    return entries
+
+def _ms(since: float) -> int:
+    """since(time.perf_counter 값)부터 지금까지 걸린 시간 (밀리초)"""
+    return int((time.perf_counter() - since) * 1000)
+
+
+def _response_equipment(state: dict | None, info: QueryInfo) -> dict | None:
+    """응답의 설비 칸 (schemas.Equipment). 명판으로 정한 설비가 먼저, 없으면 질문에 나온 설비"""
+    equipment = (state or {}).get("equipment")
+    if isinstance(equipment, dict) and equipment.get("model_name"):
+        return Equipment(model=equipment["model_name"], doc_ids=list(equipment.get("doc_ids") or []),
+                         source="nameplate").model_dump()
+    if info and info.equipment_hint:
+        return Equipment(model=info.equipment_hint, doc_ids=[], source="question").model_dump()
+    return None
+
+def _replaced_quote_refs(before: dict, after: dict) -> list[str]:
+    """검증 때 인용문이 원문 문장으로 바뀐 출처의 ref_id (지워진 출처는 넣지 않음)"""
+    original = {(s["ref_id"], s["quote"]) for s in before.get("sources") or []}
+    return list(dict.fromkeys(s["ref_id"] for s in after["sources"] if (s["ref_id"], s["quote"]) not in original))
+
+def _source(source: dict, hit) -> dict:
+    """검증된 출처(ref_id · quote) + 검색 결과 정보 → schemas.Source 모양"""
+    return {"ref_id": source["ref_id"], "quote": source["quote"], "doc_id": hit.doc_id,
+            "doc_title": hit.doc_id,          # 문서 이름 대신 doc_id 를 보여 줌 (팀 결정)
+            "page": hit.page, "chunk_type": hit.metadata["chunk_type"],
+            "image_path": hit.metadata.get("image_path")}
 
 class RagPipeline:
     """RagPipeline (기능명세서 기준 뼈대)."""
 
-    def __init__(self, llm):
+    def __init__(self, llm, retriever=None, validator=None, safety=None, request_logger=None,
+                 glossary=None, kb=None,log_source="user"):
         """
         받는 것:
-          llm : rag.llm.LLMClient (질문 이해·검색어 변환에서 chat 을 호출)
+          llm            : rag.llm.LLMClient (질문 이해·검색어 변환·답변 생성에서 chat 을 호출)
+          retriever      : rag.retriever.Retriever (Retriever.from_settings 로 앱 시작 때 1번 만든 것)
+          validator      : rag.validator.AnswerValidator
+          safety         : core.safety.SafetyRules (data/safety_rules.json)
+          request_logger : core.logger.RequestLogger (chat_logs 저장). None 이면 로그를 남기지 않음
+          glossary       : 용어집 dict[str, list[str]] (Glossary.load_glossary 결과). None 이면 {}
+          kb             : KB dict[kb_id, dict] (kb/*.json). 원인 문장·조치를 복사할 때 씀. None 이면 {}
+        answer 를 부르지 않는 쓰임(질문 이해·프롬프트만 확인)은 llm 하나만 넣어도 된다.
         """
         self.llm = llm
+        self.retriever = retriever
+        self.validator = validator or AnswerValidator()
+        self.safety = safety
+        self.request_logger = request_logger
+        self.glossary = glossary or {}
+        self.kb = kb or {}
+        self.log_source = log_source
 
     def answer(self, question: str, state: dict, input_type: str):
         """
@@ -83,8 +155,131 @@ class RagPipeline:
 
         Returns: dict (응답 JSON)
         """
-        raise NotImplementedError("RagPipeline.answer")
+        started = time.perf_counter()
+        trace: dict = {"latency_ms": {}}
+        info = None
+        try:
+            # 1) 질문 이해
+            step = time.perf_counter()
+            info = self.understand_question(question, state)
+            trace["latency_ms"]["understand"] = _ms(step)
+            equipment = _response_equipment(state, info)
+            if info.qtype == "out_of_scope":
+                return self._finish(self._not_found(input_type, info, equipment, trace, MSG_OUT_OF_SCOPE),
+                                    question, state, started, kb_used=[])
 
+            # 2) 검색어 → 검색
+            step = time.perf_counter()
+            queries = self.rewrite_query(question, self.glossary)
+            hits, filter_released = self.retriever.search(queries, (state or {}).get("equipment"), info.qtype)
+            trace["latency_ms"]["search"] = _ms(step)
+            trace["queries_en"] = queries
+            trace["hits"] = [TraceHit.from_hit(hit).model_dump() for hit in hits]
+            trace["top_score"] = hits[0].score if hits else None
+            trace["threshold"] = self.retriever.threshold
+            if self.retriever.is_not_found(hits):
+                return self._finish(self._not_found(input_type, info, equipment, trace, MSG_NOT_FOUND,
+                                                    filter_released), question, state, started, kb_used=[])
+
+            # 3) 프롬프트 → 생성 (형식·한국어가 틀리면 1회 재요청)
+            step = time.perf_counter()
+            messages = self.build_prompt(question, hits, info.qtype, equipment["model"] if equipment else None)
+            parsed = self._generate_checked(messages, trace)
+            trace["latency_ms"]["generate"] = _ms(step)
+            if parsed is None or parsed["not_found"]:
+                return self._finish(self._not_found(input_type, info, equipment, trace, MSG_NOT_FOUND,
+                                                    filter_released), question, state, started, kb_used=[])
+
+            # 4) 근거 검증: KB 에 없는 원인 id 제거, 원문에 없는 인용문 교체
+            step = time.perf_counter()
+            checked = self.validator.verify_quote(self.validator.verify_causes(parsed, hits), hits)
+            kept_ids = {cause["id"] for cause in checked["causes"]}
+            trace["removed_cause_ids"] = [c["id"] for c in parsed["causes"] if c["id"] not in kept_ids]
+            trace["replaced_quote_refs"] = _replaced_quote_refs(parsed, checked)
+            trace["latency_ms"]["verify"] = _ms(step)
+            if not checked["causes"] and not checked["actions"]:
+                return self._finish(self._not_found(input_type, info, equipment, trace, MSG_NOT_FOUND,
+                                                    filter_released), question, state, started, kb_used=[])
+
+            # 5) 응답 조립: 원인·조치 문장은 KB 에서 그대로 복사
+            assembled = self._answered(input_type, info, equipment, filter_released, checked, hits, trace)
+            if assembled is None:
+                return self._finish(self._not_found(input_type, info, equipment, trace, MSG_NOT_FOUND,
+                                                    filter_released), question, state, started, kb_used=[])
+            response, kb_used = assembled
+            return self._finish(response, question, state, started, kb_used=kb_used)
+        except Exception as e:  # noqa: BLE001 — 어느 단계에서 실패해도 예외를 밖으로 내지 않고 error 응답
+            return self._finish(self._error(input_type, info, trace, e), question, state, started, kb_used=[])
+    def _answered(self, input_type: str, info: QueryInfo, equipment, filter_released: bool,
+                  checked: dict, hits: list, trace: dict) -> tuple[dict, list[dict]] | None:
+        """검증된 LLM 답 → answered 응답과 답변에 쓴 KB. 출처나 원인·조치가 하나도 없으면 None (→ 확인되지 않음)"""
+        by_id = {hit.id: hit for hit in hits}
+        causes = checked["causes"]
+        actions = [] if info.qtype == "troubleshooting" else checked["actions"]   # 고장 답변은 causes 로만
+        sources = [_source(s, by_id[s["ref_id"]]) for s in checked["sources"]]
+        if not sources or not (causes or actions):
+            return None
+        kb_ids = list(dict.fromkeys([s["ref_id"] for s in sources if s["chunk_type"] == "kb"]
+                                    + [c["id"].split("#", 1)[0] for c in causes]))
+        response = {"status": "answered", "input_type": input_type, "question_type": info.qtype,
+                    "equipment": equipment, "filter_released": filter_released,
+                    "summary": checked["summary"], "causes": causes, "actions": actions,
+                    "sources": sources, "kb_ids": kb_ids, "trace": trace}
+        return response, [self.kb[kb_id] for kb_id in kb_ids if kb_id in self.kb]
+
+    
+    def _generate_checked(self, messages: list[dict], trace: dict) -> dict | None:
+        """generate → 형식·한국어 검사. 틀리면 1회 다시 요청, 또 틀리면 None (→ 확인되지 않음)"""
+        for _ in range(2):
+            result = self.generate(messages)
+            parsed = result.get("parsed")
+            if self.validator.validate_schema(parsed):
+                if parsed["not_found"]:            # LLM 이 자료에 없다고 답함 → 다시 묻지 않음
+                    return parsed
+                if self.validator.check_language(parsed):
+                    return parsed
+            trace["schema_retries"] = 1
+        return None
+
+    def _not_found(self, input_type: str, info: QueryInfo, equipment, trace: dict, message: str,
+                   filter_released: bool = False) -> dict:
+        """확인되지 않음 응답 (지어낸 원인·수치 없이 안내만)"""
+        return {"status": "not_found", "message": message, "input_type": input_type,
+                "question_type": info.qtype if info else None, "equipment": equipment,
+                "filter_released": filter_released, "trace": trace}
+
+    def _error(self, input_type: str, info: QueryInfo | None, trace: dict, error: Exception) -> dict:
+        """처리 중 예외 → error 응답. 원인은 trace.error 에 남긴다 (화면에는 안내 문구만)"""
+        # latency_ms 에 아직 기록되지 않은 첫 단계 = 실패한 단계
+        stage = next((s for s in ("understand", "search", "generate","verify") if s not in trace["latency_ms"]), "answer")
+        trace["error"] = {"stage": stage, "code": type(error).__name__, "message": str(error)[:200]}
+        print(f"[pipeline] answer 실패 ({stage}): {type(error).__name__}: {error}")
+        return {"status": "error", "message": MSG_ERROR, "input_type": input_type,
+                "question_type": info.qtype if info else None, "trace": trace}
+
+    def _finish(self, response: dict, question: str, state: dict, started: float, kb_used: list[dict]) -> dict:
+        """응답 마무리: 안전 문구 → 전체 시간 → AnswerResponse 형식 검사 → 로그 저장 → dict"""
+        if self.safety is not None:
+            step = time.perf_counter()
+            response = self.safety.attach_safety(response, kb_used)   # 정비 답변이 아니면 safety = []
+            response["trace"]["latency_ms"]["safety"] = _ms(step)
+        response["trace"]["latency_ms"]["total"] = _ms(started)
+        answer = AnswerResponse.model_validate(response).model_dump()
+        self._log(answer, question, state)
+        return answer
+
+    def _log(self, answer: dict, question: str, state: dict) -> None:
+        """chat_logs 에 1행 저장. 저장이 실패해도 답변은 그대로 돌려준다 (사원번호는 출력하지 않음)"""
+        if self.request_logger is None:
+            return
+        user = (state or {}).get("user")
+        try:
+            record = self.request_logger.build_record(answer, question, getattr(user, "employee_id", None),
+                                                      source=self.log_source)
+            self.request_logger.log_request(record)
+        except Exception as e:  # noqa: BLE001 — 로그 저장 실패로 답변을 막지 않음
+            print(f"[pipeline] 로그 저장 실패: {type(e).__name__}: {e}")
+            
     def understand_question(self, question: str, state: dict):
         """
         질문 유형(troubleshooting / maintenance / procedure / out_of_scope) 분류, 설비·부품 힌트 추출
@@ -217,9 +412,8 @@ class RagPipeline:
 
         받는 것: build_prompt 가 만든 messages
         돌려주는 것: dict (LLMClient.chat 의 결과 그대로)
-          parsed     : LLMAnswer 형식의 dict (not_found · summary · cause_ids · actions · sources).
+          parsed     : LLMAnswer 형식의 dict (not_found · summary · causes · actions · sources).
                        형식이 깨지면 None → 다시 요청할지는 AnswerValidator.validate_schema 가 정한다
-          usage      : 토큰 수 {"input_tokens", "output_tokens", ...} → trace.tokens
           latency_ms : 걸린 시간(ms) → trace.latency_ms["generate"]
           model · text : 사용한 모델 이름, 원래 답 글자
         temperature 0 · 30초 제한 · 3번 재시도는 llm.py 에 정해져 있다.
