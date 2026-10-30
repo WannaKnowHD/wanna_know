@@ -2,6 +2,10 @@
 
 # 🏭 Wanna Know — 현장 컨베이어 문제 해결 챗봇
 
+<p>
+  <img src="https://raw.githubusercontent.com/WannaKnowHD/.github/main/profile/assets/logo.png" alt="기술사양서가 알고싶다" width="320">
+</p>
+
 **매뉴얼 PDF를 근거로, 컨베이어 장애 조치를 출처 쪽수와 함께 안내하는 RAG 챗봇**
 
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
@@ -18,16 +22,11 @@
 
 ## 목차
 
-1. [주요 기능](#주요-기능)
-2. [동작 구조](#동작-구조)
-3. [빠른 시작](#빠른-시작)
-4. [환경변수](#환경변수)
-5. [평가 방법](#평가-방법)
-6. [테스트](#테스트)
-7. [폴더 구조](#폴더-구조)
-8. [개발 규칙](#개발-규칙)
-9. [문제 해결](#문제-해결)
-10. [담당](#담당)
+<div align="center">
+
+[주요 기능](#주요-기능) -> [동작 구조](#동작-구조) -> [빠른 시작](#빠른-시작) -> [환경변수](#환경변수) -> [평가 방법](#평가-방법) -> [테스트](#테스트) -> [폴더 구조](#폴더-구조) -> [개발 규칙](#개발-규칙) -> [문제 해결](#문제-해결) -> [담당](#담당)
+
+</div>
 
 ## 주요 기능
 
@@ -45,22 +44,25 @@
 ## 동작 구조
 
 ```mermaid
-flowchart LR
-    Q[질문 / 사진] --> V{사진?}
-    V -- 명판 --> M[모델 인식]
-    V -- 벨트 손상 --> D[손상 유형 분류]
-    V -- 텍스트 --> U
-    M --> U[질문 이해<br/>용어집·설비 필터]
-    D --> U
-    U --> R[하이브리드 검색<br/>BM25 + 벡터 → RRF → 리랭커]
-    R --> T{기준값 이상?}
-    T -- 아니오 --> N[확인되지 않음 안내]
-    T -- 예 --> G[답변 생성 LLM]
-    G --> C[근거 검증<br/>원인·조치·인용문]
-    C --> S[안전 문구 첨부]
-    S --> A[답변 + 출처 쪽수]
-    N --> L[(MySQL 로그)]
-    A --> L
+flowchart TB
+    subgraph IN["입력 · 질문 이해 · 검색"]
+        direction LR
+        Q[질문 / 사진] --> V{사진?}
+        V -- 명판 --> M[모델 인식]
+        V -- 벨트 손상 --> D[손상 유형 분류]
+        V -- 텍스트 --> U
+        M --> U[질문 이해<br/>용어집·설비 필터]
+        D --> U
+        U --> R[하이브리드 검색<br/>BM25 + 벡터 → 리랭커]
+    end
+    subgraph OUT["판정 · 생성 · 검증 · 기록"]
+        direction LR
+        T{기준값 이상?} -- 예 --> G[답변 생성<br/>LLM] --> C[근거 검증<br/>원인·조치·인용문] --> S[안전 문구<br/>첨부] --> A[답변 +<br/>출처 쪽수]
+        T -- 아니오 --> N[확인되지 않음<br/>안내]
+        A --> L[(MySQL<br/>로그)]
+        N --> L
+    end
+    IN --> OUT
 ```
 
 | 구분 | 사용 기술 |
@@ -316,15 +318,25 @@ tests/                         단위 테스트·명세서 일치 테스트
 
 ## 담당
 
-| 영역 | 파일 | 담당 |
-| --- | --- | --- |
-| 화면 | chatbot/ui/ | |
-| 문서 처리·색인 | chatbot/rag/document_processor.py, build_index.py | |
-| 검색 | chatbot/rag/retriever.py, glossary.py | |
-| 생성·검증 | chatbot/pipeline.py, rag/llm.py, rag/validator.py, core/safety.py | |
-| 사진 | chatbot/vision/ | |
-| 로그인·DB | chatbot/core/auth.py, state.py, logger.py, chatbot/db/ | |
-| 평가·대시보드 | eval/, chatbot/ui/dashboard.py | |
+<table>
+  <tr>
+    <td align="center"><a href="https://github.com/seram2002-wq"><img src="https://github.com/seram2002-wq.png" width="96" alt="박세람"><br><b>박세람</b></a><br>팀장</td>
+    <td align="center"><a href="https://github.com/Rose-Rosie-Rose"><img src="https://github.com/Rose-Rosie-Rose.png" width="96" alt="강경원"><br><b>강경원</b></a><br>Repo Owner</td>
+    <td align="center"><a href="https://github.com/wintery7"><img src="https://github.com/wintery7.png" width="96" alt="김민재"><br><b>김민재</b></a><br>팀원</td>
+    <td align="center"><a href="https://github.com/clipnpaper"><img src="https://github.com/clipnpaper.png" width="96" alt="김현준"><br><b>김현준</b></a><br>팀원</td>
+    <td align="center"><a href="https://github.com/daui1727"><img src="https://github.com/daui1727.png" width="96" alt="이정빈"><br><b>이정빈</b></a><br>팀원</td>
+    <td align="center"><a href="https://github.com/Y1OO5B"><img src="https://github.com/Y1OO5B.png" width="96" alt="조윤빈"><br><b>조윤빈</b></a><br>팀원</td>
+  </tr>
+</table>
+
+| 역할 | 주요 업무 |
+| --- | --- |
+| PM · 통합 | 일정 · 이슈 관리, 기능 통합, 웹 UI, 발표 자료 |
+| 데이터 · KB | 매뉴얼 전처리, 트러블슈팅 · 점검 KB, 한·영 용어집 |
+| 검색 | 청킹 · 색인, 하이브리드 검색 · 리랭킹, 설비 필터 |
+| 생성 · 검증 | 답변 생성, 근거 검증, 안전 문구 규칙, 대화 상태 |
+| 멀티모달 | 명판 판독, 손상 사진 분석, 음성 입력 |
+| 평가 | 평가셋 · 자동 채점, 버전별 성능 비교 |
 
 ## 참고
 
