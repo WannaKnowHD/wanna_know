@@ -44,14 +44,20 @@ def test_describe_damage():
     assert image == b"img" and "belt" in prompt and schema is DamageResult
 
 
-def test_describe_damage_low_confidence_retake():
-    # 확신도 0.6 미만 → 재촬영 (기능 I-03)
-    result = analyzer({"label": "hole", "symptom_ko": "구멍", "confidence": 0.59}).describe_damage(b"img")
+def test_describe_damage_low_confidence_is_only_recorded():
+    # 확신도는 판단에 쓰지 않음: 증상 문장이 있으면 낮아도 검색으로 넘기고 값만 남긴다
+    result = analyzer({"label": "hole", "symptom_ko": "구멍", "confidence": 0.3}).describe_damage(b"img")
+    assert result["retake"] is False and result["confidence"] == 0.3
+
+
+def test_describe_damage_other_without_symptom_retake():
+    # other 는 대표 증상이 없어서, 모델도 문장을 비우면 검색할 말이 없음 → 재촬영
+    result = analyzer({"label": "other", "symptom_ko": "", "confidence": 0.9}).describe_damage(b"img")
     assert result["retake"] is True
 
 
 def test_describe_damage_broken_response():
-    # 형식이 깨진 응답 → other · 확신도 0 · 재촬영
+    # 형식이 깨진 응답 → other · 문장 없음 · 재촬영
     assert analyzer(None).describe_damage(b"img") == {"label": "other", "symptom_ko": "", "confidence": 0.0,
                                                       "retake": True}
 
