@@ -458,6 +458,10 @@
   box-shadow: none !important;
 }
 
+.gradio-container.gradio-container-6-31-0 .contain #admin-period .wrap-inner {
+  margin: 0px 0.5rem 0px 0.0rem !important;
+}
+
 #admin-period input {
   cursor: pointer;
   height: 1.625rem !important;
