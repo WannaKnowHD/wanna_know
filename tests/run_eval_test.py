@@ -56,7 +56,7 @@ def test_load_testset_reads_real_files():
     evaluator = Evaluator(pipeline=FakePipeline())
     test = evaluator.load_testset(str(ROOT / "eval" / "testset.jsonl"))
     dev = evaluator.load_testset(str(ROOT / "eval" / "devset.jsonl"))
-    assert len(test) == 85 and len(dev) == 17
+    assert len(test) == 100 and len(dev) == 17   # testset: 텍스트 85 + 사진 15
     first_ts = next(c for c in test if c.gold_kb_ids)
     assert first_ts.gold_causes and first_ts.gold_sources[0].keys() == {"doc", "page"}
     assert any(c.should_abstain for c in test) and any(c.needs_safety for c in test)
@@ -140,3 +140,64 @@ def test_latency_scores():
 def test_main_rejects_bad_args(argv):
     with pytest.raises(SystemExit):
         run_eval.main(argv)
+
+
+# ------------------------------------------------------------------------------
+# 사진 문항 (ChatApp 사진 흐름 대신 가짜 함수)
+# ------------------------------------------------------------------------------
+def nameplate_reply(model):
+    return {"status": "nameplate", "input_type": "nameplate_photo",
+            "image": {"kind": "nameplate", "confidence": 0.99, "nameplate": {"matched_model": model}}}
+
+
+class FakePhoto:
+    def __init__(self, *responses):
+        self.responses = list(responses)
+        self.images = []
+
+    def __call__(self, image, state):
+        self.images.append(image)
+        return self.responses.pop(0)
+
+
+def photo_case(case_id, path, **kw):
+    return Case(case_id=case_id, question="[사진]", input_type="nameplate_photo", image_path=path, **kw)
+
+
+def test_photo_cases_use_photo_flow_and_score_nameplate():
+    photo = FakePhoto(nameplate_reply("138-ACC"), nameplate_reply(None), {"status": "retake"})
+    evaluator = Evaluator(pipeline=FakePipeline(), photo=photo)
+    cases = [photo_case("p1", "eval/images/nameplate/138-ACC_front_img.png", gold_model="138-ACC", group="#4"),
+             photo_case("p2", "eval/images/nameplate/L400_front_img.png", gold_model="L400", group="#4"),
+             photo_case("p3", "eval/images/nameplate/L500_side_img.png", should_abstain=True, group="#5-2")]
+    results = [evaluator.run_case(c) for c in cases]
+    assert len(photo.images) == 3 and evaluator.pipeline.calls == []   # 텍스트 파이프라인은 부르지 않음
+    scores = evaluator.score_nameplate(results)
+    assert scores["nameplate_ok"] == 0.5 and scores["nameplate_n"] == 2
+    assert run_eval._wrong(results[1]) == ["nameplate"]
+    assert run_eval._wrong(results[2]) == []                         # 재촬영 안내 = 모름으로 인정
+    abstention = evaluator.score_abstention(results)
+    assert abstention["abstain_ok"] == 1.0 and abstention["over_refusal_rate"] == 0.0
+
+
+def test_score_groups_counts_cases_without_wrong_items():
+    evaluator = Evaluator(pipeline=FakePipeline(answered(), not_found()))
+    results = [evaluator.run_case(ts_case(group="#1")), evaluator.run_case(ts_case(group="#1"))]
+    scores = evaluator.score_groups(results)
+    assert scores["group_#1_n"] == 2
+    assert scores["group_#1_acc"] == round(sum(not run_eval._wrong(r) for r in results) / 2, 3)
+
+
+def test_case_row_records_not_found_stage():
+    stages = [
+        {"status": "not_found", "trace": {"latency_ms": {"understand": 1}}},
+        {"status": "not_found", "trace": {"latency_ms": {"search": 1}, "top_score": 0.3, "threshold": 0.55}},
+        {"status": "not_found", "trace": {"latency_ms": {"search": 1, "generate": 1}}},
+        {"status": "not_found", "trace": {"latency_ms": {"search": 1, "generate": 1, "verify": 1},
+                                          "removed_cause_ids": [f"{KB}#c1"]}},
+        answered(),
+    ]
+    evaluator = Evaluator(pipeline=FakePipeline(*stages))
+    rows = [run_eval._case_row(evaluator.run_case(ts_case())) for _ in stages]
+    assert [r["nf_stage"] for r in rows] == ["out_of_scope", "threshold", "generate", "verify", ""]
+    assert rows[1]["top_score"] == 0.3 and rows[3]["removed_cause_ids"] == f"{KB}#c1"
