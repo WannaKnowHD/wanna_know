@@ -71,15 +71,18 @@ CREATE TABLE IF NOT EXISTS kb_gaps (
     REFERENCES users (employee_id) ON DELETE SET NULL
 ) DEFAULT CHARSET=utf8mb4 COMMENT='KB 보강 검토';
 
--- 사원별 대화 기록(질문·답변 한 쌍). 로그아웃 후 다시 로그인해도 로그창에 보인다. 사원이 지워지면 같이 지워진다.
+-- 사원별 대화 기록(질문·답변 한 쌍). 같은 conversation_id 를 가진 행이 하나의 대화(스레드)다. 새 대화를 시작하면 새 ID 를 쓴다.
+-- 로그아웃 후 다시 로그인해도 로그창에 보인다. 사원이 지워지면 같이 지워진다.
 CREATE TABLE IF NOT EXISTS chat_history (
-  id             BIGINT      NOT NULL AUTO_INCREMENT COMMENT '기록 ID',
-  employee_id    VARCHAR(20) NOT NULL COMMENT '사원번호',
-  created_at     DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '일시',
-  question       TEXT        NOT NULL COMMENT '질문',
-  answer         JSON        NOT NULL COMMENT '응답 JSON',
+  id              BIGINT      NOT NULL AUTO_INCREMENT COMMENT '기록 ID',
+  employee_id     VARCHAR(20) NOT NULL COMMENT '사원번호',
+  conversation_id VARCHAR(36) NOT NULL COMMENT '대화 ID (같은 대화의 질문·답변끼리 같은 값)',
+  created_at      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '일시',
+  question        TEXT        NOT NULL COMMENT '질문',
+  answer          JSON        NOT NULL COMMENT '응답 JSON',
   PRIMARY KEY (id),
   INDEX idx_history_user (employee_id, created_at),
+  INDEX idx_history_conversation (employee_id, conversation_id),
   CONSTRAINT fk_history_user FOREIGN KEY (employee_id)
     REFERENCES users (employee_id) ON DELETE CASCADE
 ) DEFAULT CHARSET=utf8mb4 COMMENT='대화 기록';
