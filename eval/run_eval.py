@@ -8,6 +8,7 @@
   python eval/run_eval.py --set dev --version v1       # 개발셋 17문항, 결과 파일 이름 v1_…
   python eval/run_eval.py --set dev --limit 3          # 앞 3문항만 (동작 확인용)
   python eval/run_eval.py --no-log                     # DB chat_logs 에 남기지 않음
+  python eval/run_eval.py --input text                 # 텍스트 문항만 (photo: 사진 문항만, 기본 all)
 
 [채점 기준]  정답은 testset.jsonl · devset.jsonl 의 gold_* 칸
   - KB      : Top-1 = 검색 결과(trace.hits) 중 순위가 가장 높은 KB 가 정답 KB (본문 청크는 건너뜀)
@@ -18,6 +19,12 @@
   - 모름    : 모름 처리율 = 모름이 정답인 문항을 not_found 로 답한 비율
               과잉 거절률 = 답이 있는 문항을 not_found 로 답한 비율
               안전 문구 포함률 = needs_safety 문항 중 답변한 것에 안전 문구가 붙은 비율
+  - 사진    : image_path 가 있는 문항은 앱과 같은 사진 흐름(ChatApp._analyze_photo)으로 실행
+              명판 = gold_model 과 매칭 모델이 같고 status=nameplate 이면 정답
+              손상 = 증상 문장으로 답한 결과를 텍스트와 같은 기준(KB·출처·안전)으로 채점
+              재촬영 안내(status=retake)는 "모름"으로 본다
+  - 유형    : group(#1 · #4 · #5-2 …)별 정답률 = 틀린 항목이 하나도 없는 문항 비율
+  - 시간    : 문항별 answer 실행 시간의 평균·p50·p95·합계 (초)
   각 지표는 그 정답 칸이 있는 문항만 센다 (예: gold_kb 가 빈 점검 질문은 KB 정확도에서 빠짐)
 
 [결과]  eval/results/{버전}_{날짜시각}.csv        지표 (지표, 값, 맞은 수, 대상 수)
@@ -30,10 +37,11 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import re
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -60,6 +68,9 @@ class Case:
     should_abstain: bool = False
     qtype: str = ""              # 유형별로 결과를 볼 때 씀 (troubleshooting · maintenance · procedure · out_of_scope)
     needs_safety: bool = False   # 안전 문구 포함률의 대상 문항
+    image_path: str | None = None  # 사진 문항이면 프로젝트 루트 기준 사진 경로
+    gold_model: str | None = None  # 명판 사진 문항의 정답 모델 (models.csv 의 model_name)
+    group: str = ""                # 유형 번호 (#1 · #4 · #5-2 …). 유형별 정답률에 씀
 
 
 @dataclass
@@ -73,7 +84,8 @@ class Result:
 class Evaluator:
     """평가셋을 RagPipeline.answer 로 실행하고 채점한다. (담당: 김민재)"""
 
-    def __init__(self, pipeline=None, log: bool = True, results_dir: Path = RESULTS_DIR, version: str = "current"):
+    def __init__(self, pipeline=None, log: bool = True, results_dir: Path = RESULTS_DIR, version: str = "current",
+                 photo=None):
         """
         받는 것:
           pipeline    : answer(question, state, input_type) 가 있는 객체. None 이면 첫 run_case 때 실제 부품으로 만든다
@@ -81,11 +93,14 @@ class Evaluator:
           log         : True 면 DB chat_logs 에 source=eval 로 남긴다 (실제 부품을 만들 때만 의미 있음)
           results_dir : 결과 CSV 폴더
           version     : 결과 파일 이름 앞부분 (v0~v3 비교용)
+          photo       : photo(image: bytes, state) → 응답 dict. None 이면 첫 사진 문항 때 ChatApp 사진 흐름으로 만든다
+                        (테스트는 가짜 함수를 넣어 API 없이 돌린다)
         """
         self.pipeline = pipeline
         self.log = log
         self.results_dir = Path(results_dir)
         self.version = version
+        self.photo = photo
 
     def load_testset(self, path: str):
         """
@@ -107,7 +122,8 @@ class Evaluator:
                     gold_kb_ids=list(row.get("gold_kb") or []), gold_causes=list(row.get("gold_causes") or []),
                     gold_sources=list(row.get("gold_source") or []),
                     should_abstain=bool(row.get("expect_not_found")), qtype=row.get("qtype") or "",
-                    needs_safety=bool(row.get("needs_safety")),
+                    needs_safety=bool(row.get("needs_safety")), image_path=row.get("image_path") or None,
+                    gold_model=row.get("gold_model") or None, group=row.get("group") or "",
                 ))
         return cases
 
@@ -124,7 +140,12 @@ class Evaluator:
         state = {"user": None, "admin_mode": False, "equipment": None}
         started = time.perf_counter()
         try:
-            response = self.pipeline.answer(case.question, state, case.input_type)
+            if case.image_path:
+                if self.photo is None:
+                    self.photo = _build_photo(self.pipeline)
+                response = self.photo((ROOT / case.image_path).read_bytes(), state)
+            else:
+                response = self.pipeline.answer(case.question, state, case.input_type)
         except Exception as e:  # noqa: BLE001 — 한 문항 실패로 나머지 채점을 막지 않음
             response = {"status": "error", "message": f"{type(e).__name__}: {e}"}
         return Result(case=case, response=response, latency_ms=(time.perf_counter() - started) * 1000)
@@ -187,10 +208,29 @@ class Evaluator:
         answerable = [r for r in results if not r.case.should_abstain]
         safety = [r for r in results if r.case.needs_safety and _status(r) == "answered"]
         scores = {}
-        scores.update(_rates("abstain", len(abstain), ok=sum(_status(r) == "not_found" for r in abstain)))
-        scores.update(_rates("over_refusal", len(answerable), rate=sum(_status(r) == "not_found" for r in answerable)))
+        scores.update(_rates("abstain", len(abstain), ok=sum(_abstained(r) for r in abstain)))
+        scores.update(_rates("over_refusal", len(answerable), rate=sum(_abstained(r) for r in answerable)))
         scores.update(_rates("safety", len(safety), included=sum(bool(r.response.get("safety")) for r in safety)))
         scores["errors"] = sum(_status(r) == "error" for r in results)
+        return scores
+
+    def score_nameplate(self, results: list[Result]):
+        """
+        명판 사진 정확도: gold_model 이 있는 문항 중 status=nameplate 이고 매칭 모델이 정답과 같은 비율
+        Returns: dict {"nameplate_ok": 비율, "nameplate_ok_hits", "nameplate_n"}
+        """
+        checks = [_checks(r) for r in results if r.case.gold_model]
+        return _rates("nameplate", len(checks), ok=sum(c["nameplate_ok"] for c in checks))
+
+    def score_groups(self, results: list[Result]):
+        """
+        유형(group)별 정답률: 틀린 항목이 하나도 없는 문항 비율. 결과표의 "문항 유형별 정답률" 칸에 그대로 옮긴다
+        Returns: dict {"group_#1": 비율, "group_#1_hits", "group_#1_n", …}
+        """
+        scores = {}
+        for group in sorted({r.case.group for r in results if r.case.group}, key=_group_key):
+            members = [r for r in results if r.case.group == group]
+            scores.update(_rates(f"group_{group}", len(members), acc=sum(not _wrong(r) for r in members)))
         return scores
 
     def write_report(self, scores: dict, results: list[Result]):
@@ -218,8 +258,9 @@ class Evaluator:
 # ------------------------------------------------------------------------------
 # 내부 함수
 # ------------------------------------------------------------------------------
-CASE_COLUMNS = ["case_id", "qtype", "question", "status", "wrong", "top1_hit", "top1_kb", "gold_kb", "kb_ids", "gold_causes",
-                "cause_ids", "gold_source", "sources", "safety", "latency_ms", "message"]
+CASE_COLUMNS = ["case_id", "group", "qtype", "input_type", "question", "status", "wrong", "top1_hit", "top1_kb", "gold_kb",
+                "kb_ids", "gold_causes", "cause_ids", "gold_source", "sources", "gold_model", "matched_model", "image_path",
+                "safety", "top_score", "nf_stage", "removed_cause_ids", "queries_en", "latency_ms", "message"]
 
 
 def _build_pipeline(log: bool):
@@ -232,7 +273,7 @@ def _build_pipeline(log: bool):
     from chatbot.rag.retriever import Retriever
     from chatbot.rag.validator import AnswerValidator
 
-    settings = Settings.load()
+    settings = _with_active_index(Settings.load())
     llm = LLMClient(settings)
     return RagPipeline(
         llm, retriever=Retriever.from_settings(settings, llm), validator=AnswerValidator(), safety=SafetyRules(),
@@ -240,6 +281,41 @@ def _build_pipeline(log: bool):
         glossary=Glossary().load_glossary(str(ROOT / "data" / "glossary.csv")), kb=load_kb(settings.kb_dir),
         log_source="eval",
     )
+
+
+def _with_active_index(settings):
+    """build_index.py 가 게시한 활성 색인(chroma_db_current.json)을 가리키는 Settings 를 돌려준다.
+
+    색인은 chroma_db_versions/{id}/ 에 버전별로 만들어지고, 어느 버전이 활성인지는 chroma_db_current.json 에 적힌다.
+    활성 정보 파일이 없으면(아직 build_index.py 를 안 돌린 경우) Settings 의 기본 경로(chroma_db/)를 그대로 쓴다.
+    """
+    manifest_path = settings.chroma_dir.with_name(f"{settings.chroma_dir.name}_current.json")
+    if not manifest_path.is_file():
+        print(f"[run_eval] {manifest_path.name} 없음 → 기본 색인 경로 사용: {settings.chroma_dir}")
+        return settings
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    base_dir = manifest_path.parent
+    chroma_dir, bm25_path = (base_dir / manifest[key] for key in ("chroma_dir", "bm25_path"))
+    if not chroma_dir.is_dir() or not bm25_path.is_file():
+        raise FileNotFoundError(f"{manifest_path.name} 가 가리키는 색인이 없습니다: {chroma_dir}, {bm25_path}")
+    print(f"[run_eval] 활성 색인: {chroma_dir.relative_to(base_dir).as_posix()}")
+    return replace(settings, chroma_dir=chroma_dir, bm25_path=bm25_path)
+
+
+def _build_photo(pipeline):
+    """앱과 같은 사진 흐름: 사진 종류 판별 → 명판 판독·매칭 / 손상 분석 → 파이프라인 답변 (ChatApp._analyze_photo).
+
+    채점에 쓰는 로직을 앱과 따로 두면 서로 달라질 수 있어서 앱 코드를 그대로 부른다. DB 없이 화면 상태만 쓴다.
+    """
+    from chatbot.ui.gradio_app import ChatApp
+
+    app = ChatApp(pipeline=pipeline)
+
+    def photo(image: bytes, state: dict) -> dict:
+        answer, _ = app._analyze_photo(image, state)
+        return answer if isinstance(answer, dict) else answer.model_dump(mode="json")
+
+    return photo
 
 
 def _request_logger(settings):
@@ -256,6 +332,41 @@ def _request_logger(settings):
 
 def _status(result: Result) -> str:
     return result.response.get("status") or "error"
+
+
+def _abstained(result: Result) -> bool:
+    """모름으로 답했는지. 사진 문항의 재촬영 안내(retake)도 답을 단정하지 않은 것이라 모름으로 본다"""
+    return _status(result) in ("not_found", "retake")
+
+
+def _matched_model(response: dict) -> str | None:
+    return (((response.get("image") or {}).get("nameplate")) or {}).get("matched_model")
+
+
+def _group_key(group: str):
+    """#1 · #5-1 · #5-2 · #6-4 … 를 숫자 순서로 정렬"""
+    return [int(n) if n.isdigit() else n for n in re.findall(r"\d+|\D+", group)]
+
+
+def _not_found_stage(result: Result) -> str:
+    """not_found 로 끝난 단계 (trace 로 추정). 과잉 거절 원인을 나눠 보려는 것
+      out_of_scope : 질문 이해 단계에서 범위 밖으로 판단 (검색 안 함)
+      threshold    : 리랭커 1위 점수(top_score)가 기준값 미만 → 생성 전에 멈춤
+      generate     : LLM 이 not_found 로 답했거나 형식·한국어 검사 2회 실패
+      verify       : 검증에서 원인 id 가 지워진 뒤 남은 원인·조치가 없음 (removed_cause_ids 참고)
+      after_verify : 지워진 원인은 없지만 원인·조치 또는 출처가 비어 답변을 만들지 못함
+    """
+    if _status(result) != "not_found":
+        return ""
+    trace = result.response.get("trace") or {}
+    steps = trace.get("latency_ms") or {}
+    if "search" not in steps:
+        return "out_of_scope"
+    if "generate" not in steps:
+        return "threshold"
+    if "verify" not in steps:
+        return "generate"
+    return "verify" if trace.get("removed_cause_ids") else "after_verify"
 
 
 def _cause_ids(response: dict) -> list[str]:
@@ -289,8 +400,9 @@ def _checks(result: Result) -> dict:
         "causes_all": set(case.gold_causes) <= set(_cause_ids(response)),
         "source_ok": any(s in gold_pages for s in answered),
         "source_doc_ok": any(doc in gold_docs for doc, _ in answered),
-        "abstain_ok": (_status(result) == "not_found") == case.should_abstain,
+        "abstain_ok": _abstained(result) == case.should_abstain,
         "safety_ok": bool(response.get("safety")),
+        "nameplate_ok": _status(result) == "nameplate" and _matched_model(response) == case.gold_model,
     }
 
 
@@ -310,22 +422,48 @@ def _wrong(result: Result) -> list[str]:
         wrong.append("source")
     if case.needs_safety and _status(result) == "answered" and not c["safety_ok"]:
         wrong.append("safety")
+    if case.gold_model and not case.should_abstain and not c["nameplate_ok"]:
+        wrong.append("nameplate")
     return wrong
 
 
 def _case_row(result: Result) -> dict:
     case, response = result.case, result.response
     hits = _hit_ids(response)
+    trace = response.get("trace") or {}
     return {
-        "case_id": case.case_id, "qtype": case.qtype, "question": case.question, "status": _status(result),
+        "case_id": case.case_id, "group": case.group, "qtype": case.qtype, "input_type": case.input_type,
+        "question": case.question, "status": _status(result),
         "wrong": " ".join(_wrong(result)), "top1_hit": hits[0] if hits else "", "top1_kb": _top_kb(hits) or "",
         "gold_kb": ";".join(case.gold_kb_ids), "kb_ids": ";".join(response.get("kb_ids") or []),
         "gold_causes": ";".join(case.gold_causes), "cause_ids": ";".join(_cause_ids(response)),
         "gold_source": ";".join(f"{s.get('doc')} p{s.get('page')}" for s in case.gold_sources),
         "sources": ";".join(f"{doc} p{page}" for doc, page in _sources(response)),
-        "safety": len(response.get("safety") or []), "latency_ms": round(result.latency_ms),
+        "gold_model": case.gold_model or "", "matched_model": _matched_model(response) or "",
+        "image_path": case.image_path or "",
+        "safety": len(response.get("safety") or []),
+        "top_score": "" if trace.get("top_score") is None else round(trace["top_score"], 3),
+        "nf_stage": _not_found_stage(result), "removed_cause_ids": ";".join(trace.get("removed_cause_ids") or []),
+        "queries_en": " | ".join(trace.get("queries_en") or []), "latency_ms": round(result.latency_ms),
         "message": response.get("message") or "",
     }
+
+
+def _latency_scores(latencies_ms: list[float]) -> dict:
+    """문항별 걸린 시간(ms) → 평균·p50·p95·합계(초). 버전끼리 속도도 비교하려고 지표 CSV에 같이 남긴다.
+
+    백분위는 가장 가까운 순위 방식: 정렬해서 앞에서 ceil(비율 × 개수)번째 값 (17개면 p95 = 17번째 = 최댓값)
+    """
+    if not latencies_ms:
+        return {"latency_avg_s": None, "latency_p50_s": None, "latency_p95_s": None, "latency_total_s": None}
+    ordered = sorted(latencies_ms)
+
+    def percentile(q):
+        return ordered[max(math.ceil(q * len(ordered)) - 1, 0)] / 1000
+
+    return {"latency_avg_s": round(sum(ordered) / len(ordered) / 1000, 1),
+            "latency_p50_s": round(percentile(0.5), 1), "latency_p95_s": round(percentile(0.95), 1),
+            "latency_total_s": round(sum(ordered) / 1000)}
 
 
 def _ratio(hit: int, total: int) -> float | None:
@@ -349,12 +487,17 @@ def main(argv=None):
     parser.add_argument("--version", default="current", help="결과 파일 이름 앞부분 (예: v0, v1)")
     parser.add_argument("--limit", type=int, help="앞에서부터 이 수만큼만 실행")
     parser.add_argument("--no-log", action="store_true", help="DB chat_logs 에 남기지 않음")
+    parser.add_argument("--input", choices=["all", "text", "photo"], default="all",
+                        help="all(기본) · text(텍스트 문항만) · photo(사진 문항만)")
     args = parser.parse_args(argv)
     if args.limit is not None and args.limit < 1:
         parser.error("--limit 은 1 이상이어야 합니다.")
 
     evaluator = Evaluator(log=not args.no_log, version=args.version)
-    cases = evaluator.load_testset(str(SETS[args.set]))[:args.limit]
+    cases = evaluator.load_testset(str(SETS[args.set]))
+    if args.input != "all":
+        cases = [c for c in cases if bool(c.image_path) == (args.input == "photo")]
+    cases = cases[:args.limit]
     results = []
     for i, case in enumerate(cases, start=1):
         result = evaluator.run_case(case)
@@ -362,9 +505,11 @@ def main(argv=None):
         print(f"[{i}/{len(cases)}] {case.case_id} {_status(result)} {' '.join(_wrong(result)) or 'OK'}"
               f" ({result.latency_ms / 1000:.1f}s)")
 
-    scores = {"set": args.set, "version": args.version, "cases": len(results)}
-    for score in (evaluator.score_kb, evaluator.score_causes, evaluator.score_sources, evaluator.score_abstention):
+    scores = {"set": args.set, "version": args.version, "input": args.input, "cases": len(results)}
+    for score in (evaluator.score_kb, evaluator.score_causes, evaluator.score_sources, evaluator.score_abstention,
+                  evaluator.score_nameplate, evaluator.score_groups):
         scores.update(score(results))
+    scores.update(_latency_scores([r.latency_ms for r in results]))
     print("\n[지표]")
     for name, value in scores.items():
         if not name.endswith("_hits"):

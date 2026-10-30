@@ -320,3 +320,21 @@ def test_load_kb_rejects_duplicate_id(tmp_path):
         (tmp_path / folder / f"{KB_ID}.json").write_text(source, encoding="utf-8")
     with pytest.raises(ValueError, match="겹칩니다"):
         load_kb(tmp_path)
+
+def test_retry_tells_llm_what_to_fix(make):
+    """한국어 검사에 떨어지면 같은 요청을 반복하지 않고, 첫 답과 고칠 점을 붙여 다시 묻는다 (temperature 0 에서 같은 답 반복 방지)"""
+    english_cause = {**ts_answer(), "causes": [{**KO_CAUSES[f"{KB_ID}#c1"], "cause": "Conveyor is overloaded."}]}
+    seen = []
+
+    class RecordingLLM(FakeLLM):
+        def chat(self, messages, model=None, json_schema=None):
+            seen.append(messages)
+            return super().chat(messages, model, json_schema)
+
+    llm = RecordingLLM(UNDERSTAND_TS, QUERIES, english_cause, ts_answer())
+    out = make(llm, FakeRetriever([ts_hit()])).answer("모터 과열", state(), "text")
+    assert out["status"] == "answered" and out["trace"]["schema_retries"] == 1
+    first, second = seen[2], seen[3]
+    assert second[:len(first)] == first                              # 처음 요청은 그대로 두고
+    assert second[-2]["role"] == "assistant" and second[-1]["role"] == "user"   # 첫 답 + 고칠 점을 덧붙임
+    assert "한국어" in second[-1]["content"]

@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "chroma_dir": "chroma_db_versions/c66104dda3a94d59b3ecccfed7d65033",
+  "bm25_path": "chroma_db_versions/c66104dda3a94d59b3ecccfed7d65033/bm25.pkl"
+}
