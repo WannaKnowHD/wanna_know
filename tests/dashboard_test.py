@@ -314,5 +314,31 @@ def test_period_dropdown_is_not_typeable(db):
         dashboard.build_admin_tab(gr.State({"user": ADMIN}))
     assert dashboard.period_input.filterable is False   # 글자를 칠 수 없고 목록에서만 고름
 
+
+# ---------------- 10/30 Figma Design 섹션: 시스템 탭(08) · 다크(딥 포레스트) ----------------
+def test_system_tab_matches_figma_08():
+    from chatbot.ui.admin.system_tab import render_period, render_response_time, render_stage_times
+
+    assert "질문 입력 ~ 답변 완료" in render_response_time(4.5)
+    assert render_period("최근 7일 (2026-10-27)") == "<p class='system-period-text'>최근 7일 (2026-10-27)</p>"
+    html = render_stage_times({"질문 이해": 0.3, "하이브리드 검색": 0.4, "근거 검증": None, "답변 생성": 3.2})
+    assert "--ratio: 1.000" in html and "--ratio: 0.094" in html and "--ratio: 0.000" in html   # 막대 = 시간 / 가장 긴 시간
+    assert html.index("--ratio: 1.000") < html.index("3.2초")                                   # 시간 글자는 막대 바로 뒤
+
+
+def test_refresh_system_period_shows_end_date(db):
+    dashboard = AdminDashboard(db, KB_SYMPTOMS)
+    with gr.Blocks():
+        dashboard.build_admin_tab(gr.State({"user": ADMIN}))
+    period_html = dashboard.refresh("최근 7일", {"user": ADMIN})[-3]   # 시스템 탭: 응답 시간 · 오류 비율 · 기간 · 단계 · 오류 표
+    assert f"최근 7일 ({date.today():%Y-%m-%d})" in period_html        # Figma 08: "최근 7일 (2026-10-21)"
+
+
+def test_admin_dark_colors_use_dark_class():
+    """body.dark #admin-root 로 쓰면 Gradio 가 한 번 더 넣는 사본(.gradio-container… .contain #admin-root)의 라이트 색이 더 강해 다크가 안 됨"""
+    css = (ROOT / "chatbot" / "ui" / "admin" / "admin.css").read_text(encoding="utf-8")
+    assert ".dark #admin-root {" in css and "body.dark #admin-root" not in css
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

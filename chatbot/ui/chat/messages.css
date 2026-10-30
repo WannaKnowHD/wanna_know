@@ -96,9 +96,17 @@
 .wk-zoom:has(input:checked) .wk-page-image { width: auto; max-width: 100%; border: none; border-radius: 0.25rem; }
 
 /* 안내 카드: 근거 부족(되묻기)·명판 결과·재촬영 (Figma 03·04) */
-.wk-notice { gap: 0.75rem; }
-.wk-notice-title { color: var(--wk-chat-text); font-size: 1rem; font-weight: 700; }
-.wk-notice-text { color: var(--wk-chat-text); font-size: 0.875rem; margin: 0; }
+/* 폭 820 · 제목 위치 (21, 17) · 제목 Bold 16 (글자 상자 19) · 본문 14 (17) → 높이 82, 버튼이 있으면 131 */
+.wk-notice { width: 51.25rem; max-width: 100%; gap: 0.75rem; padding: 1rem 1.25rem; }
+.wk-notice-title { color: var(--wk-chat-text); font-size: 1rem; font-weight: 700; line-height: 1.1875rem; }
+.wk-notice-text { color: var(--wk-chat-text); font-size: 0.875rem; line-height: 1.0625rem; margin: 0; }
+/* 다시 촬영 (Figma Button/Secondary: 높이 37 · Medium 14) */
+.wk-retake {
+  align-self: flex-start; height: 2.3125rem; padding: 0 1rem; cursor: pointer;
+  background: var(--wk-chat-control-bg); color: var(--wk-chat-text);
+  border: 1px solid var(--wk-chat-border); border-radius: 0.5rem; font-size: 0.875rem; font-weight: 500;
+}
+.wk-retake:hover { border-color: var(--wk-send-bg); }
 
 /* 답변 생성 중 (Figma 01-1): 회색 말풍선 안에 점 3개 + "매뉴얼에서 근거를 확인하고 있어요…", 아래 작은 안내 */
 .wk-typing { display: flex; flex-direction: column; align-items: flex-start; gap: 0.75rem; }

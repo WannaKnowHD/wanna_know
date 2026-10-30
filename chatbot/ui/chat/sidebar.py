@@ -85,6 +85,12 @@ element.addEventListener('keydown', (event) => {
     pick(item);
   }
 });
+// 대화 초기화를 누르면 목록은 다시 그리지 않으므로 선택 표시만 지움
+element.closest('#chat-sidebar')?.addEventListener('click', (event) => {
+  if (event.target.closest('#sb-reset')) {
+    element.querySelectorAll('.history-item.is-active').forEach((el) => el.classList.remove('is-active'));
+  }
+});
 """
 
 
@@ -104,7 +110,7 @@ def build_sidebar() -> Sidebar:
     with gr.Column(scale=0, min_width=260, elem_id="chat-sidebar") as root:
         gr.HTML("", elem_id="sb-resize-host", js_on_load=SIDEBAR_RESIZE_JS)   # 손잡이만 붙이고 자신은 숨김 (sidebar.css)
         gr.HTML(f"<span class='sb-brand'>{BRAND}</span>")
-        reset_button = gr.Button("새 대화", elem_classes=["sb-button"])
+        reset_button = gr.Button("새 대화", elem_id="sb-reset", elem_classes=["sb-button"])
         gr.HTML("<span class='sb-label'>대화 기록</span>")
         history = gr.HTML("", elem_id="sb-history", js_on_load=HISTORY_CLICK_JS)   # 항목을 누르면 history.click
         with gr.Row(elem_id="sb-footer"):
