@@ -16,6 +16,7 @@ import chromadb
 from filelock import FileLock
 
 from chatbot.core.schemas import Chunk
+from chatbot.rag.index_cache import write_json_atomic
 from chatbot.rag.retriever import COLLECTION_NAME, load_bm25_items
 
 if TYPE_CHECKING:
@@ -230,6 +231,67 @@ def run_staged_index_worker(
         raise RuntimeError(
             f"임시 색인 생성·검증에 실패했습니다. 종료 코드: {exit_code}"
         )
+
+
+def publish_index_version(
+    target_dir: Path,
+    version_dir: Path,
+    bm25_relative: Path,
+) -> Path:
+    """생성·검증이 완료된 색인 버전의 경로를 활성 파일에 기록한다."""
+    target_dir = target_dir.resolve()
+    version_dir = version_dir.resolve()
+
+    versions_dir = target_dir.with_name(f"{target_dir.name}_versions")
+
+    if version_dir.parent != versions_dir:
+        raise ValueError("색인 버전 폴더의 위치가 올바르지 않습니다.")
+
+    if (
+        bm25_relative.is_absolute()
+        or ".." in bm25_relative.parts
+        or bm25_relative == Path(".")
+    ):
+        raise ValueError("BM25 상대 경로가 올바르지 않습니다.")
+
+    bm25_path = version_dir / bm25_relative
+
+    if not version_dir.is_dir() or not bm25_path.is_file():
+        raise ValueError("게시할 색인 폴더 또는 BM25 파일이 없습니다.")
+
+    manifest_path = target_dir.with_name(f"{target_dir.name}_current.json")
+    base_dir = manifest_path.parent
+
+    write_json_atomic(
+        manifest_path,
+        {
+            "schema_version": 1,
+            "chroma_dir": version_dir.relative_to(base_dir).as_posix(),
+            "bm25_path": bm25_path.relative_to(base_dir).as_posix(),
+        },
+    )
+
+    return manifest_path
+
+
+def make_version_directory(target_dir: Path) -> Path:
+    """기존 색인을 건드리지 않고 새 색인을 저장할 폴더를 만든다."""
+    if target_dir.is_symlink():
+        raise ValueError("색인 경로에는 심볼릭 링크를 사용하지 않습니다.")
+
+    target_dir = target_dir.resolve()
+
+    versions_dir = target_dir.with_name(f"{target_dir.name}_versions")
+
+    if versions_dir.is_symlink():
+        raise ValueError("색인 버전 경로에는 심볼릭 링크를 사용하지 않습니다.")
+
+    versions_dir.mkdir(parents=True, exist_ok=True)
+
+    version_dir = versions_dir / uuid4().hex
+    version_dir.mkdir(exist_ok=False)
+
+    return version_dir
 
 
 def replace_staged_indexes(
