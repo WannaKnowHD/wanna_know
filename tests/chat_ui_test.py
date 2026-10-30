@@ -21,7 +21,6 @@ from chatbot.ui.chat import (
     fake_answer,
     fake_photo_answer,
     render_answer_card,
-    render_equipment,
     render_user_message,
     render_welcome,
 )
@@ -132,10 +131,7 @@ def test_render_answer_validates_dict_responses(env):
     assert "답변 형식이 올바르지 않아" in app.render_answer({})
 
 
-def test_equipment_chip():
-    assert "전체 매뉴얼" in render_equipment(None)
-    assert "CV-1200" in render_equipment({"model_name": "CV-1200"}) and "wk-chip-on" in render_equipment({"model_name": "CV-1200"})
-    assert "<b>" not in render_equipment({"model_name": "<b>x</b>"})
+def test_welcome_text():
     assert "어떤 문제가 있나요?" in render_welcome()
 
 
@@ -201,10 +197,12 @@ def test_show_examples(env):
     assert app.show_examples(None)[1] == ""
 
 
-def test_screen_has_equipment_chip(env):
+def test_screen_has_no_equipment_chip(env):
+    """10/30: 상단 바 설비 표시를 지우고 서비스 이름(Wanna Know)을 둠. 설비는 대화 상태에만 남고 화면 칸은 없음"""
     app, state, _ = env
     state = app._conversation.set_equipment(state, Model("138-ACC"))
-    assert "138-ACC" in app._screen(state)[-2]        # 끝에서 둘째: 현재 설비, 마지막: 로그인 안내
+    screen = app._screen(state)
+    assert len(screen) == 8 and "138-ACC" not in str(screen)
 
 
 def test_chat_css_files_exist():

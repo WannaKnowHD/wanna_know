@@ -256,7 +256,7 @@ class AdminDashboard:
     def not_found_list(self, logs: DataFrame):
         """
         답변 품질 탭 하위: chat_logs에서 답을 못 찾은 질문(not_found=true, source='user')과 kb_gaps의 검토 상태를 합쳐
-        목록(Figma 07: 날짜·질문·설비·담당자 확인·KB 업데이트 필요) 출력. 검토 상태는 load_logs가 kb_gaps를 LEFT JOIN해
+        목록(Figma 07 라이트: 날짜·질문·담당자 확인·KB 업데이트 필요) 출력. 검토 상태는 load_logs가 kb_gaps를 LEFT JOIN해
         담아 둔 reviewed·kb_update_needed 열을 사용. 담당자 확인·KB 업데이트 필요는 체크박스 열로 표시.
         맨 뒤 No(log_id)는 저장할 때 행을 찾는 열이라 화면에서는 숨김
 
@@ -269,9 +269,6 @@ class AdminDashboard:
             {
                 "날짜": pd.to_datetime(rows["created_at"]).dt.strftime("%m/%d %H:%M"),
                 "질문": rows["question"].fillna(""),
-                "설비": rows["equipment_model"]
-                .fillna(NO_MODEL_LABEL)
-                .replace("", NO_MODEL_LABEL),
                 REVIEWED: rows["reviewed"].astype(bool),
                 KB_UPDATE_NEEDED: rows["kb_update_needed"].astype(bool),
                 "No": rows["log_id"].astype(int),
@@ -447,7 +444,10 @@ class AdminDashboard:
             *system_outputs,
         ]
         self.period_input.change(
-            fn=self.refresh, inputs=self.refresh_inputs, outputs=self.refresh_outputs
+            fn=self.refresh,
+            inputs=self.refresh_inputs,
+            outputs=self.refresh_outputs,
+            show_progress="hidden",  # Gradio 처리 중 표시(주황 로딩) 숨김
         )
         quality_tab.not_found_table.input(
             fn=self.on_review_input,
@@ -457,6 +457,7 @@ class AdminDashboard:
                 review_snapshot,
                 quality_tab.review_status,
             ],
+            show_progress="hidden",
         )
 
         self._wire_kb_tab(kb_tab, session_state)  # KB 현황 탭 (WBS 3.8.6)

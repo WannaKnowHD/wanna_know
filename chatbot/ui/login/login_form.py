@@ -12,8 +12,8 @@ from chatbot.ui.login.theme import THEME_TOGGLE_ENABLED
 LOGIN_FORM_CSS_PATH = Path(__file__).parent / "login_form.css"
 
 # 안내 문구 (기능명세서 on_login)
-MSG_EMPTY = "사원번호와 비밀번호를 입력하세요."
-MSG_INVALID = "사원번호 또는 비밀번호가 올바르지 않습니다."
+MSG_EMPTY = "사번과 비밀번호를 입력하세요."
+MSG_INVALID = "사번 또는 비밀번호가 올바르지 않습니다."   # Figma 00 로그인 실패 안내
 MSG_SERVER = "서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요."
 
 LOGIN_HEADER_HTML = (
@@ -23,7 +23,7 @@ LOGIN_HEADER_HTML = (
     "<span class='login-tag theme-dark-only'>AI TROUBLESHOOTING ASSISTANT</span>"
     "<h1 class='login-title theme-light-only'>Wanna Know</h1>"
     "<h1 class='login-title theme-dark-only'>컨베이어 문제 해결 챗봇</h1>"
-    "<p class='login-subtitle'>사원번호와 비밀번호로 로그인하세요</p>"
+    "<p class='login-subtitle'>사번과 비밀번호로 로그인하세요</p>"
     "</div>"
 )
 LOGIN_NOTE_HTML = "<p class='login-note'>관리자 대시보드는 로그인 후 채팅 화면의 '관리자 전환'에서 들어갑니다.</p>"
@@ -46,7 +46,7 @@ def build_login_form() -> LoginForm:
     with gr.Column(elem_id="login-root") as root:
         with gr.Column(elem_id="login-card"):
             gr.HTML(LOGIN_HEADER_HTML)
-            employee = gr.Textbox(label="사원번호", placeholder="예: 20261234", max_lines=1, elem_id="login-employee")
+            employee = gr.Textbox(label="사번", placeholder="예: 20261234", max_lines=1, elem_id="login-employee")
             password = gr.Textbox(
                 label="비밀번호", type="password", placeholder="비밀번호", max_lines=1, elem_id="login-password"
             )

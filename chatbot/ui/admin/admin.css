@@ -783,16 +783,16 @@ body.dark #admin-root {
   display: none !important;
 }
 
-/* 맨 뒤 저장용 No(log_id) 열: 너비 0(column_widths)인 칸은 두고 안의 내용만 숨김.
+/* 맨 뒤 저장용 No(log_id) 열(0부터 4번째): 너비 0(column_widths)인 칸은 두고 안의 내용만 숨김.
    칸 자체를 display: none 으로 빼면 Gradio 가 제목 칸 위치를 잘못 계산해 칸이 어긋남 */
-#not-found-table [data-heading="5"],
-#not-found-table [data-col="5"] {
+#not-found-table [data-heading="4"],
+#not-found-table [data-col="4"] {
   padding: 0 !important;
   border: none !important;
 }
 
-#not-found-table [data-heading="5"] > *,
-#not-found-table [data-col="5"] > * {
+#not-found-table [data-heading="4"] > *,
+#not-found-table [data-col="4"] > * {
   display: none !important;
 }
 
