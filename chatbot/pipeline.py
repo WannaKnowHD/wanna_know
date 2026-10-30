@@ -62,6 +62,10 @@ MSG_ERROR = "답변을 만드는 중 문제가 생겼어요. 잠시 후 다시 �
 RETRY_NOT_KOREAN = ("원인(cause)·조치(actions)·요약(summary)에 영어 문장이 있습니다. 영어 원문을 그대로 쓰지 말고 "
                     "모두 한국어 문장으로 옮겨서 같은 JSON 형식으로 다시 답하세요. id 와 quote 는 바꾸지 마세요.")
 RETRY_BAD_FORMAT = "답이 정해진 JSON 형식에 맞지 않습니다. 다섯 칸(not_found · summary · causes · actions · sources)을 모두 채워 다시 답하세요."
+# 손상 사진 질문에 붙이는 안내 (v3). 질문은 비전 모델이 만든 증상 문장이고, [자료]의 고장 KB 는 손상 종류로 고른 후보라
+# 표현이 매뉴얼과 정확히 같지 않다. 이 안내가 없으면 LLM 이 "같은 증상이 없다"며 not_found 로 답한다.
+DAMAGE_PHOTO_NOTE = ("\n(이 질문은 벨트 손상 사진을 분석한 결과입니다. [자료]의 고장 KB 는 사진의 손상 종류로 고른 후보이니, "
+                     "증상 표현이 정확히 같지 않아도 사진 손상과 가장 가까운 KB 로 답하세요.)")
 
 @lru_cache(maxsize=1)
 def _encoding():
@@ -152,7 +156,7 @@ class RagPipeline:
         self.kb = kb or {}
         self.log_source = log_source
 
-    def answer(self, question: str, state: dict, input_type: str):
+    def answer(self, question: str, state: dict, input_type: str, kb_hints: list[str] | None = None):
         """
         질문 1건 처리 진입점: 질문 이해 → 하이브리드 검색 → 생성 → 근거 검증 → 안전 문구 → 응답 JSON. 근거 점수가 기준값 미만이면
         생성하지 않고 "확인되지 않음" 응답(not_found=true)을 반환. RequestLogger.log_request로 요청 기록 저장 (답 못
@@ -176,6 +180,11 @@ class RagPipeline:
             # 2) 검색어 → 검색
             step = time.perf_counter()
             queries = self.rewrite_query(question, self.glossary)
+            # 손상 사진: damage_map 의 KB 후보 증상(매뉴얼 영어 원문)을 검색어에 더해 해당 KB 가 검색되게 한다 (v3)
+            for kb_id in kb_hints or []:
+                symptom = ((self.kb or {}).get(kb_id) or {}).get("symptom")
+                if symptom and symptom not in queries:
+                    queries.append(symptom)
             hits, filter_released = self.retriever.search(queries, (state or {}).get("equipment"), info.qtype)
             trace["latency_ms"]["search"] = _ms(step)
             trace["queries_en"] = queries
@@ -188,7 +197,8 @@ class RagPipeline:
 
             # 3) 프롬프트 → 생성 (형식·한국어가 틀리면 1회 재요청)
             step = time.perf_counter()
-            messages = self.build_prompt(question, hits, info.qtype, equipment["model"] if equipment else None)
+            prompt_question = question + DAMAGE_PHOTO_NOTE if input_type == "damage_photo" and kb_hints else question
+            messages = self.build_prompt(prompt_question, hits, info.qtype, equipment["model"] if equipment else None)
             parsed = self._generate_checked(messages, trace)
             trace["latency_ms"]["generate"] = _ms(step)
             if parsed is None or parsed["not_found"]:
@@ -236,6 +246,8 @@ class RagPipeline:
     def _generate_checked(self, messages: list[dict], trace: dict) -> dict | None:
         """generate → 형식·한국어 검사. 틀리면 무엇이 틀렸는지 알려 주고 1회 다시 요청, 또 틀리면 None (→ 확인되지 않음)
 
+        trace["generate_fail"] : 생성 단계에서 확인되지 않음이 된 이유 (llm_not_found · not_korean · bad_format, 진단용)
+
         같은 messages 를 temperature 0 으로 다시 보내면 같은 답이 나오므로, 첫 답과 고칠 점을 대화에 붙여서 다시 묻는다.
         """
         for attempt in range(2):
@@ -243,12 +255,16 @@ class RagPipeline:
             parsed = result.get("parsed")
             if self.validator.validate_schema(parsed):
                 if parsed["not_found"]:            # LLM 이 자료에 없다고 답함 → 다시 묻지 않음
+                    trace["generate_fail"] = "llm_not_found"
                     return parsed
                 if self.validator.check_language(parsed):
+                    trace.pop("generate_fail", None)   # 재요청으로 통과했으면 실패 기록을 지움
                     return parsed
                 feedback = RETRY_NOT_KOREAN
+                trace["generate_fail"] = "not_korean"
             else:
                 feedback = RETRY_BAD_FORMAT
+                trace["generate_fail"] = "bad_format"
             trace["schema_retries"] = 1
             if attempt == 0:
                 messages = [*messages, {"role": "assistant", "content": result.get("text") or ""},

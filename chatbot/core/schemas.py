@@ -325,6 +325,7 @@ class Trace(StrictModel):
     # 키: understand, vision, search, generate, verify, safety, total
     latency_ms: dict[str, int] = {}
     schema_retries: int = 0
+    generate_fail: str | None = None  # 생성 단계 확인되지 않음 이유: llm_not_found · not_korean · bad_format (진단용)
     removed_cause_ids: list[str] = []
     replaced_quote_refs: list[str] = []
     error: TraceError | None = None
