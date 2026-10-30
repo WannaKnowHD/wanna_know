@@ -35,6 +35,12 @@ element.addEventListener('keydown', (event) => {
     pick(item);
   }
 });
+// 대화 초기화를 누르면 목록은 다시 그리지 않으므로 선택 표시만 지움
+element.closest('#chat-sidebar')?.addEventListener('click', (event) => {
+  if (event.target.closest('#sb-reset')) {
+    element.querySelectorAll('.history-item.is-active').forEach((el) => el.classList.remove('is-active'));
+  }
+});
 """
 
 
@@ -53,7 +59,7 @@ def build_sidebar() -> Sidebar:
     """사이드바 구성: 제목, 대화 초기화 버튼, 대화 기록 목록, (아래쪽) 사원 정보와 로그아웃 버튼"""
     with gr.Column(scale=0, min_width=260, elem_id="chat-sidebar") as root:
         gr.HTML(f"<span class='sb-brand'>{BRAND}</span>")
-        reset_button = gr.Button("대화 초기화", elem_classes=["sb-button"])
+        reset_button = gr.Button("대화 초기화", elem_id="sb-reset", elem_classes=["sb-button"])
         gr.HTML("<span class='sb-label'>대화 기록</span>")
         history = gr.HTML("", elem_id="sb-history", js_on_load=HISTORY_CLICK_JS)   # 항목을 누르면 history.click
         with gr.Row(elem_id="sb-footer"):
