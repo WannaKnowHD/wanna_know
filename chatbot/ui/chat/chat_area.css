@@ -16,7 +16,7 @@
   box-shadow: none !important;
 }
 
-/* 상단 바 (Figma: 위아래 14px · 좌우 24px, 아래 1px 선): 서비스 이름 Wanna Know + 관리자 전환 + 라이트/다크 */
+/* 상단 바 (Figma: 위아래 14px · 좌우 24px, 아래 1px 선): 로고 + 챗봇 이름 칩 + 관리자 전환 + 라이트/다크 */
 #chat-topbar {
   flex: 0 0 auto !important;
   flex-wrap: nowrap !important;
@@ -30,7 +30,21 @@
 /* gr.HTML 기본 안쪽 여백(12px) 제거: 상단 바 · 예시 질문 라벨을 Figma 위치(좌 24px · 48px)에 맞춤 */
 #chat-topbar .html-container,
 #chat-examples .html-container { padding: 0 !important; }
-.ca-brand { color: var(--wk-send-bg); font-size: 1.125rem; font-weight: 700; }
+/* Figma 상단 바 "설비 표시": 로고 40px · 간격 8px · 칩(테두리 1px · 알약 · 위아래 7px 좌우 14px · Bold 14px) */
+.ca-brand { display: flex; align-items: center; gap: 0.5rem; }
+.ca-logo { display: block; flex: 0 0 auto; width: 2.5rem; height: 2.5rem; object-fit: cover; }
+.ca-service-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4375rem 0.875rem;
+  background: var(--wk-chat-control-bg);
+  color: var(--wk-chat-text);
+  border: 1px solid var(--wk-chat-border);
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
 
 /* Figma Button/Secondary: 높이 37px · 좌우 16px · 글자 Medium 14px */
 .ca-button {
@@ -72,6 +86,15 @@
   border: none !important;
   border-radius: 0.75rem !important;
 }
+/* 사진 말풍선 (Figma 04): 폭 260 · 안쪽 10px, 사진 240×140 · 모서리 8 */
+#chat-messages .message.user:has(.image-container) { padding: 0.625rem !important; }
+#chat-messages .message.user .image-container img {
+  width: 15rem !important;
+  height: 8.75rem !important;
+  margin: 0 !important;   /* Gradio 기본 8px */
+  object-fit: cover;
+  border-radius: 0.5rem;
+}
 #chat-messages .message.bot {
   background: transparent !important;   /* 답변은 messages.css 의 .wk-card 가 테두리를 가짐 */
   border: none !important;
@@ -111,7 +134,7 @@
   flex-wrap: nowrap !important;
   align-items: center;
   gap: 0.75rem !important;
-  padding: 0.5rem 1.5rem 0 !important;
+  padding: 0.5rem 3rem 0 !important;   /* 왼쪽을 입력 바(48px)와 맞춤 */
 }
 #chat-preview > * { flex: 0 0 auto !important; }
 #chat-preview-image { width: 8rem !important; min-width: 0 !important; border-radius: 0.5rem; overflow: hidden; }

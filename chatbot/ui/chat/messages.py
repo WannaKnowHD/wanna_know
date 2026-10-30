@@ -11,6 +11,7 @@ from html import escape
 from pathlib import Path
 
 from chatbot.core.schemas import ActionStep, AnswerResponse, Cause, Figure, SafetyNote, Source, Status
+from chatbot.ui.chat.source_page import page_image_url
 
 MESSAGES_CSS_PATH = Path(__file__).parent / "messages.css"
 
@@ -21,6 +22,11 @@ NOTICE_TITLES: dict[Status, str] = {
     "retake": "사진만으로 판단하기 어렵습니다",
     "error": "답변을 만들지 못했습니다",
 }
+
+# 사진 재촬영 안내 카드의 버튼 (Figma 04 '다시 촬영'): 입력 바의 사진 첨부(#chat-image)를 눌러 파일 선택 창을 엶
+RETAKE_BUTTON_HTML = (
+    "<button type='button' class='wk-retake' onclick=\"document.querySelector('#chat-image')?.click()\">다시 촬영</button>"
+)
 
 TYPING_TEXT = "매뉴얼에서 근거를 확인하고 있어요…"   # 답변 생성 중 (Figma 01-1)
 TYPING_NOTE = "답변이 준비되면 바로 표시됩니다"
@@ -121,15 +127,33 @@ def _render_steps(steps: list[ActionStep]) -> str:
     return "".join(f"<p class='wk-line'>{_circled(i)} {escape(s.text)}</p>" for i, s in enumerate(steps, start=1))
 
 
+def _render_page(source: Source) -> str:
+    """원문 보기 안의 두 번째 토글: 그 쪽 전체 이미지. 이미지를 누르면 화면 가득 크게, 한 번 더 누르면 닫힘
+    (label 안 체크박스를 messages.css 가 :has(:checked) 로 받음. 채팅창 HTML 이라 자바스크립트 없이 동작해야 함).
+    PDF 를 찾지 못하면 빈 글자"""
+    url = page_image_url(source.doc_id, source.page)
+    if url is None:
+        return ""
+    alt = escape(f"{source.doc_title} p.{source.page}")
+    return (
+        "<details class='wk-page'>"
+        f"<summary class='wk-link'>p.{source.page} 전체 보기</summary>"
+        f"<label class='wk-zoom' title='눌러서 크게 보기'><input type='checkbox'>"
+        f"<img class='wk-page-image' src='{escape(url)}' alt='{alt}' loading='lazy'></label>"
+        "</details>"
+    )
+
+
 def _render_sources(sources: list[Source]) -> str:
-    """출처 칩 + 원문 보기 (눌러서 펼치는 <details>, 자바스크립트 없이 동작). 근거가 표·그림이면 잘라 둔 이미지도 같이 보여 줌"""
+    """출처 칩 + 원문 보기 (눌러서 펼치는 <details>, 자바스크립트 없이 동작).
+    펼치면 출처 바로 아래에 인용문(최대 3줄), 근거가 표·그림이면 잘라 둔 이미지, 그다음 "쪽 전체 보기" 토글"""
     parts = []
     for s in sources:
         picture = _image(s.image_path, f"{s.doc_title} p.{s.page}") if s.chunk_type in TABLE_FIGURE_TYPES else ""
         parts.append(
             "<details class='wk-source'>"
             f"<summary><span class='wk-chip'>{escape(f'{s.doc_title} · p.{s.page}')}</span><span class='wk-link'>원문 보기</span></summary>"
-            f"{picture}<blockquote class='wk-quote'>{escape(s.quote)}</blockquote>"
+            f"<blockquote class='wk-quote'>{escape(s.quote)}</blockquote>{picture}{_render_page(s)}"
             "</details>"
         )
     return "".join(parts)
@@ -144,6 +168,17 @@ def _render_figures(figures: list[Figure]) -> str:
     return "".join(parts)
 
 
+def _notice_title(answer: AnswerResponse) -> str:
+    """안내 카드 제목. 명판으로 설비를 정하면 모델명, 사진 재촬영이면 확신도를 붙임 (Figma 04)"""
+    if answer.status == "nameplate" and answer.equipment is not None:
+        return f"명판에서 모델명 {answer.equipment.model}을(를) 확인했습니다"
+    title = NOTICE_TITLES[answer.status]
+    if answer.status == "retake" and answer.image is not None:
+        confidence = answer.image.damage.confidence if answer.image.damage else answer.image.confidence
+        return f"{title} (확신도 {confidence:.2f})"
+    return title
+
+
 def render_answer_card(answer: AnswerResponse) -> str:
     """응답 한 건(schemas.AnswerResponse)을 답변 카드 HTML 로 바꿈. 응답 JSON(dict)은 호출하는 쪽이 먼저 검사해서 넘긴다.
 
@@ -151,10 +186,12 @@ def render_answer_card(answer: AnswerResponse) -> str:
     그 밖의 status(못 찾음·재촬영 등)는 제목과 message 만 있는 안내 카드 (Figma 03·04).
     """
     if answer.status != "answered":
+        button = RETAKE_BUTTON_HTML if answer.status == "retake" else ""
         return (
             "<div class='wk-card wk-notice'>"
-            f"<div class='wk-notice-title'>{escape(NOTICE_TITLES[answer.status])}</div>"
+            f"<div class='wk-notice-title'>{escape(_notice_title(answer))}</div>"
             f"<p class='wk-notice-text'>{escape(answer.message or '')}</p>"
+            f"{button}"
             "</div>"
         )
 

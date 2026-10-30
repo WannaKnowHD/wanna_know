@@ -139,7 +139,8 @@ def test_nameplate_exact_sets_equipment():
     app, conversation = make_app(read={"raw_text": "138 ACC"})   # 표기가 달라도 같은 모델
     history, state = run(app)
     assert state["equipment"] == {"model_name": "138-ACC", "aliases": ["ACC"], "doc_ids": ["hytrol_138acc"]}
-    assert "138-ACC 설비를 확인했습니다" in last_card(history)
+    assert "명판에서 모델명 138-ACC을(를) 확인했습니다" in last_card(history)   # 카드 제목 (Figma 04)
+    assert "이제부터 138-ACC 매뉴얼 기준으로 답변합니다" in last_card(history)
     saved = conversation.turns[0]
     assert saved["question"] == "(사진) 명판"
     assert saved["answer"]["status"] == "nameplate"

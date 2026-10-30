@@ -58,8 +58,8 @@ def test_topbar_shows_service_name_and_sidebar_title():
     with gr.Blocks():
         area = build_chat_area()
         build_sidebar()
-    assert "Wanna Know" in area.brand.value and "설비" not in area.brand.value
-    assert BRAND == "컨베이어 문제 해결 챗봇"
+    assert "컨베이어 문제 해결 챗봇" in area.brand.value and "설비" not in area.brand.value
+    assert BRAND == "Wanna Know"
 
 
 def test_typing_bubble():
@@ -133,6 +133,7 @@ def test_history_list_sends_click_with_index_and_time():
         sidebar = build_sidebar()
     js = sidebar.history.js_on_load   # 목록 전체에 걸어 둔 클릭 → history.click 이벤트
     assert "trigger('click'" in js and "dataset.index" in js and "dataset.key" in js
+    assert sidebar.reset_button.elem_id == "sb-reset" and "#sb-reset" in js   # 대화 초기화 → 선택 표시 지움
 
 
 def save(conversation, state, question, answer=None):
