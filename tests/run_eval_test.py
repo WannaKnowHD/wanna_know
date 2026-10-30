@@ -201,3 +201,10 @@ def test_case_row_records_not_found_stage():
     rows = [run_eval._case_row(evaluator.run_case(ts_case())) for _ in stages]
     assert [r["nf_stage"] for r in rows] == ["out_of_scope", "threshold", "generate", "verify", ""]
     assert rows[1]["top_score"] == 0.3 and rows[3]["removed_cause_ids"] == f"{KB}#c1"
+
+
+def test_case_row_records_generate_fail():
+    response = {"status": "not_found", "trace": {"latency_ms": {"search": 1, "generate": 1}, "generate_fail": "llm_not_found"}}
+    evaluator = Evaluator(pipeline=FakePipeline(response))
+    row = run_eval._case_row(evaluator.run_case(ts_case()))
+    assert row["nf_stage"] == "generate" and row["generate_fail"] == "llm_not_found"
