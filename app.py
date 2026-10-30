@@ -5,7 +5,7 @@ from chatbot.core.auth import AuthManager
 from chatbot.core.config import Settings
 from chatbot.core.state import ConversationState
 from chatbot.db.db import Database
-from chatbot.ui.dashboard import AdminDashboard, load_kb_symptoms
+from chatbot.ui.dashboard import AdminDashboard, load_kb_symptoms, load_kb_symptoms_ko
 from chatbot.ui.gradio_app import ChatApp
 
 def build_pipeline(settings: Settings, db: Database):
@@ -52,7 +52,7 @@ if __name__ == "__main__":
         settings=settings,
         auth=AuthManager(db, session_hours=settings.session_hours),
         conversation=ConversationState(db),
-        dashboard=AdminDashboard(db, load_kb_symptoms(settings.kb_dir)),
+        dashboard=AdminDashboard(db, load_kb_symptoms(settings.kb_dir), load_kb_symptoms_ko("data/kb_symptoms_ko.csv")),
         pipeline=build_pipeline(settings, db),
     )
     try:

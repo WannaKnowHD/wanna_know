@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import logging
 from datetime import date, datetime, time, timedelta
@@ -68,14 +69,21 @@ TOP_SYMPTOMS = 10
 class AdminDashboard:
     """AdminDashboard (기능명세서 기준 뼈대)."""
 
-    def __init__(self, db: Database | None = None, kb_symptoms: dict[str, str] | None = None):
+    def __init__(
+        self,
+        db: Database | None = None,
+        kb_symptoms: dict[str, str] | None = None,
+        kb_symptoms_ko: dict[str, str] | None = None,
+    ):
         """
         받는 것:
           db          : 로그를 읽고(load_logs) 검토 상태를 저장(save_review)할 Database. 없으면 화면 틀만 만듦
-          kb_symptoms : kb_id → 증상 문장 (load_kb_symptoms). 자주 묻는 증상 Top 10 에 씀
+          kb_symptoms    : kb_id → 증상 문장 (load_kb_symptoms, KB 원문 영어). 자주 묻는 증상 Top 10 에 씀
+          kb_symptoms_ko : kb_id → 한국어 증상 (load_kb_symptoms_ko). 있으면 Top 10 에 한국어를 크게, 영어 원문을 아래 줄에 작게 보임
         """
         self.db = db
         self.kb_symptoms = kb_symptoms or {}
+        self.kb_symptoms_ko = kb_symptoms_ko or {}
 
     @staticmethod
     def render_user_info(user: User | None) -> str:
@@ -387,6 +395,7 @@ class AdminDashboard:
     def on_review_input(self, table: DataFrame, previous: DataFrame | None, state: dict | None):
         """
         답 못 찾은 질문 목록에서 체크박스가 바뀐 행만 save_review 로 kb_gaps 에 저장.
+        KB 업데이트 필요는 담당자 확인을 한 질문에만 체크할 수 있음: 담당자 확인 없이 체크하면 되돌리고, 담당자 확인을 풀면 함께 풂.
         previous 는 마지막으로 그린 목록(비교 기준). 저장하지 못한 행은 체크하기 전 값으로 되돌림
 
         Returns: DataFrame, DataFrame, str (목록, 새 비교 기준, 안내 문구)
@@ -395,10 +404,16 @@ class AdminDashboard:
             return table, table, ""
         user = _current_user(state)
         result = previous.copy()
-        saved = failed = 0
+        saved = failed = blocked = 0
         for log_id, reviewed, kb_update_needed in find_review_changes(previous, table):
+            row = result["No"] == log_id
+            if kb_update_needed and not reviewed:
+                if _to_bool(result.loc[row, REVIEWED].iloc[0]):   # 담당자 확인을 푼 경우: KB 업데이트 필요도 함께 풂
+                    kb_update_needed = False
+                else:                                              # 담당자 확인 없이 KB 업데이트 필요만 체크: 되돌림
+                    blocked += 1
+                    continue
             if self.save_review(log_id, reviewed, kb_update_needed, user):
-                row = result["No"] == log_id
                 result.loc[row, REVIEWED] = reviewed
                 result.loc[row, KB_UPDATE_NEEDED] = kb_update_needed
                 saved += 1
@@ -406,6 +421,8 @@ class AdminDashboard:
                 failed += 1
         if failed:
             message = f"{failed}건을 저장하지 못했습니다. 권한과 DB 연결을 확인해 주세요."
+        elif blocked:
+            message = "KB 업데이트 필요는 담당자 확인을 먼저 체크해야 선택할 수 있습니다."
         elif saved:
             message = f"{saved}건 저장 ({datetime.now():%H:%M:%S})"
         else:
@@ -415,16 +432,22 @@ class AdminDashboard:
     def _top_symptoms(self, logs: DataFrame) -> DataFrame:
         """
         자주 묻는 증상 Top 10: 근거 KB 가 있는 질문을 첫 번째 KB 의 증상(kb_symptoms)으로 묶어 셈.
-        질문 문장은 표현이 제각각이라 그대로 묶으면 같은 증상이 흩어짐 (응답 스키마 9.2절)
+        질문 문장은 표현이 제각각이라 그대로 묶으면 같은 증상이 흩어짐 (응답 스키마 9.2절).
+        한국어 증상(kb_symptoms_ko)이 있으면 증상 칸에 한국어, 원문 칸에 영어 원문을 둠 (없으면 증상 칸에 원문, 원문 칸은 빈칸)
 
-        Returns: DataFrame (순위, 증상, 질문 수)
+        Returns: DataFrame (순위, 증상, 원문, 질문 수)
         """
-        first_kb = logs["kb_ids"].map(lambda kb_ids: kb_ids[0] if isinstance(kb_ids, list) and kb_ids else None)
-        symptoms = first_kb.dropna().map(lambda kb_id: self.kb_symptoms.get(kb_id, kb_id))
+        first_kb = logs["kb_ids"].map(lambda kb_ids: kb_ids[0] if isinstance(kb_ids, list) and kb_ids else None).dropna()
+        symptoms = first_kb.map(lambda kb_id: self.kb_symptoms.get(kb_id, kb_id))
         counts = symptoms.value_counts().head(TOP_SYMPTOMS)
+        korean: dict[str, str] = {}   # 원문 → 한국어 (같은 원문을 쓰는 KB 가 여럿이면 처음 것)
+        for kb_id, text in zip(first_kb, symptoms):
+            korean.setdefault(text, self.kb_symptoms_ko.get(kb_id, ""))
+        texts = [str(text) for text in counts.index]
         return pd.DataFrame({
             "순위": range(1, len(counts) + 1),
-            "증상": counts.index.astype(str),
+            "증상": [korean.get(text) or text for text in texts],
+            "원문": [text if korean.get(text) else "" for text in texts],
             "질문 수": counts.to_numpy(),
         })
 
@@ -479,6 +502,22 @@ def load_kb_symptoms(kb_dir: str | Path) -> dict[str, str]:
             if entry.get("kb_id") and text:
                 symptoms[entry["kb_id"]] = text
     return symptoms
+
+
+def load_kb_symptoms_ko(path: str | Path) -> dict[str, str]:
+    """
+    한국어 증상 표(data/kb_symptoms_ko.csv: kb_id, symptom_ko)를 kb_id → 한국어 사전으로 읽음. 자주 묻는 증상 Top 10 표시용.
+    파일이 없거나 읽지 못하면 빈 사전 (그러면 Top 10 은 영어 원문만 보임)
+
+    Returns: dict[str, str]
+    """
+    try:
+        with open(path, encoding="utf-8-sig", newline="") as file:
+            return {row["kb_id"]: row["symptom_ko"].strip() for row in csv.DictReader(file)
+                    if row.get("kb_id") and (row.get("symptom_ko") or "").strip()}
+    except (OSError, KeyError, csv.Error):
+        logger.warning("한국어 증상 표를 읽지 못해 영어 원문만 보임: %s", path)
+        return {}
 
 
 def _as_date(value) -> date:
