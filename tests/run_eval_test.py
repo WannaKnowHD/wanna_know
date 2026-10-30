@@ -136,6 +136,20 @@ def test_latency_scores():
     assert run_eval._latency_scores([])["latency_avg_s"] is None
 
 
+def test_build_photo_matches_app_photo_flow(monkeypatch):
+    """사진 채점은 앱 코드(ChatApp._analyze_photo)를 그대로 부른다. 그 반환 모양이 바뀌면 여기서 잡는다
+    (통합 테스트 10/30: (응답, state, 질문 사용 여부) 3개로 바뀌어 사진 15문항이 모두 error 였음)"""
+    from chatbot.core.schemas import AnswerResponse
+    from chatbot.ui.gradio_app import ChatApp
+
+    def fake_analyze(self, image, state, question=""):
+        return AnswerResponse(status="retake", input_type="other_photo", message="다시"), state, False
+
+    monkeypatch.setattr(ChatApp, "_analyze_photo", fake_analyze)
+    response = run_eval._build_photo(pipeline=None)(b"img", {"user": None, "equipment": None})
+    assert response["status"] == "retake" and response["input_type"] == "other_photo"
+
+
 @pytest.mark.parametrize("argv", [["--limit", "0"], ["--set", "nope"]])
 def test_main_rejects_bad_args(argv):
     with pytest.raises(SystemExit):
