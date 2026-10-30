@@ -10,6 +10,8 @@ from chatbot.ui.chat.messages import render_welcome
 from chatbot.ui.login.theme import THEME_TOGGLE_ENABLED
 
 CHAT_AREA_CSS_PATH = Path(__file__).parent / "chat_area.css"
+CHAT_ASSET_DIR = Path(__file__).parent / "assets"           # 화면에 쓰는 이미지 (launch 의 allowed_paths 로 내보냄)
+LOGO_PATH = CHAT_ASSET_DIR / "symbol_logo.png"               # Figma 상단 바 symbol_logo (40px)
 
 # 예시 질문 템플릿 (Q-06, show_examples 가 돌려줌). 지금 매뉴얼 3종의 KB 로 답할 수 있는 질문만 둔다
 # (화면설계서 시안의 "E-102 알람이 떠요"는 KB 에 없는 알람 코드라 "확인되지 않음"이 나와서 뺌)
@@ -54,10 +56,16 @@ class ChatArea:
 
 
 def build_chat_area() -> ChatArea:
-    """채팅 영역 구성: 서비스 이름(Wanna Know)·관리자 전환·라이트/다크 버튼, 채팅창, 예시 질문, 사진 첨부·질문 입력·전송"""
+    """채팅 영역 구성: 로고·챗봇 이름 칩·관리자 전환·라이트/다크 버튼, 채팅창, 예시 질문, 사진 첨부·질문 입력·전송"""
     with gr.Column(scale=1, elem_id="chat-area") as root:
         with gr.Row(elem_id="chat-topbar", equal_height=True):
-            brand = gr.HTML(f"<span class='ca-brand'>{SERVICE_NAME}</span>", elem_id="chat-brand")   # Figma 로고 자리
+            brand = gr.HTML(   # Figma 상단 바 왼쪽: symbol_logo 40px + 칩
+                "<div class='ca-brand'>"
+                f"<img class='ca-logo' src='/gradio_api/file={LOGO_PATH.as_posix()}' alt=''>"
+                f"<span class='ca-service-chip'>{SERVICE_NAME}</span>"
+                "</div>",
+                elem_id="chat-brand",
+            )
             admin_button = gr.Button("관리자 전환", visible=False, elem_classes=["ca-button"])
             theme_button = gr.Button(
                 "라이트 / 다크", elem_classes=["ca-button", "theme-toggle"], visible=THEME_TOGGLE_ENABLED

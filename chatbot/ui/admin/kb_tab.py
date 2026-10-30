@@ -23,31 +23,36 @@ _BADGE_CLASSES = {STATUS_LABELS["done"]: "kb-badge-done", STATUS_LABELS["indexin
 # KB 현황 탭 전용 스타일 (#admin-kb-tab 안에서만 적용). 색은 admin.css 의 --admin-* 변수
 KB_TAB_CSS = """<style>
 #admin-kb-tab .kb-style { display: none !important; }
-#admin-kb-tab .kb-head-row { align-items: flex-start !important; gap: 1rem !important; }
-#admin-kb-tab .kb-title { margin: 0; color: var(--admin-text); font-size: 1.0625rem; font-weight: 700; }
-#admin-kb-tab .kb-subtitle { margin: 0.25rem 0 0; color: var(--admin-text-muted); font-size: 0.75rem; }
+/* gr.HTML 기본 안쪽 여백(10 · 12px) 때문에 제목 · 카드가 Figma 보다 12px 안쪽에 있던 것을 없앰 */
+#admin-kb-tab .html-container { padding: 0 !important; }
+#admin-kb-tab .kb-head-row { align-items: center !important; gap: 1rem !important; }
+#admin-kb-tab .kb-title { margin: 0; color: var(--admin-text); font-size: 1.125rem; font-weight: 700; line-height: 1.375rem; }
+#admin-kb-tab .kb-subtitle { margin: 0.25rem 0 0; color: var(--admin-text-muted); font-size: 0.8125rem; line-height: 1rem; }
 #admin-kb-tab .kb-progress { margin: 0.5rem 0 0; color: var(--admin-accent); font-size: 0.75rem; font-weight: 600; }
-#admin-kb-tab .kb-add-button { flex: 0 0 auto !important; min-width: 7.5rem !important; background: var(--admin-accent) !important;
-  color: #ffffff !important; border: none !important; border-radius: 0.5rem !important; font-weight: 600 !important; }
+#admin-kb-tab .kb-add-button { flex: 0 0 auto !important; min-width: 0 !important; width: auto !important; height: 2.3125rem;
+  padding: 0 1.125rem !important; background: var(--admin-accent) !important; color: var(--admin-accent-text) !important;
+  border: none !important; border-radius: 0.5rem !important; font-size: 0.875rem !important; font-weight: 500 !important; }
 #admin-kb-tab .kb-add-button:disabled { opacity: 0.55; cursor: not-allowed; }
 #admin-kb-tab .kb-card { background: var(--admin-surface); border: 1px solid var(--admin-border); border-radius: 0.75rem;
-  padding: 1rem 1rem 0.5rem; overflow-x: auto; }
-#admin-kb-tab .kb-table { width: 100%; border-collapse: collapse; border: none !important; font-size: 0.8125rem;
+  padding: 1.125rem 1.25rem; overflow-x: auto; }
+#admin-kb-tab .kb-table { width: 100%; margin: 0; padding: 0; border-collapse: separate; border-spacing: 0; border: none !important; font-size: 0.8125rem;
   color: var(--admin-text); }
 #admin-kb-tab .kb-table tr, #admin-kb-tab .kb-table th, #admin-kb-tab .kb-table td { border: none !important; }
 #admin-kb-tab .kb-table th { background: var(--admin-table-head); color: var(--admin-text-muted); font-weight: 500;
-  text-align: left; padding: 0.625rem 0.75rem; white-space: nowrap; }
-#admin-kb-tab .kb-table td { padding: 0.8125rem 0.75rem; border-top: 1px solid var(--admin-border) !important;
+  text-align: left; padding: 0.625rem 0.75rem; line-height: 1.0625rem; white-space: nowrap; }
+#admin-kb-tab .kb-table td { padding: 0.625rem 0.75rem; line-height: 1rem; border-top: 1px solid var(--admin-border) !important;
   vertical-align: middle; }
-#admin-kb-tab .kb-table .kb-num { width: 6rem; }
-#admin-kb-tab .kb-table .kb-time { width: 8rem; white-space: nowrap; }
-#admin-kb-tab .kb-table .kb-state { width: 7rem; }
+/* Figma 09 열 너비: 파일명 나머지 · 페이지 90 · 청크 수 90 · 색인 일시 150 · 상태 130 + 오른쪽 여백 */
+#admin-kb-tab .kb-table .kb-num { width: 5.625rem; }
+#admin-kb-tab .kb-table .kb-time { width: 9.375rem; white-space: nowrap; }
+#admin-kb-tab .kb-table .kb-state { width: 9.625rem; }
 #admin-kb-tab .kb-reason { display: block; margin-top: 0.25rem; color: #b42318; font-size: 0.75rem; word-break: break-all; }
 #admin-kb-tab .kb-empty { padding: 1.5rem 0.75rem; color: var(--admin-text-muted); text-align: center; }
-#admin-kb-tab .kb-badge { display: inline-block; padding: 0.25rem 0.875rem; border-radius: 999px; font-size: 0.75rem;
-  white-space: nowrap; }
-#admin-kb-tab .kb-badge-done { background: var(--admin-surface); border: 1px solid var(--admin-border); color: var(--admin-text); }
-#admin-kb-tab .kb-badge-running { background: var(--admin-accent); color: #ffffff; }
+/* 상태 배지 = Figma Chip (높이 32, 글자 13) */
+#admin-kb-tab .kb-badge { display: inline-flex; align-items: center; box-sizing: border-box; height: 2rem; padding: 0 0.875rem;
+  border: 1px solid var(--admin-border); border-radius: 999px; font-size: 0.8125rem; white-space: nowrap; }
+#admin-kb-tab .kb-badge-done { background: var(--admin-chip-bg); color: var(--admin-text); }
+#admin-kb-tab .kb-badge-running { background: var(--admin-accent); color: var(--admin-accent-text); }
 #admin-kb-tab .kb-badge-failed { background: #fdecea; color: #b42318; }
 body.dark #admin-kb-tab .kb-badge-failed { background: #3a1d1b; color: #f4a39a; }
 body.dark #admin-kb-tab .kb-reason { color: #f4a39a; }
