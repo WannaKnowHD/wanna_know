@@ -5,7 +5,7 @@ from chatbot.core.auth import AuthManager
 from chatbot.core.config import Settings
 from chatbot.core.state import ConversationState
 from chatbot.db.db import Database
-from chatbot.ui.dashboard import AdminDashboard, load_kb_symptoms
+from chatbot.ui.dashboard import AdminDashboard, load_kb_symptoms, load_kb_symptoms_ko
 from chatbot.ui.gradio_app import ChatApp
 
 def build_pipeline(settings: Settings, db: Database):
@@ -23,9 +23,12 @@ def build_pipeline(settings: Settings, db: Database):
         from chatbot.rag.retriever import Retriever
 
         llm = LLMClient(settings)
+        retriever = Retriever.from_settings(settings, llm)
+        print("[app] 리랭커 모델을 미리 불러오는 중입니다 (처음 질문이 느려지지 않게)...")
+        retriever.warm_up()
         return RagPipeline(
             llm,
-            retriever=Retriever.from_settings(settings, llm),
+            retriever=retriever,
             safety=SafetyRules(),
             request_logger=RequestLogger(db),
             glossary=Glossary().load_glossary("data/glossary.csv"),
@@ -49,7 +52,7 @@ if __name__ == "__main__":
         settings=settings,
         auth=AuthManager(db, session_hours=settings.session_hours),
         conversation=ConversationState(db),
-        dashboard=AdminDashboard(db, load_kb_symptoms(settings.kb_dir)),
+        dashboard=AdminDashboard(db, load_kb_symptoms(settings.kb_dir), load_kb_symptoms_ko("data/kb_symptoms_ko.csv")),
         pipeline=build_pipeline(settings, db),
     )
     try:

@@ -48,8 +48,8 @@ def build_usage_tab(periods: list[str], default: str) -> UsageTab:
     with gr.Tab("운영 현황"):
         # 기간 표시 (Figma: 내용 맨 위 "최근 7일 · …"). 명세대로 기간을 고를 수 있게 기간 이름만 드롭다운으로 둠
         with gr.Row(elem_id="admin-period-row"):
-            period = gr.Dropdown(
-                choices=periods, value=default, show_label=False, container=False,
+            period = gr.Dropdown(   # filterable=False: 글자를 칠 수 없고 목록에서만 고름
+                choices=periods, value=default, show_label=False, container=False, filterable=False,
                 scale=0, min_width=0, elem_id="admin-period",
             )
             caption = gr.HTML(elem_classes=["adm-caption"])
@@ -149,15 +149,20 @@ def render_models(models) -> str:
 
 def render_top_symptoms(top_symptoms) -> str:
     """
-    자주 묻는 증상 Top 10 카드 (Figma: 순위 · 증상 · 질문 수 표)
+    자주 묻는 증상 Top 10 카드 (Figma: 순위 · 증상 · 질문 수 표). 한국어 증상이 있으면 그 아래 줄에 영어 원문을 작게 보임
 
     Returns: str (HTML)
     """
     if top_symptoms.empty:
         return _card("자주 묻는 증상 Top 10", f"<p class='adm-empty'>{NO_QUESTIONS}</p>")
+    originals = top_symptoms["원문"] if "원문" in top_symptoms else [""] * len(top_symptoms)
     rows = "".join(
-        f"<tr><td>{int(rank)}</td><td>{escape(str(symptom))}</td><td>{int(count):,}</td></tr>"
-        for rank, symptom, count in zip(top_symptoms["순위"], top_symptoms["증상"], top_symptoms["질문 수"])
+        f"<tr><td>{int(rank)}</td><td><span class='adm-symptom'>{escape(str(symptom))}</span>"
+        + (f"<span class='adm-symptom-original'>{escape(str(original))}</span>" if original else "")
+        + f"</td><td>{int(count):,}</td></tr>"
+        for rank, symptom, original, count in zip(
+            top_symptoms["순위"], top_symptoms["증상"], originals, top_symptoms["질문 수"]
+        )
     )
     table = (
         "<table class='adm-table'><colgroup><col class='adm-col-rank'><col><col class='adm-col-count'></colgroup>"

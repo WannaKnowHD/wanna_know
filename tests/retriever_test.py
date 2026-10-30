@@ -23,6 +23,8 @@ from chatbot.rag.retriever import (  # noqa: E402
     RRF_K,
     Retriever,
     _rerank_pool,
+    _to_hit,
+    active_index_paths,
     load_bm25_items,
     tokenize,
 )
@@ -281,3 +283,46 @@ def test_search_keeps_filter_when_nothing_found_anywhere(retriever):
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+def test_warm_up_loads_reranker_once(collection):
+    reranker = OverlapReranker()
+    Retriever(ITEMS, collection, fake_embed, reranker).warm_up()
+    assert reranker.calls == [("warm up", 1)]   # 모델을 한 번 불러오도록 짧은 문장으로 1번 호출
+    Retriever(ITEMS, collection, fake_embed, None).warm_up()   # 리랭커가 없으면 그냥 지나감
+
+
+def test_rerank_skips_cached_hits(collection):
+    reranker = OverlapReranker()
+    retriever = Retriever(ITEMS, collection, fake_embed, reranker)
+    hits = [_to_hit(item["id"], item["text"], item["metadata"], 0.0) for item in ITEMS[:3]]
+    cache = {}
+    first = retriever.rerank("벨트 사행", hits, cache)
+    second = retriever.rerank("벨트 사행", hits, cache)   # 모두 캐시에 있으니 리랭커를 다시 부르지 않음
+    assert reranker.calls == [("벨트 사행", 3)]
+    assert [h.id for h in first] == [h.id for h in second]
+    assert [h.score for h in first] == [h.score for h in second]
+
+
+def test_active_index_paths_without_manifest_uses_settings(tmp_path):
+    chroma, bm25 = tmp_path / "chroma_db", tmp_path / "chroma_db" / "bm25.pkl"
+    assert active_index_paths(chroma, bm25) == (chroma, bm25)   # 예전 방식 그대로 (하위 호환)
+
+
+def test_active_index_paths_reads_manifest(tmp_path):
+    version = tmp_path / "chroma_db_versions" / "abc"
+    version.mkdir(parents=True)
+    (version / "bm25.pkl").write_bytes(b"")
+    (tmp_path / "chroma_db_current.json").write_text(
+        '{"schema_version": 1, "chroma_dir": "chroma_db_versions/abc", "bm25_path": "chroma_db_versions/abc/bm25.pkl"}',
+        encoding="utf-8")
+    chroma, bm25 = active_index_paths(tmp_path / "chroma_db", tmp_path / "chroma_db" / "bm25.pkl")
+    assert chroma.resolve() == version.resolve()
+    assert bm25.resolve() == (version / "bm25.pkl").resolve()
+
+
+def test_active_index_paths_missing_version_raises(tmp_path):
+    (tmp_path / "chroma_db_current.json").write_text(
+        '{"chroma_dir": "chroma_db_versions/gone", "bm25_path": "chroma_db_versions/gone/bm25.pkl"}', encoding="utf-8")
+    with pytest.raises(FileNotFoundError):
+        active_index_paths(tmp_path / "chroma_db", tmp_path / "chroma_db" / "bm25.pkl")
