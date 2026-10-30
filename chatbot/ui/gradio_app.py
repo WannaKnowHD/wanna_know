@@ -22,6 +22,7 @@ from chatbot.ui.chat import (
     render_user_info,
     render_user_message,
 )
+from chatbot.ui.chat.chat_area import EXAMPLE_FULL_QUESTIONS
 from chatbot.ui.dashboard import ADMIN_CSS_PATH, AdminDashboard
 from chatbot.ui.login import (
     LOGIN_CSS_PATHS,
@@ -316,7 +317,8 @@ class ChatApp:
         state = state if state is not None else {}
         if not message or state.get("user") is None:   # 빈 질문·로그인 전에는 처리하지 않음
             return history, state
-        answer = self._answer(message, state)
+        # 예시 질문 버튼 글자와 같으면 챗봇에는 긴 질문으로 넘긴다 (화면 · 대화 기록은 짧은 글자 그대로)
+        answer = self._answer(EXAMPLE_FULL_QUESTIONS.get(message, message), state)
         history += [
             {"role": "user", "content": render_user_message(message)},
             {"role": "assistant", "content": self.render_answer(answer)},

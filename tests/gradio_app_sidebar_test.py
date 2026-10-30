@@ -27,6 +27,7 @@ from chatbot.ui.chat import (  # noqa: E402
     render_history,
     render_typing,
 )
+from chatbot.ui.chat.chat_area import EXAMPLE_FULL_QUESTIONS  # noqa: E402
 from chatbot.ui.chat.sidebar import BRAND  # noqa: E402
 from chatbot.ui.gradio_app import ChatApp  # noqa: E402
 
@@ -51,6 +52,35 @@ def test_example_chips_match_show_examples():
 @pytest.mark.parametrize("text", EXAMPLE_QUESTIONS)
 def test_example_questions_are_short(text):
     assert 0 < len(text) <= 20  # 칩 한 줄에 들어가는 길이
+
+
+# ---------------- 예시 질문 → 챗봇에 넘기는 질문 (10/30) ----------------
+class RecordingPipeline:
+    """answer 에 들어온 질문만 기록하는 가짜 파이프라인 (API 없이)"""
+
+    def __init__(self):
+        self.questions = []
+
+    def answer(self, question, state, input_type):
+        self.questions.append(question)
+        return fake_answer(question).model_dump(mode="json")
+
+
+def test_every_example_has_full_question():
+    assert set(EXAMPLE_FULL_QUESTIONS) == set(EXAMPLE_QUESTIONS)   # 버튼마다 넘길 질문이 있음
+    assert all(full.startswith("컨베이어") for full in EXAMPLE_FULL_QUESTIONS.values())
+
+
+def test_example_question_sends_full_question_but_shows_short(env):  # noqa: F811
+    app, _, _ = env
+    app._pipeline = RecordingPipeline()
+    _, state = app.on_login("e1", "pw-eng", {})
+    history, state = app.on_submit("벨트 가장자리가 닳았어요", [], state)
+    assert app._pipeline.questions == ["컨베이어 벨트 가장자리가 닳고 손상됐어요"]   # 챗봇에는 긴 질문
+    assert "벨트 가장자리가 닳았어요" in history[0]["content"] and "손상" not in history[0]["content"]   # 말풍선은 버튼 글자
+    assert app.show_history(state)[0]["question"] == "벨트 가장자리가 닳았어요"   # 대화 기록도 버튼 글자
+    app.on_submit("벨트가 안 돌아요", [], state)
+    assert app._pipeline.questions[-1] == "벨트가 안 돌아요"   # 버튼과 다른 질문은 그대로
 
 
 # ---------------- 상단 바 · 사이드바 제목 (10/30: 설비 표시 삭제) ----------------
