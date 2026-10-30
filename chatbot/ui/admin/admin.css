@@ -451,7 +451,7 @@
 
 #admin-period .wrap-inner {
   min-height: 1.75rem !important;
-  padding: 0 0.625rem 0 0.75rem !important;
+  padding: 0 0.625rem 0 1.375rem !important;   /* 왼쪽 = 0.75rem + 아이콘 폭만큼 더: 글자가 알약 가운데에 오게 */
   background: var(--admin-surface) !important;
   border: 1px solid var(--admin-border) !important;
   border-radius: 999px !important;
