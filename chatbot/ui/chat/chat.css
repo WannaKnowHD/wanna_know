@@ -1,7 +1,8 @@
 /* 채팅 화면 색 변수와 전체 배치 (Figma Page2 01~04 채팅 화면). 라이트 = 기본 시안, 다크 = "딥 포레스트" 시안 */
 /* 다크는 <body class="dark"> 일 때 (ui/login/theme.py 의 전환 버튼). 크기는 rem, 테두리 두께·알약 모양만 px */
-/* 1rem 은 창 너비에 따라 14~18px 로 변함 (채팅 화면이 있을 때만, 로그인·관리자 화면은 그대로 16px) */
-html:has(#chat-root) { font-size: clamp(14px, 0.9vw + 0.5rem, 18px); }
+/* 1rem 은 창 너비에 따라 14~18px 로 변함 (채팅 화면이 있을 때만, 로그인·관리자 화면은 그대로 16px).
+   Figma 시안 폭 1440px 에서 16px 이 되게 맞춤 (1280px 15.2px · 1920px 18px). 예전 값은 1440px 에서 이미 18px 이라 화면이 12.5% 컸음 */
+html:has(#chat-root) { font-size: clamp(14px, 0.5vw + 8.8px, 18px); }
 
 body {
   --wk-sb-bg: #0e1a15;

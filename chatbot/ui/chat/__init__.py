@@ -14,7 +14,7 @@ from chatbot.ui.chat.fake_answer import fake_answer, fake_photo_answer
 from chatbot.ui.chat.messages import (
     MESSAGES_CSS_PATH,
     render_answer_card,
-    render_equipment,
+    render_typing,
     render_user_message,
     render_welcome,
 )
@@ -34,6 +34,6 @@ __all__ = [
     "CHAT_CSS_PATHS", "EXAMPLE_QUESTIONS",
     "ChatScreen", "build_chat_screen", "ChatArea", "build_chat_area", "Sidebar", "build_sidebar",
     "history_key", "render_history", "render_user_info",
-    "render_answer_card", "render_equipment", "render_user_message", "render_welcome",
+    "render_answer_card", "render_typing", "render_user_message", "render_welcome",
     "fake_answer", "fake_photo_answer",
 ]

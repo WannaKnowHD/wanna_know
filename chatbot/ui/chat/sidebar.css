@@ -9,11 +9,13 @@
   flex-wrap: nowrap !important;   /* Gradio 기본 wrap 이면 대화 기록이 길 때 기록·푸터가 오른쪽 새 열로 밀려나 안 보임 */
   box-sizing: border-box;   /* padding 이 height 에 더해져 사이드바가 화면보다 커지지 않게 */
   overflow: hidden;
-  padding: 1.25rem 0.75rem !important;
+  padding: 1.25rem 1rem !important;   /* Figma 대화 기록창: 위아래 20px · 좌우 16px */
   gap: 0.75rem !important;
   border: none !important;
   border-radius: 0 !important;
 }
+/* gr.HTML 기본 안쪽 여백(12px) 제거: 제목 · 라벨 · 기록 · 사원 정보를 Figma 처럼 왼쪽 16px 에 맞춤 */
+#chat-sidebar .html-container { padding: 0 !important; }
 #chat-sidebar .block,
 #chat-sidebar .form {
   background: transparent !important;
@@ -27,14 +29,17 @@
 
 .sb-button {
   flex: 0 0 auto !important;   /* 세로 flex 안에서 버튼이 늘어나지 않게 */
-  height: auto !important;
+  height: 2.3125rem !important;   /* Figma Button/Secondary 높이 37px · 글자 Medium 14px */
+  min-height: 0 !important;
+  padding: 0 1rem !important;
+  font-weight: 500 !important;
   width: 100%;
   background: var(--wk-sb-item-bg) !important;
   color: var(--wk-sb-text) !important;
   border: 1px solid var(--wk-sb-border) !important;
   border-radius: 0.5rem !important;
   box-shadow: none !important;
-  font-size: 0.8125rem;
+  font-size: 0.875rem !important;
 }
 
 /* 세로 flex 안에서 요소가 늘어나 간격이 벌어지지 않게, 대화 기록만 남는 높이를 차지하고 길어지면 이 안에서만 스크롤 */
@@ -55,6 +60,7 @@
 .history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 .history-item {
   display: flex; flex-direction: column; gap: 0.125rem;
+  margin: 0 !important;   /* Gradio 기본 목록 여백을 걷어 내고 간격은 .history-list gap(12px)만 */
   padding: 0.625rem 0.75rem; border-radius: 0.5rem; cursor: pointer;
 }
 .history-item:hover,

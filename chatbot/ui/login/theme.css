@@ -12,7 +12,7 @@ body {
   --wk-input-border: #dce1dd;
   --wk-accent: #0f6b4a;
   --wk-accent-text: #ffffff;
-  --wk-tag-bg: #68bb1f;
+  --wk-tag-bg: rgba(104, 187, 31, 0.5);   /* Figma 태그: #68bb1f 50% */
   --wk-tag-text: #0e1a15;
   --wk-title: #16201b;
   --wk-error: #c0392b;

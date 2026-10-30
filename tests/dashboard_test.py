@@ -120,8 +120,8 @@ def test_not_found_list(logs):
     table = AdminDashboard().not_found_list(logs)
     assert list(table.columns) == NOT_FOUND_HEADERS
     assert list(table["No"]) == [5, 4]  # 최신순 (No 는 저장용, 화면에서는 숨김)
-    assert list(table["날짜"]) == ["10/27 09:00", "10/25 09:00"]   # Figma 07: 날짜 · 질문 · 설비 · 체크박스 2개
-    assert table.loc[0, "설비"] == "138-ACC" and table.loc[1, "설비"] == "미지정(전체)"
+    assert list(table["날짜"]) == ["10/27 09:00", "10/25 09:00"]   # Figma 07 라이트: 날짜 · 질문 · 체크박스 2개
+    assert "설비" not in table.columns
     assert bool(table.loc[0, "담당자 확인"]) and not table.loc[1, "담당자 확인"]  # kb_gaps 검토 상태
 
 
