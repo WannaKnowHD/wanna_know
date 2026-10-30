@@ -35,7 +35,7 @@ import math
 import re
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -234,7 +234,7 @@ def _build_pipeline(log: bool):
     from chatbot.rag.retriever import Retriever
     from chatbot.rag.validator import AnswerValidator
 
-    settings = Settings.load()
+    settings = _with_active_index(Settings.load())
     llm = LLMClient(settings)
     return RagPipeline(
         llm, retriever=Retriever.from_settings(settings, llm), validator=AnswerValidator(), safety=SafetyRules(),
@@ -242,6 +242,25 @@ def _build_pipeline(log: bool):
         glossary=Glossary().load_glossary(str(ROOT / "data" / "glossary.csv")), kb=load_kb(settings.kb_dir),
         log_source="eval",
     )
+
+
+def _with_active_index(settings):
+    """build_index.py 가 게시한 활성 색인(chroma_db_current.json)을 가리키는 Settings 를 돌려준다.
+
+    색인은 chroma_db_versions/{id}/ 에 버전별로 만들어지고, 어느 버전이 활성인지는 chroma_db_current.json 에 적힌다.
+    활성 정보 파일이 없으면(아직 build_index.py 를 안 돌린 경우) Settings 의 기본 경로(chroma_db/)를 그대로 쓴다.
+    """
+    manifest_path = settings.chroma_dir.with_name(f"{settings.chroma_dir.name}_current.json")
+    if not manifest_path.is_file():
+        print(f"[run_eval] {manifest_path.name} 없음 → 기본 색인 경로 사용: {settings.chroma_dir}")
+        return settings
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    base_dir = manifest_path.parent
+    chroma_dir, bm25_path = (base_dir / manifest[key] for key in ("chroma_dir", "bm25_path"))
+    if not chroma_dir.is_dir() or not bm25_path.is_file():
+        raise FileNotFoundError(f"{manifest_path.name} 가 가리키는 색인이 없습니다: {chroma_dir}, {bm25_path}")
+    print(f"[run_eval] 활성 색인: {chroma_dir.relative_to(base_dir).as_posix()}")
+    return replace(settings, chroma_dir=chroma_dir, bm25_path=bm25_path)
 
 
 def _request_logger(settings):
