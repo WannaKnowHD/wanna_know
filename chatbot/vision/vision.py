@@ -179,8 +179,10 @@ class DamageAnalyzer:
 
         돌려주는 것: {"label", "symptom_ko", "confidence", "retake"}
           - 모델이 증상 문장을 비워 보내면 damage_map.csv 의 대표 증상으로 채운다 (검색어가 비지 않게)
-          - retake=True : 그래도 증상 문장이 없음 → 화면에서 재촬영 요청
-                          (응답 형식이 깨졌거나, 문장도 없고 대표 증상도 없는 other 라벨일 때)
+          - retake=True : 라벨이 other 이거나 증상 문장이 없음 → 화면에서 재촬영 요청
+                          (응답 형식이 깨지면 other 로 본다). other 는 damage_map 에 대표 증상·KB 가 없고,
+                          모델이 "사진이 어두워서 확인할 수 없습니다"처럼 증상이 아닌 문장을 써 보내는 경우라 검색하지 않는다
+                          (통합 테스트 TS-I-06: 그 문장을 검색해 "정비 질문에만 답할 수 있어요" 안내가 나왔음)
           - confidence  : 모델이 적은 확신도. 판단에는 쓰지 않고 기록만 한다
         Returns: dict (label, symptom_ko, confidence)
         """
@@ -193,7 +195,7 @@ class DamageAnalyzer:
             reading = DamageResult.model_validate(result["parsed"])
         symptom = reading.symptom_ko.strip() or self.damage_map.get(reading.label, {}).get("symptom_ko", "")
         return {"label": reading.label, "symptom_ko": symptom, "confidence": reading.confidence,
-                "retake": not symptom}
+                "retake": reading.label == "other" or not symptom}
 
     def map_damage_to_kb(self, label: str):
         """
