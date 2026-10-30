@@ -12,7 +12,9 @@ from pydantic import ValidationError
 from chatbot.core.schemas import AnswerResponse, DamageResult, Equipment, ImageResult, NameplateResult
 from chatbot.core.state import ConversationState
 from chatbot.ui.chat import (
+    CHAT_ASSET_DIR,
     CHAT_CSS_PATHS,
+    PAGE_IMAGE_DIR,
     EXAMPLE_QUESTIONS,
     build_chat_screen,
     history_key,
@@ -84,8 +86,13 @@ class ChatApp:
 
     @staticmethod
     def launch_options() -> dict:
-        """app.py 가 launch(**ChatApp.launch_options()) 로 넘기는 값 (스타일 파일과 다크 모드 복원 스크립트)"""
-        return {"css_paths": [ADMIN_CSS_PATH, *LOGIN_CSS_PATHS, *CHAT_CSS_PATHS], "js": THEME_INIT_JS}
+        """app.py 가 launch(**ChatApp.launch_options()) 로 넘기는 값 (스타일 파일, 다크 모드 복원 스크립트,
+        화면이 /gradio_api/file= 로 읽는 폴더: 상단 바 로고 · 원문 보기 쪽 이미지)"""
+        return {
+            "css_paths": [ADMIN_CSS_PATH, *LOGIN_CSS_PATHS, *CHAT_CSS_PATHS],
+            "js": THEME_INIT_JS,
+            "allowed_paths": [str(CHAT_ASSET_DIR), str(PAGE_IMAGE_DIR)],
+        }
 
     def _screen(self, state: dict):
         """state 에 맞는 화면 상태를 만든다 (로그인 화면 / 채팅 화면 / 관리자 대시보드 중 하나만 보임).
@@ -431,8 +438,9 @@ class ChatApp:
         if match == "exact":
             state = self._conversation.set_equipment(state, model)
             equipment = Equipment(model=model.model_name, doc_ids=model.doc_ids, source="nameplate")
-            return reply("nameplate", f"명판에서 {model.model_name} 설비를 확인했습니다. "
-                                      f"이제부터 {model.model_name} 매뉴얼 기준으로 답변합니다.", equipment), state
+            # 카드 제목이 "명판에서 모델명 … 확인했습니다" (messages._notice_title, Figma 04) 라 본문은 다음 안내만
+            return reply("nameplate", f"이제부터 {model.model_name} 매뉴얼 기준으로 답변합니다. "
+                                      "대화 초기화를 누르면 전체 매뉴얼로 돌아갑니다.", equipment), state
         if match == "near":
             # 되묻기(다음 입력이 이 질문에 기대는 것)는 하지 않는다. 모델명을 넣어 질문하면 질문 이해 단계가 설비를 잡는다
             return reply("nameplate", f"명판을 {read['raw_text']}(으)로 읽었습니다. {model.model_name} 설비가 맞다면 "

@@ -53,9 +53,11 @@ def build_login_form() -> LoginForm:
             error = gr.HTML("", visible=False, elem_id="login-error")
             button = gr.Button("로그인", variant="primary", elem_id="login-submit")
             gr.HTML(LOGIN_NOTE_HTML)
-            theme_button = gr.Button(
-                "라이트 / 다크 전환", elem_classes=["theme-toggle"], size="sm", visible=THEME_TOGGLE_ENABLED
-            )
+        # Figma 로그인 카드에는 전환 버튼이 없어서 카드 밖(화면 오른쪽 위)에 둠
+        theme_button = gr.Button(
+            "라이트 / 다크 전환", elem_id="login-theme", elem_classes=["theme-toggle"], size="sm",
+            visible=THEME_TOGGLE_ENABLED,
+        )
     return LoginForm(root, employee, password, error, button, theme_button)
 
 

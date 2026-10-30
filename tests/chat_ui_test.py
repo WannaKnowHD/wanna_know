@@ -71,7 +71,7 @@ def test_answer_card_order_and_escape():
     assert positions == sorted(positions)             # 요약 → 안전 문구 → 원인·조치 → 그림 → 출처·원문
     assert "wk-cause" in html and "<ol class='wk-actions'>" in html and "원문 보기" in html
     evil = fake_answer("벨트").model_copy(update={"summary": "<img src=x onerror=alert(1)>"})
-    assert "<img" not in render_answer_card(evil)
+    assert "<img src=x" not in render_answer_card(evil)
 
 
 def test_answer_card_merges_duplicate_causes():
@@ -105,13 +105,44 @@ def test_answer_card_shows_table_and_figure_images(tmp_path):
     assert html.count("data:image/png;base64,") == 2
 
     text_source = source.model_copy(update={"chunk_type": "text"})          # 본문 근거에는 이미지를 넣지 않음
-    assert "<img" not in render_answer_card(base.model_copy(update={"sources": [text_source], "figures": []}))
+    assert "wk-image" not in render_answer_card(base.model_copy(update={"sources": [text_source], "figures": []}))
 
     missing = str(tmp_path / "none.png")
     broken = base.model_copy(update={"sources": [source.model_copy(update={"image_path": missing})],
                                      "figures": [figure.model_copy(update={"image_path": missing})]})
     html = render_answer_card(broken)
-    assert "<img" not in html and "이미지를 불러올 수 없습니다" in html and "원문 보기" in html
+    assert "wk-image" not in html and "이미지를 불러올 수 없습니다" in html and "원문 보기" in html
+
+
+def test_source_quote_first_then_page_toggle(tmp_path, monkeypatch):
+    """원문 보기: 출처 바로 아래 인용문 → 잘라 둔 표 이미지 → 쪽 전체 보기(누르면 확대). 쪽 이미지가 없으면 토글을 뺀다"""
+    import chatbot.ui.chat.messages as messages
+
+    image = tmp_path / "crop.png"
+    image.write_bytes(b"\x89PNG fake")
+    base = fake_answer("벨트")
+    source = base.sources[0].model_copy(update={"chunk_type": "table", "image_path": str(image)})
+    answer = base.model_copy(update={"sources": [source], "figures": []})
+
+    monkeypatch.setattr(messages, "page_image_url", lambda doc_id, page: f"/gradio_api/file=/pages/{doc_id}_p{page}.jpg")
+    html = render_answer_card(answer)
+    assert html.index("</summary><blockquote class='wk-quote'>") < html.index("wk-image") < html.index("wk-page")
+    assert f"p.{source.page} 전체 보기" in html and "class='wk-zoom'" in html and "<input type='checkbox'>" in html
+
+    monkeypatch.setattr(messages, "page_image_url", lambda doc_id, page: None)
+    assert "wk-page" not in render_answer_card(answer)
+
+
+@pytest.mark.parametrize(("page", "page_map", "expected"), [
+    (23, "1-19>21", 3),            # fenner_belt: 파일 1쪽 = 인쇄 21쪽
+    (57, "1-24>6;25-31>54", 28),   # preco_l_series 두 번째 구간
+    (7, "1-24>6;25-31>54", 2),
+    (7, "", 7),                    # page_map 이 없으면 그대로
+])
+def test_source_page_to_file_page(page, page_map, expected):
+    from chatbot.ui.chat.source_page import to_file_page
+
+    assert to_file_page(page, page_map) == expected
 
 
 def test_answer_card_safety_shows_source():
@@ -210,9 +241,38 @@ def test_chat_css_files_exist():
     assert ChatApp.launch_options()["css_paths"][-len(CHAT_CSS_PATHS):] == list(CHAT_CSS_PATHS)
 
 
-def test_theme_toggle_is_disabled_and_light_is_forced():
-    """다크 모드는 화면별로 구현하는 동안 꺼 둠 (ui/login/theme.py 의 THEME_TOGGLE_ENABLED). 켜면 이 테스트도 같이 고친다."""
-    from chatbot.ui.login.theme import THEME_INIT_JS, THEME_TOGGLE_ENABLED
+def test_theme_toggle_is_enabled_and_keeps_choice():
+    """10/30: 딥 포레스트 다크를 모든 화면에 맞춰 전환을 켬 (ui/login/theme.py 의 THEME_TOGGLE_ENABLED).
+    처음은 라이트, 고른 값은 localStorage 에 기억하고 Gradio 가 OS 설정으로 dark 를 바꿔도 고른 값으로 되돌림"""
+    from chatbot.ui.login.theme import THEME_INIT_JS, THEME_KEY, THEME_TOGGLE_ENABLED, THEME_TOGGLE_JS
 
-    assert THEME_TOGGLE_ENABLED is False
-    assert "classList.remove('dark')" in THEME_INIT_JS and "localStorage" not in THEME_INIT_JS
+    assert THEME_TOGGLE_ENABLED is True
+    assert f"localStorage.getItem('{THEME_KEY}')" in THEME_INIT_JS and "MutationObserver" in THEME_INIT_JS
+    assert f"localStorage.setItem('{THEME_KEY}'" in THEME_TOGGLE_JS
+
+
+def test_photo_notice_titles_and_retake_button():
+    """Figma 04: 명판으로 설비를 정하면 제목에 모델명, 사진 재촬영이면 확신도 + '다시 촬영'(사진 첨부 버튼을 누름)"""
+    from chatbot.core.schemas import AnswerResponse, DamageResult, Equipment, ImageResult
+
+    nameplate = AnswerResponse(status="nameplate", input_type="nameplate_photo", message="이제부터 CV-1200 매뉴얼 기준",
+                               equipment=Equipment(model="CV-1200", doc_ids=[], source="nameplate"))
+    html = render_answer_card(nameplate)
+    assert "명판에서 모델명 CV-1200을(를) 확인했습니다" in html and "wk-retake" not in html
+    damage = DamageResult(label="other", symptom_ko="", confidence=0.42)
+    retake = AnswerResponse(status="retake", input_type="damage_photo", message="다시 찍어 주세요",
+                            image=ImageResult(kind="belt_damage", confidence=0.9, damage=damage))
+    html = render_answer_card(retake)
+    assert "사진만으로 판단하기 어렵습니다 (확신도 0.42)" in html
+    assert "class='wk-retake'" in html and "#chat-image" in html
+
+
+def test_theme_buttons_are_shown():
+    import gradio as gr
+
+    from chatbot.ui.chat import build_chat_area
+    from chatbot.ui.login.login_form import build_login_form
+
+    with gr.Blocks():
+        area, login = build_chat_area(), build_login_form()
+    assert area.theme_button.visible is True and login.theme_button.visible is True
