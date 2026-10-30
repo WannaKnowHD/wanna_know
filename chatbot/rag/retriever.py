@@ -17,6 +17,7 @@ BM25 · 벡터(Chroma) 검색 → RRF(k=60) 결합 → 리랭커(bge-reranker-v2
 
 from __future__ import annotations
 
+import json
 import logging
 import pickle
 import re
@@ -43,6 +44,7 @@ CANDIDATE_K = 20  # BM25 · 벡터 검색마다 가져오는 후보 수
 RERANK_POOL_SIZE = 20  # 리랭커에 넣는 후보 수. 리랭킹이 느리면 줄인다 (기획서 14.2)
 TOP_K = 5
 RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
+RERANKER_MAX_LENGTH = 256  # (질문 + 문서) 토큰 상한. 512 → 256: CPU 리랭킹 시간 단축. 넘는 뒷부분은 잘림
 
 _WORD_PATTERN = re.compile(r"[a-z0-9]+|[가-힣]+")
 
@@ -75,6 +77,27 @@ def load_bm25_items(path: str | Path) -> list[dict]:
         return list(pickle.load(file))
 
 
+def active_index_paths(chroma_dir: str | Path, bm25_path: str | Path) -> tuple[Path, Path]:
+    """지금 쓸 색인의 (Chroma 폴더, BM25 파일).
+
+    build_index.py 는 새 색인을 {chroma_dir}_versions/<uuid>/ 에 만들고
+    {chroma_dir}_current.json 에 그 경로를 적는다 (index_storage.publish_index_version).
+    이 파일이 있으면 거기 적힌 버전을, 없으면 예전처럼 chroma_dir · bm25_path 를 그대로 쓴다.
+    파일은 있는데 가리키는 곳이 없으면 예전 색인으로 넘어가지 않고 오류를 낸다 (엉뚱한 색인으로 답하지 않게).
+    """
+    chroma_dir, bm25_path = Path(chroma_dir), Path(bm25_path)
+    target = chroma_dir.resolve()
+    manifest = target.with_name(f"{target.name}_current.json")
+    if not manifest.is_file():
+        return chroma_dir, bm25_path
+    info = json.loads(manifest.read_text(encoding="utf-8"))
+    active_chroma = manifest.parent / info["chroma_dir"]
+    active_bm25 = manifest.parent / info["bm25_path"]
+    if not active_chroma.is_dir() or not active_bm25.is_file():
+        raise FileNotFoundError(f"{manifest.name} 이 가리키는 색인이 없습니다: {active_chroma}")
+    return active_chroma, active_bm25
+
+
 class BgeReranker:
     """bge-reranker-v2-m3로 (질문, 문서) 쌍마다 0~1 관련도를 매긴다.
 
@@ -85,7 +108,7 @@ class BgeReranker:
     def __init__(
         self,
         model_name: str = RERANKER_MODEL,
-        max_length: int = 512,
+        max_length: int = RERANKER_MAX_LENGTH,
         batch_size: int = 16,
     ):
         self.model_name = model_name
@@ -151,14 +174,15 @@ class Retriever:
     def from_settings(cls, settings: Settings, llm: LLMClient) -> Retriever:
         """앱 시작 시 1번: 색인을 열고 리랭커를 준비한다."""
         try:
-            items = load_bm25_items(settings.bm25_path)
-            client = chromadb.PersistentClient(path=str(settings.chroma_dir))
+            chroma_dir, bm25_path = active_index_paths(settings.chroma_dir, settings.bm25_path)
+            items = load_bm25_items(bm25_path)
+            client = chromadb.PersistentClient(path=str(chroma_dir))
             collection = client.get_collection(COLLECTION_NAME)
         except Exception as error:
             raise RuntimeError(
-                f"검색 색인을 열 수 없습니다 ({settings.chroma_dir}, {settings.bm25_path}). "
-                "python build_index.py를 먼저 실행하세요"
+                f"검색 색인을 열 수 없습니다 ({error}). python build_index.py를 먼저 실행하세요"
             ) from error
+        logger.info("검색 색인: %s", chroma_dir)
         return cls(
             items=items,
             collection=collection,
@@ -179,13 +203,15 @@ class Retriever:
             return [], False
         embeddings = self._embed(queries)  # 검색어 2~3개를 한 번에 임베딩 (API 1번)
         condition, _ = self.apply_equipment_filter(equipment, None)
-        hits = self._search_once(queries, embeddings, condition, qtype)
+        # 필터를 풀고 다시 찾을 때 이미 점수를 매긴 후보는 리랭커에 다시 넣지 않는다
+        score_cache: dict[str, float] = {}
+        hits = self._search_once(queries, embeddings, condition, qtype, score_cache)
         if condition is None:
             return hits, False
         _, should_release = self.apply_equipment_filter(equipment, hits)
         if not should_release:
             return hits, False
-        unfiltered = self._search_once(queries, embeddings, None, qtype)
+        unfiltered = self._search_once(queries, embeddings, None, qtype, score_cache)
         if self.is_not_found(unfiltered):
             return hits, False
         logger.info("설비 필터 결과가 기준값 미달이라 필터 없이 다시 찾음: %s", equipment)
@@ -241,15 +267,21 @@ class Retriever:
         merged.sort(key=lambda hit: hit.score, reverse=True)
         return merged
 
-    def rerank(self, query: str, hits: list[Hit]):
+    def rerank(self, query: str, hits: list[Hit], cache: dict[str, float] | None = None):
         """
         리랭커(bge-reranker-v2-m3)로 후보를 다시 정렬
 
+        cache: {hit.id: 점수}. 같은 질문 안에서 이미 점수를 매긴 후보는 리랭커에 다시 넣지 않는다 (필터 해제 재검색용)
         Returns: list[Hit] (score는 리랭커 점수 0~1, 원래 점수는 metadata["rrf_score"])
         """
         if self._reranker is None or not hits:
             return list(hits)
-        scores = self._reranker.score(query, [hit.text for hit in hits])
+        cache = {} if cache is None else cache
+        todo = [hit for hit in hits if hit.id not in cache]
+        if todo:
+            scores = self._reranker.score(query, [hit.text for hit in todo])
+            cache.update(zip((hit.id for hit in todo), scores, strict=True))
+        scores = [cache[hit.id] for hit in hits]
         reranked = [
             replace(
                 hit,
@@ -290,6 +322,7 @@ class Retriever:
         embeddings: list[list[float]],
         condition: dict | None,
         qtype: str | None,
+        score_cache: dict[str, float] | None = None,
     ) -> list[Hit]:
         """검색어마다 BM25 · 벡터 순위를 만들어 RRF로 합치고 리랭킹한다."""
         ranked_lists = []
@@ -297,7 +330,7 @@ class Retriever:
             ranked_lists.append(self._bm25_ranked(query, CANDIDATE_K, condition))
             ranked_lists.append(self._vector_ranked(embedding, CANDIDATE_K, condition))
         pool = _rerank_pool(self.rrf_merge(ranked_lists), qtype, RERANK_POOL_SIZE)
-        return self.rerank(" ".join(queries), pool)[:TOP_K]
+        return self.rerank(" ".join(queries), pool, score_cache)[:TOP_K]
 
     def _bm25_ranked(self, query: str, k: int, condition: dict | None) -> list[Hit]:
         tokens = tokenize(query)
