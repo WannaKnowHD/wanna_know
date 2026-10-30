@@ -281,3 +281,10 @@ def test_search_keeps_filter_when_nothing_found_anywhere(retriever):
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+def test_warm_up_loads_reranker_once(collection):
+    reranker = OverlapReranker()
+    Retriever(ITEMS, collection, fake_embed, reranker).warm_up()
+    assert reranker.calls == [("warm up", 1)]   # 모델을 한 번 불러오도록 짧은 문장으로 1번 호출
+    Retriever(ITEMS, collection, fake_embed, None).warm_up()   # 리랭커가 없으면 그냥 지나감

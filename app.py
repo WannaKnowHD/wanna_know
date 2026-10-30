@@ -23,9 +23,12 @@ def build_pipeline(settings: Settings, db: Database):
         from chatbot.rag.retriever import Retriever
 
         llm = LLMClient(settings)
+        retriever = Retriever.from_settings(settings, llm)
+        print("[app] 리랭커 모델을 미리 불러오는 중입니다 (처음 질문이 느려지지 않게)...")
+        retriever.warm_up()
         return RagPipeline(
             llm,
-            retriever=Retriever.from_settings(settings, llm),
+            retriever=retriever,
             safety=SafetyRules(),
             request_logger=RequestLogger(db),
             glossary=Glossary().load_glossary("data/glossary.csv"),

@@ -191,6 +191,16 @@ class Retriever:
         logger.info("설비 필터 결과가 기준값 미달이라 필터 없이 다시 찾음: %s", equipment)
         return unfiltered, True
 
+    def warm_up(self):
+        """
+        리랭커 모델을 미리 불러옴 (앱 시작 때 1번). 첫 질문에서 모델 로딩 시간(이 PC 30초 이상)이 걸리지 않게 함.
+        리랭커가 없으면 아무것도 하지 않음
+
+        Returns: None
+        """
+        if self._reranker is not None:
+            self._reranker.score("warm up", ["warm up"])
+
     def bm25_search(
         self, query: str, k: int = CANDIDATE_K, equipment: dict | None = None
     ):
