@@ -45,7 +45,7 @@ MSG_NO_PIPELINE = "답변 기능을 아직 사용할 수 없습니다. 관리자
 MSG_ANSWER_ERROR = "답변을 만드는 중 문제가 생겼어요. 잠시 후 다시 질문해 주세요."     # RagPipeline.answer 밖에서 예외가 났을 때
 
 # ---- 사진 첨부 (on_image, WBS 3.7.5) ----
-IMAGE_MIN_CONFIDENCE = 0.6   # 사진 종류 판별 확신도가 이보다 낮으면 재촬영 (명판·손상 분석과 같은 기준)
+# 사진 확신도는 재촬영 판단에 쓰지 않고 응답(image.confidence)·로그에 기록만 한다 (vision.py NameplateReader 주석 참고)
 MSG_PHOTO_OTHER = "명판이나 손상 부위를 가까이 찍어 주세요."          # 기능명세서 I-01 문구
 MSG_PHOTO_ERROR = "사진을 분석하지 못했습니다. 잠시 후 다시 시도해 주세요."
 MSG_NAMEPLATE_RETAKE = "명판 글자가 잘 보이지 않습니다. 명판을 정면에서 가까이 다시 찍어 주세요."
@@ -356,7 +356,7 @@ class ChatApp:
 
     def on_image(self, image: bytes, history: list, state: dict):
         """
-        업로드한 사진을 입력 판별 후 명판이면 설비 설정(설비 표시), 손상 사진이면 답변 생성, 그 외·확신도 미달이면 재촬영 안내
+        업로드한 사진을 입력 판별 후 명판이면 설비 설정(설비 표시), 손상 사진이면 답변 생성, 그 외이면 재촬영 안내
 
         받는 것:
           image   : 사진 파일 내용 (bytes)
@@ -401,7 +401,7 @@ class ChatApp:
     def _analyze_photo(self, image, state):
         """사진 종류 판별 → 명판 / 손상 / 그 외로 나눔. Returns: (AnswerResponse, state)"""
         kind, confidence = self._vision()["router"].classify_image(image)
-        if kind == "other" or confidence < IMAGE_MIN_CONFIDENCE:
+        if kind == "other":
             return AnswerResponse(status="retake", input_type="other_photo", message=MSG_PHOTO_OTHER,
                                   image=ImageResult(kind=kind, confidence=confidence)), state
         if kind == "nameplate":
