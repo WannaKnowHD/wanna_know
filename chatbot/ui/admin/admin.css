@@ -478,7 +478,7 @@
   font-size: 0.75rem;
 }
 
-/* ── 카드 한 줄 (1행: 일별 · 입력 유형 · 설비 모델 3개, 2행: Top 10 하나). 간격 20px, 카드 높이는 내용만큼 ── */
+/* ── 카드 두 열 (1열: 일별 · 입력 유형 · 설비 모델 세로로, 2열: Top 10). 간격 20px, 카드 높이는 내용만큼 ── */
 #admin-root .adm-row {
   gap: 1.25rem !important;
   align-items: flex-start !important;
@@ -488,6 +488,14 @@
 #admin-root .adm-row > * {
   flex: 1 1 0 !important;
   min-width: 0 !important;
+}
+
+/* 열 안의 카드는 위에서 아래로 쌓고 간격 20px (1열: 일별 · 입력 유형 · 설비 모델) */
+#admin-root .adm-col {
+  gap: 1.25rem !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
 }
 
 .adm-card {
