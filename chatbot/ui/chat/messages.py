@@ -182,7 +182,7 @@ def _notice_title(answer: AnswerResponse) -> str:
 def render_answer_card(answer: AnswerResponse) -> str:
     """응답 한 건(schemas.AnswerResponse)을 답변 카드 HTML 로 바꿈. 응답 JSON(dict)은 호출하는 쪽이 먼저 검사해서 넘긴다.
 
-    answered 는 요약 → 안전 문구 → 원인·조치 → 그림 → 출처·원문 순서 (Figma 02).
+    answered 는 (사진 결과) → 요약 → 안전 문구 → 원인·조치 → 그림 → 출처·원문 순서 (Figma 02).
     그 밖의 status(못 찾음·재촬영 등)는 제목과 message 만 있는 안내 카드 (Figma 03·04).
     """
     if answer.status != "answered":
@@ -196,6 +196,9 @@ def render_answer_card(answer: AnswerResponse) -> str:
         )
 
     sections = []
+    if answer.message:
+        # 사진+질문을 함께 보냈을 때 사진 결과(설비 확인·재촬영 안내 등)를 답변 위에 한 줄로 (on_image). 텍스트 답변에는 message 가 없음
+        sections.append(_section("사진", f"<p class='wk-line'>{escape(answer.message)}</p>"))
     if answer.summary:
         sections.append(_section("요약", f"<p class='wk-line'>{escape(answer.summary)}</p>"))
     if answer.safety:
