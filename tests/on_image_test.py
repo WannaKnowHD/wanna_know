@@ -44,6 +44,9 @@ class FakeAnalyzer:
     def __init__(self, result):
         self.result = result
 
+    def map_damage_to_kb(self, label):
+        return {"edge_damage": ["TS-FENNERBELT-T01-18", "TS-FENNERBELT-T01-19"]}.get(label, [])
+
     def describe_damage(self, image):
         return {"label": "edge_damage", "symptom_ko": "벨트 가장자리가 닳고 찢어졌어요", "confidence": 0.9,
                 "retake": False, **self.result}
@@ -54,8 +57,9 @@ class FakePipeline:
         self.answer_value = answer
         self.calls = []
 
-    def answer(self, question, state, input_type):
+    def answer(self, question, state, input_type, kb_hints=None):
         self.calls.append((question, input_type))
+        self.kb_hints = kb_hints
         if self.answer_value is None:
             raise NotImplementedError("RagPipeline.answer")
         return self.answer_value
@@ -191,6 +195,7 @@ def test_damage_answer_from_pipeline():
     app, conversation = make_app("belt_damage", pipeline=pipeline)
     history, _ = run(app)
     assert pipeline.calls == [("벨트 가장자리가 닳고 찢어졌어요", "damage_photo")]   # 증상 문장으로 검색
+    assert pipeline.kb_hints == ["TS-FENNERBELT-T01-18", "TS-FENNERBELT-T01-19"]   # 손상 라벨의 KB 후보도 함께 (v3)
     saved = conversation.turns[0]
     assert saved["question"] == "(사진) 손상 부위"
     assert saved["answer"]["status"] == "answered"
