@@ -77,12 +77,12 @@ def test_events_hide_gradio_progress(env):  # noqa: F811
         assert shown.get(name) == "hidden", name
 
 
-# ---------------- 대화 초기화 (C-02) ----------------
+# ---------------- 새 대화 (C-02) ----------------
 def test_reset_conversation_keeps_user_and_clears_equipment():
     app = ChatApp()
-    state = app._conversation.set_equipment({"user": USER, "admin_mode": True}, ACC)
+    state = app._conversation.set_equipment({"user": USER, "admin_mode": True, "conversation_id": "c1"}, ACC)
     new_state = app.reset_conversation(state)
-    assert new_state["equipment"] is None
+    assert new_state["equipment"] is None and new_state["conversation_id"] is None   # 다음 질문부터 새 대화
     assert new_state["user"] == USER and new_state["admin_mode"] is True
     assert state["equipment"]["model_name"] == "138-ACC"  # 받은 dict 는 고치지 않음
 
@@ -109,16 +109,23 @@ NOW = datetime(2026, 10, 30, 9, 0)
 
 def test_render_history_items_are_clickable_and_show_time():
     rows = [
-        {"created_at": datetime(2026, 10, 30, 8, 47), "question": "<b>벨트</b>"},
-        {"created_at": datetime(2026, 10, 29, 16, 20), "question": "모터"},
-        {"created_at": "2026-10-27 09:13:00", "question": "체인"},
+        {"conversation_id": "c3", "created_at": datetime(2026, 10, 30, 8, 47), "question": "<b>벨트</b>"},
+        {"conversation_id": "c2", "created_at": datetime(2026, 10, 29, 16, 20), "question": "모터"},
+        {"conversation_id": "c1", "created_at": "2026-10-27 09:13:00", "question": "체인"},
     ]
     html = render_history(rows, now=NOW)
     assert html.count("class='history-item'") == 3 and "data-index='2'" in html
-    assert "data-key='2026-10-30 08:47:00|&lt;b&gt;벨트&lt;/b&gt;'" in html   # 저장 시각 + 질문 (escape)
+    assert "data-key='c3'" in html   # 대화 ID
     assert "오늘 08:47" in html and "어제 16:20" in html and "10/27 09:13" in html   # Figma 시각 표시
     assert "<b>벨트</b>" not in html and "&lt;b&gt;" in html
     assert render_history([]) == "<p class='sb-empty'>아직 대화 기록이 없습니다.</p>"
+
+
+def test_render_history_marks_active_conversation():
+    rows = [{"conversation_id": "c2", "created_at": NOW, "question": "모터"}, {"conversation_id": "c1", "created_at": NOW, "question": "벨트"}]
+    html = render_history(rows, now=NOW, active="c1")
+    assert html.count("is-active") == 1 and "history-item is-active' role='button' tabindex='0' data-index='1'" in html
+    assert "is-active" not in render_history(rows, now=NOW)
 
 
 def test_history_list_sends_click_with_index_and_time():
@@ -134,24 +141,32 @@ def save(conversation, state, question, answer=None):
     )
 
 
-def test_open_history_shows_question_and_answer(env):  # noqa: F811
+def test_open_history_shows_all_turns_and_resumes_conversation(env):  # noqa: F811
     app, _, conversation = env
     _, state = app.on_login("e1", "pw-eng", {})
-    for question in ("벨트가 미끄러져요", "모터가 너무 뜨거워요"):
+    for question in ("벨트가 미끄러져요", "더 자세히 알려줘요"):   # 같은 대화에서 이어서 질문
         state = save(conversation, state, question)
-    rows = app.show_history(state)                      # 최신순: 모터 → 벨트
-    messages = app.open_history(state, 1, history_key(rows[1]))
-    assert [m["role"] for m in messages] == ["user", "assistant"]
-    assert "벨트가 미끄러져요" in messages[0]["content"] and "wk-card" in messages[1]["content"]
+    belt_id = state["conversation_id"]
+    state = save(conversation, conversation.clear(state), "모터가 너무 뜨거워요")   # 새 대화
+    rows = app.show_history(state)                      # 마지막 활동이 최신인 순: 모터 → 벨트
+    assert [r["question"] for r in rows] == ["모터가 너무 뜨거워요", "벨트가 미끄러져요"]
+    messages, new_state = app.open_history(state, 1, history_key(rows[1]))
+    assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant"]
+    assert "벨트가 미끄러져요" in messages[0]["content"] and "더 자세히" in messages[2]["content"]
+    assert "wk-card" in messages[1]["content"]
+    assert new_state["conversation_id"] == belt_id      # 이어서 질문하면 이 대화에 쌓임
+    new_state = save(conversation, new_state, "세 번째 질문")
+    assert [len(r["turns"]) for r in app.show_history(new_state)] == [3, 1]   # 새 항목이 생기지 않고 벨트 대화에 쌓임
 
 
-def test_open_history_finds_moved_item_by_time(env):  # noqa: F811
+def test_open_history_finds_moved_item_by_key(env):  # noqa: F811
     app, _, conversation = env
     _, state = app.on_login("e1", "pw-eng", {})
     state = save(conversation, state, "벨트가 미끄러져요")
-    key = history_key(app.show_history(state)[0])     # 목록을 그릴 때는 0번 (같은 초에 저장돼도 질문으로 구분)
-    state = save(conversation, state, "모터가 너무 뜨거워요")   # 그사이 새 대화가 맨 위로 들어옴
-    assert "벨트가 미끄러져요" in app.open_history(state, 0, key)[0]["content"]
+    key = history_key(app.show_history(state)[0])     # 목록을 그릴 때는 0번
+    state = save(conversation, conversation.clear(state), "모터가 너무 뜨거워요")   # 그사이 새 대화가 맨 위로 들어옴
+    messages, _ = app.open_history(state, 0, key)
+    assert "벨트가 미끄러져요" in messages[0]["content"]
 
 
 def test_open_history_not_found_or_logged_out(env):  # noqa: F811
@@ -166,8 +181,8 @@ def test_open_history_not_found_or_logged_out(env):  # noqa: F811
 def test_open_history_broken_answer_shows_notice(env):  # noqa: F811
     app, db, _ = env
     _, state = app.on_login("e1", "pw-eng", {})
-    db.history.append({"id": 1, "employee_id": "e1", "created_at": NOW, "question": "깨진 답변", "answer": "{"})
-    messages = app.open_history(state, 0, history_key({"created_at": NOW, "question": "깨진 답변"}))
+    db.history.append({"id": 1, "employee_id": "e1", "conversation_id": "c1", "created_at": NOW, "question": "깨진 답변", "answer": "{"})
+    messages, _ = app.open_history(state, 0, "c1")
     assert "깨진 답변" in messages[0]["content"] and "답변 형식이 올바르지 않아" in messages[1]["content"]
 
 

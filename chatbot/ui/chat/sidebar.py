@@ -1,4 +1,4 @@
-"""채팅 화면 왼쪽 사이드바 (Figma 01 대화 기록창: 제목·대화 초기화·대화 기록·사용자 정보·로그아웃, 스타일: sidebar.css)"""
+"""채팅 화면 왼쪽 사이드바 (Figma 01 대화 기록창: 제목·새 대화·대화 기록·사용자 정보·로그아웃, 스타일: sidebar.css)"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -100,11 +100,11 @@ class Sidebar:
 
 
 def build_sidebar() -> Sidebar:
-    """사이드바 구성: 서비스 이름, 대화 초기화 버튼, 대화 기록 목록, (아래쪽) 사원 정보와 로그아웃 버튼, 오른쪽 경계의 너비 조절 손잡이"""
+    """사이드바 구성: 서비스 이름, 새 대화 버튼, 대화 기록 목록, (아래쪽) 사원 정보와 로그아웃 버튼, 오른쪽 경계의 너비 조절 손잡이"""
     with gr.Column(scale=0, min_width=260, elem_id="chat-sidebar") as root:
         gr.HTML("", elem_id="sb-resize-host", js_on_load=SIDEBAR_RESIZE_JS)   # 손잡이만 붙이고 자신은 숨김 (sidebar.css)
         gr.HTML(f"<span class='sb-brand'>{BRAND}</span>")
-        reset_button = gr.Button("대화 초기화", elem_classes=["sb-button"])
+        reset_button = gr.Button("새 대화", elem_classes=["sb-button"])
         gr.HTML("<span class='sb-label'>대화 기록</span>")
         history = gr.HTML("", elem_id="sb-history", js_on_load=HISTORY_CLICK_JS)   # 항목을 누르면 history.click
         with gr.Row(elem_id="sb-footer"):
@@ -125,15 +125,16 @@ def render_user_info(user: User | None) -> str:
     )
 
 
-def render_history(rows: list[dict], now: datetime | None = None) -> str:
-    """과거 대화 기록(load_history 결과, 최신순)을 사이드바 목록 HTML 로 바꿈 (Figma Sidebar/Item: 질문 + "오늘 10:47").
+def render_history(rows: list[dict], now: datetime | None = None, active: str | None = None) -> str:
+    """과거 대화(load_conversations 결과, 마지막 활동이 최신인 순)를 사이드바 목록 HTML 로 바꿈 (Figma Sidebar/Item: 첫 질문 + "오늘 10:47").
     항목마다 순서(data-index)와 history_key(data-key)를 달아 두고, 누르면 ChatApp.open_history 가 그 대화를 채팅창에 보여 줌.
-    질문 원문은 escape 해서 넣음"""
+    active 는 지금 열려 있는 대화의 ID (그 항목을 강조). 질문 원문은 escape 해서 넣음"""
     if not rows:
         return "<p class='sb-empty'>아직 대화 기록이 없습니다.</p>"
     now = now or datetime.now()
     items = "".join(
-        f"<li class='history-item' role='button' tabindex='0' data-index='{i}' data-key='{escape(history_key(r))}'>"
+        f"<li class='history-item{' is-active' if active and history_key(r) == active else ''}' role='button' tabindex='0' "
+        f"data-index='{i}' data-key='{escape(history_key(r))}'>"
         f"<span class='history-question'>{escape(str(r.get('question', '')))}</span>"
         f"<span class='history-time'>{escape(format_history_time(r.get('created_at'), now))}</span>"
         "</li>"
@@ -143,9 +144,8 @@ def render_history(rows: list[dict], now: datetime | None = None) -> str:
 
 
 def history_key(row: dict) -> str:
-    """대화 기록 한 건을 가리키는 값 (저장 시각 + 질문). 목록을 그린 뒤 새 대화가 저장돼 순서가 밀려도 이 값으로 다시 찾음.
-    저장 시각은 초 단위(MySQL DATETIME)라 시각만으로는 겹칠 수 있어 질문도 붙임"""
-    return f"{row.get('created_at', '')}|{row.get('question', '')}"
+    """대화 하나를 가리키는 값 (대화 ID). 목록을 그린 뒤 새 질문이 저장돼 순서가 밀려도 이 값으로 다시 찾음"""
+    return str(row.get("conversation_id") or "")
 
 
 def format_history_time(value, now: datetime) -> str:

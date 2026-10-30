@@ -289,7 +289,7 @@ class NameplateResult(StrictModel):
 class DamageResult(StrictModel):
     label: Literal["hole", "tear", "joint", "edge_damage", "other"]
     symptom_ko: str
-    confidence: float = Field(ge=0, le=1)  # 0.6 미만이면 재촬영
+    confidence: float = Field(ge=0, le=1)  # 기록용 (재촬영은 증상 문장이 없을 때)
 
 
 class ImageResult(StrictModel):
