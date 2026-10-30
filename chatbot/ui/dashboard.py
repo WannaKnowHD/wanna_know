@@ -14,7 +14,7 @@ import gradio as gr
 import pandas as pd
 
 from chatbot.ui.admin.kb_files import KB_STATUS_COLUMNS, KbIndexer, load_documents
-from chatbot.ui.admin.kb_tab import build_kb_tab
+from chatbot.ui.admin.kb_tab import build_kb_tab, render_kb_header, render_kb_table
 from chatbot.ui.admin.quality_tab import (
     KB_UPDATE_NEEDED,
     REVIEWED,
@@ -357,7 +357,7 @@ class AdminDashboard:
 
     def _wire_kb_tab(self, kb_tab, state: gr.State):
         """
-        KB 현황 탭(kb_tab.KbTab)의 탭 열기 · 목록 새로고침 · PDF 추가하기 · 자동 갱신을 kb_status · add_pdf 에 연결.
+        KB 현황 탭(kb_tab.KbTab)의 탭 열기 · PDF 추가하기 · 자동 갱신을 kb_status · add_pdf 에 연결.
         build_admin_tab 에서 1번 부른다. 모든 동작은 state["user"] 로 관리자 권한을 다시 확인
 
         Returns: None
@@ -365,13 +365,14 @@ class AdminDashboard:
         indexer = self._kb_indexer()
 
         def status_values() -> tuple:
-            # 목록 · 자동 갱신(색인 중일 때만 켜짐) · 추가 버튼(색인 중이면 잠금) · 진행 안내
+            # 제목줄(건수 · 진행 안내) · 표 · 자동 갱신(색인 중일 때만 켜짐) · 추가 버튼(색인 중이면 잠금)
             running = indexer.is_running()
+            table = self._kb_table()
             return (
-                self._kb_table(),
+                render_kb_header(len(table), indexer.progress_text()),
+                render_kb_table(table),
                 gr.Timer(active=running),
-                gr.Button(interactive=not running),
-                indexer.progress_text(),
+                gr.UploadButton(interactive=not running),
             )
 
         def show(current: dict | None):
@@ -384,35 +385,18 @@ class AdminDashboard:
             return status_values()
 
         def add(path: str | None, current: dict | None):
+            # "PDF 추가하기"로 파일을 고르면 바로 실행. 결과 안내는 표를 가리지 않게 알림(토스트)으로
             user = _require_admin(current)
-            if not path:
-                return (
-                    "추가할 PDF 를 먼저 선택해 주세요.",
-                    *status_values(),
-                    gr.skip(),
-                )
-            file = Path(path)
-            started, message = self.add_pdf(file.read_bytes(), file.name, user)
-            return (
-                message if started else f"⚠️ {message}",
-                *status_values(),
-                None if started else gr.skip(),
-            )
+            if path:
+                file = Path(path)
+                started, message = self.add_pdf(file.read_bytes(), file.name, user)
+                (gr.Info if started else gr.Warning)(message)
+            return status_values()
 
-        status_outputs = [
-            kb_tab.table,
-            kb_tab.timer,
-            kb_tab.add_button,
-            kb_tab.progress,
-        ]
-        kb_tab.tab.select(fn=show, inputs=[state], outputs=status_outputs)
-        kb_tab.refresh_button.click(fn=show, inputs=[state], outputs=status_outputs)
-        kb_tab.timer.tick(fn=show, inputs=[state], outputs=status_outputs)
-        kb_tab.add_button.click(
-            fn=add,
-            inputs=[kb_tab.upload, state],
-            outputs=[kb_tab.message, *status_outputs, kb_tab.upload],
-        )
+        outputs = kb_tab.outputs()
+        kb_tab.tab.select(fn=show, inputs=[state], outputs=outputs)
+        kb_tab.timer.tick(fn=show, inputs=[state], outputs=outputs)
+        kb_tab.add_button.upload(fn=add, inputs=[kb_tab.add_button, state], outputs=outputs)
 
     def build_admin_tab(self, state: gr.State | None = None):
         """

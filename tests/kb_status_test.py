@@ -25,6 +25,7 @@ from chatbot.ui.admin import kb_files  # noqa: E402
 from chatbot.ui.admin.kb_files import (  # noqa: E402
     KB_STATUS_COLUMNS, KbIndexer, PdfCheckError, check_pdf, load_documents, safe_filename,
 )
+from chatbot.ui.admin.kb_tab import render_kb_header, render_kb_table  # noqa: E402
 from chatbot.ui.dashboard import AdminDashboard  # noqa: E402
 
 ADMIN = User(employee_id="A0001", name="관리자", role="admin")
@@ -80,7 +81,7 @@ def env(tmp_path):
         "doc_id,file,original_file,maker\nhytrol_138acc,hytrol_138acc_p1-27.pdf,2007_583_138acc.pdf,Hytrol\n",
         encoding="utf-8")
     settings = SimpleNamespace(raw_dir=raw, admin_add_dir=raw / "admin_add", interim_dir=tmp_path / "interim",
-                               bm25_path=tmp_path / "index" / "bm25.pkl")
+                               chroma_dir=tmp_path / "index", bm25_path=tmp_path / "index" / "bm25.pkl")
     return settings
 
 
@@ -214,8 +215,9 @@ def test_kb_status_table(env):
     KbIndexer(env, fake_index({"hytrol_138acc": 7}), run_in_thread=False).add_pdf(db, make_pdf(), "belt.pdf")
     table = AdminDashboard(db).kb_status(db)
     assert list(table.columns) == KB_STATUS_COLUMNS
-    assert list(table["구분"]) == ["초기 문서", "관리자 추가"]       # 초기 문서가 먼저
+    assert list(table["파일명"]) == ["hytrol_138acc_p1-27.pdf", "belt.pdf"]   # 초기 문서가 먼저
     assert set(table["상태"]) == {"완료"}
+    assert all(len(t) == 11 and t[2] == "/" for t in table["색인 일시"])     # MM/DD HH:MM
 
 
 def test_empty_kb_status(env):
@@ -268,6 +270,20 @@ def test_fill_missing_documents_from_current_index(env):
     assert indexer.fill_missing_documents(db) == 0                       # 두 번째부터는 채울 것 없음
 
 
+def test_counts_come_from_active_index_version(env):
+    # build_index.py 는 새 색인을 버전 폴더에 만들고 {chroma_dir}_current.json 에 적는다 → 그 버전에서 세야 함
+    fake_index({"hytrol_138acc": 3})(env)                                # 예전 위치(settings.bm25_path)의 오래된 색인
+    version = env.chroma_dir.parent / "index_versions" / "v2"
+    version.mkdir(parents=True)
+    fake_index({"hytrol_138acc": 9})(SimpleNamespace(bm25_path=version / "bm25.pkl"))
+    (env.chroma_dir.parent / "index_current.json").write_text(
+        '{"chroma_dir": "index_versions/v2", "bm25_path": "index_versions/v2/bm25.pkl"}', encoding="utf-8")
+    assert kb_files.active_bm25_path(env) == version / "bm25.pkl"
+    db = DocumentsDb()
+    KbIndexer(env, fake_index({}), run_in_thread=False).fill_missing_documents(db)
+    assert db.rows()["hytrol_138acc"]["chunks"] == 9
+
+
 def test_fill_skipped_while_indexing(env):
     indexer = KbIndexer(env, fake_index({}), run_in_thread=False)
     indexer._running = True
@@ -288,4 +304,42 @@ def test_progress_text_only_while_indexing(env):
 def test_indexing_status_label(env):
     db = DocumentsDb()
     db.execute("INSERT INTO documents (doc_id, filename, source, status) VALUES ('a', 'a.pdf', 'admin_add', 'indexing')")
-    assert list(load_documents(db)["상태"]) == ["⏳ 색인 중"]
+    assert list(load_documents(db)["상태"]) == ["색인 중"]
+
+
+# ------------------------------------------------------------------------------
+# 화면 HTML (Figma 08: 제목줄 · 표 · 상태 배지)
+# ------------------------------------------------------------------------------
+def test_header_shows_count_and_progress():
+    html = render_kb_header(5, "⏳ 'a.pdf' 색인 중… (14:20 시작, 3분째)")
+    assert "현재 청킹된 PDF 5건" in html and "kb-progress" in html and "a.pdf" in html
+    assert "kb-progress" not in render_kb_header(3)                      # 색인 중이 아니면 안내 없음
+
+
+def test_table_badges_reason_and_dash():
+    db = DocumentsDb()
+    db.execute("INSERT INTO documents (doc_id, filename, source, pages, chunks, status, indexed_at) VALUES "
+               "('a', 'a.pdf', 'initial', 27, 388, 'done', '2026-10-20 09:00:00')")
+    db.execute("INSERT INTO documents (doc_id, filename, source, pages, status) VALUES "
+               "('b', 'b.pdf', 'admin_add', 48, 'indexing')")
+    db.execute("INSERT INTO documents (doc_id, filename, source, pages, status, error_message) VALUES "
+               "('c', 'c.pdf', 'admin_add', 12, 'failed', '색인 실패: 이유')")
+    html = render_kb_table(load_documents(db))
+    for header in ("파일명", "페이지", "청크 수", "색인 일시", "상태"):
+        assert f">{header}</th>" in html
+    assert "kb-badge-done'>완료" in html and "kb-badge-running'>색인 중" in html and "kb-badge-failed'>실패" in html
+    assert "10/20 09:00" in html and "<td>388</td>" in html
+    assert "<td>—</td>" in html                                           # 청크 수가 없는 행
+    assert "kb-reason'>색인 실패: 이유" in html                            # 실패 사유는 파일명 아래
+
+
+def test_table_escapes_file_names():
+    db = DocumentsDb()
+    db.execute("INSERT INTO documents (doc_id, filename, source, status) VALUES "
+               "('x', '<b>x</b>.pdf', 'admin_add', 'done')")
+    html = render_kb_table(load_documents(db))
+    assert "<b>x</b>" not in html and "&lt;b&gt;x&lt;/b&gt;.pdf" in html
+
+
+def test_empty_table_message():
+    assert "아직 색인된 PDF 가 없습니다" in render_kb_table(load_documents(DocumentsDb()))
