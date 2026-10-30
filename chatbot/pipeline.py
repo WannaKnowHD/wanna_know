@@ -58,6 +58,10 @@ _KB_ADAPTER = TypeAdapter(KbEntry)
 MSG_NOT_FOUND = "자료에서 확인되지 않습니다. 설비 모델명(예: 138-ACC)과 증상을 구체적으로 적거나, 명판 사진을 올려 주세요."
 MSG_OUT_OF_SCOPE = "컨베이어 정비(고장 원인·점검 주기·조정 절차)에 관한 질문에만 답할 수 있어요."
 MSG_ERROR = "답변을 만드는 중 문제가 생겼어요. 잠시 후 다시 질문해 주세요."
+# 생성 답이 검사에서 떨어졌을 때 다시 요청하며 붙이는 말 (무엇을 고칠지 알려 줘야 같은 답이 반복되지 않음)
+RETRY_NOT_KOREAN = ("원인(cause)·조치(actions)·요약(summary)에 영어 문장이 있습니다. 영어 원문을 그대로 쓰지 말고 "
+                    "모두 한국어 문장으로 옮겨서 같은 JSON 형식으로 다시 답하세요. id 와 quote 는 바꾸지 마세요.")
+RETRY_BAD_FORMAT = "답이 정해진 JSON 형식에 맞지 않습니다. 다섯 칸(not_found · summary · causes · actions · sources)을 모두 채워 다시 답하세요."
 
 @lru_cache(maxsize=1)
 def _encoding():
@@ -230,8 +234,11 @@ class RagPipeline:
 
     
     def _generate_checked(self, messages: list[dict], trace: dict) -> dict | None:
-        """generate → 형식·한국어 검사. 틀리면 1회 다시 요청, 또 틀리면 None (→ 확인되지 않음)"""
-        for _ in range(2):
+        """generate → 형식·한국어 검사. 틀리면 무엇이 틀렸는지 알려 주고 1회 다시 요청, 또 틀리면 None (→ 확인되지 않음)
+
+        같은 messages 를 temperature 0 으로 다시 보내면 같은 답이 나오므로, 첫 답과 고칠 점을 대화에 붙여서 다시 묻는다.
+        """
+        for attempt in range(2):
             result = self.generate(messages)
             parsed = result.get("parsed")
             if self.validator.validate_schema(parsed):
@@ -239,7 +246,13 @@ class RagPipeline:
                     return parsed
                 if self.validator.check_language(parsed):
                     return parsed
+                feedback = RETRY_NOT_KOREAN
+            else:
+                feedback = RETRY_BAD_FORMAT
             trace["schema_retries"] = 1
+            if attempt == 0:
+                messages = [*messages, {"role": "assistant", "content": result.get("text") or ""},
+                            {"role": "user", "content": feedback}]
         return None
 
     def _not_found(self, input_type: str, info: QueryInfo, equipment, trace: dict, message: str,
