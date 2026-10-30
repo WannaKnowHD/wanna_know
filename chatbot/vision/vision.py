@@ -76,8 +76,9 @@ class NameplateReading(BaseModel):
 class NameplateReader:
     """명판 사진 → 모델명 판독 → models.csv 모델과 매칭 (담당: 김민재)"""
 
-    # 이 확신도 미만이면 재촬영 요청. 손상 분석(I-03)과 같은 기준이라 사용자 안내가 일관된다
-    MIN_CONFIDENCE = 0.6
+    # 확신도(confidence)는 재촬영 판단에 쓰지 않고 응답·로그에 기록만 한다.
+    #   모델이 스스로 적는 값이라 흐린 사진·틀린 판독에도 0.9 이상이 나와(실측) 기준으로 믿을 수 없기 때문.
+    #   판단은 확인할 수 있는 조건(모델명을 읽었는가, models.csv 와 일치하는가)으로 한다.
     # 정리할 때 빼는 글자: 공백, 하이픈, 점, OCR 에서 자주 나오는 긴 대시(– —)·밑줄
     MODEL_SEPARATORS = re.compile(r"[\s\-.–—_]+")
 
@@ -90,7 +91,8 @@ class NameplateReader:
 
         돌려주는 것: {"raw_text", "serial", "maker", "confidence", "retake"}
           - raw_text 는 명판에 적힌 그대로 ("138 ACC"). 표기 정리는 normalize_model 이 한다
-          - retake=True : 모델명을 못 읽었거나 확신도가 MIN_CONFIDENCE 미만 → 화면에서 재촬영 요청
+          - retake=True : 모델명을 못 읽음(빈 값·응답 형식 깨짐) → 화면에서 재촬영 요청
+          - confidence  : 모델이 적은 확신도. 판단에는 쓰지 않고 기록만 한다
         Returns: dict
         """
         result = self.llm_client.vision(image=image, prompt=NAMEPLATE, json_schema=NameplateReading)
@@ -100,9 +102,8 @@ class NameplateReader:
         else:
             reading = NameplateReading.model_validate(result["parsed"])
         raw_text = (reading.raw_text or "").strip() or None
-        retake = raw_text is None or reading.confidence < self.MIN_CONFIDENCE
         return {"raw_text": raw_text, "serial": reading.serial, "maker": reading.maker,
-                "confidence": reading.confidence, "retake": retake}
+                "confidence": reading.confidence, "retake": raw_text is None}
 
     def normalize_model(self, text: str):
         """
@@ -152,8 +153,7 @@ class NameplateReader:
 class DamageAnalyzer:
     """손상 사진 → 라벨·증상 문장 → damage_map.csv 의 KB 후보 (담당: 김민재)"""
 
-    # 이 확신도 미만이면 재촬영 요청 (기능 I-03). 명판 판독과 같은 기준
-    MIN_CONFIDENCE = 0.6
+    # 확신도는 명판 판독과 같은 이유로 기록만 하고, 재촬영은 "검색할 증상 문장이 없음"으로 판단한다
 
     def __init__(self, llm_client: LLMClient, damage_map_path: str = "data/damage_map.csv"):
         """
@@ -174,24 +174,26 @@ class DamageAnalyzer:
 
     def describe_damage(self, image: bytes):
         """
-        손상 사진을 라벨(hole / tear / joint / edge_damage / other)과 증상 문장으로 변환. 확신도 0.6 이상이면 KB
-        검색·답변, 0.6 미만이면 재촬영 요청
+        손상 사진을 라벨(hole / tear / joint / edge_damage / other)과 증상 문장으로 변환. 증상 문장이 있으면 KB
+        검색·답변, 없으면 재촬영 요청
 
         돌려주는 것: {"label", "symptom_ko", "confidence", "retake"}
-          - retake=True : 확신도가 MIN_CONFIDENCE 미만이거나 응답 형식이 깨짐 → 화면에서 재촬영 요청
           - 모델이 증상 문장을 비워 보내면 damage_map.csv 의 대표 증상으로 채운다 (검색어가 비지 않게)
+          - retake=True : 그래도 증상 문장이 없음 → 화면에서 재촬영 요청
+                          (응답 형식이 깨졌거나, 문장도 없고 대표 증상도 없는 other 라벨일 때)
+          - confidence  : 모델이 적은 확신도. 판단에는 쓰지 않고 기록만 한다
         Returns: dict (label, symptom_ko, confidence)
         """
         # 결과 형식은 응답 스키마의 DamageResult 그대로 (라벨 5개 중 하나·확신도 0~1)
         result = self.llm_client.vision(image=image, prompt=DAMAGE, json_schema=DamageResult)
         if result["parsed"] is None:
-            # 형식이 깨진 응답은 믿을 수 없으므로 "모르겠음"(other, 확신도 0)으로 보고 재촬영을 요청한다
+            # 형식이 깨진 응답은 믿을 수 없으므로 "모르겠음"(other, 문장 없음)으로 보고 재촬영을 요청한다
             reading = DamageResult(label="other", symptom_ko="", confidence=0.0)
         else:
             reading = DamageResult.model_validate(result["parsed"])
         symptom = reading.symptom_ko.strip() or self.damage_map.get(reading.label, {}).get("symptom_ko", "")
         return {"label": reading.label, "symptom_ko": symptom, "confidence": reading.confidence,
-                "retake": reading.confidence < self.MIN_CONFIDENCE}
+                "retake": not symptom}
 
     def map_damage_to_kb(self, label: str):
         """

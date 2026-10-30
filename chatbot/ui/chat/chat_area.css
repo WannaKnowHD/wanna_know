@@ -78,7 +78,7 @@
 
 /* gr.Chatbot 기본 모양을 걷어 내고 Figma 말풍선으로 맞춤 (Gradio 6 클래스: .bubble-wrap · .message.user · .message.bot) */
 #chat-messages .bubble-wrap { background: transparent !important; }
-#chat-messages .icon-button-wrapper { display: none !important; }   /* 휴지통(대화 지우기): 지우기는 사이드바 '대화 초기화'로만 */
+#chat-messages .icon-button-wrapper { display: none !important; }   /* 휴지통(대화 지우기): 지우기는 사이드바 '새 대화'로만 */
 #chat-messages .message.user {
   padding: 0.625rem 1rem !important;   /* Figma 말풍선: 위아래 10px · 좌우 16px */
   background: var(--wk-bubble-bg) !important;

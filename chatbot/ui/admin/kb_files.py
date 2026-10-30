@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 MAX_PDF_BYTES = 50 * 1024 * 1024   # 이보다 큰 PDF 는 받지 않음 (색인 시간·비전 API 비용)
-MIN_TEXT_CHARS = 200               # PDF 전체 글자 수가 이보다 적으면 스캔본(글자 없는 PDF)으로 봄
+MIN_TEXT_CHARS = 200               # PDF 전체 글자 수가 이보다 적으면 스캔본(글자 없는 PDF) 또는 깨진 PDF 로 봄
 MAX_FILENAME_CHARS = 120           # documents.filename 은 255자지만 Windows 경로 길이를 생각해 짧게
 MAX_ERROR_CHARS = 255              # documents.error_message 길이
 # 지금 색인에 없는 PDF 를 목록에 채울 때 남기는 사유
@@ -109,7 +109,9 @@ def check_pdf(data: bytes, filename: str) -> tuple[str, int]:
         except Exception as error:
             raise PdfCheckError("PDF 파일이 깨져서 글자를 읽을 수 없습니다. 원본 파일을 다시 받아 주세요.") from error
         if text_chars < MIN_TEXT_CHARS:
-            raise PdfCheckError("글자를 읽을 수 없는 PDF(스캔본)입니다. 글자가 들어 있는 PDF 를 올려 주세요.")
+            # 중간이 잘린 PDF 도 PyMuPDF 가 복구해서 열면 글자가 거의 없어 여기서 걸린다 → 두 경우를 함께 안내
+            raise PdfCheckError("글자를 읽을 수 없는 PDF 입니다. (스캔본이거나 파일이 깨짐) "
+                                "글자가 들어 있는 원본 PDF 를 올려 주세요.")
         return name, doc.page_count
     finally:
         doc.close()
@@ -320,13 +322,13 @@ class KbIndexer:
         """색인 중이면 화면에 보일 진행 안내(어떤 PDF · 언제 시작 · 몇 분째), 아니면 빈 글자.
 
         받는 것: 없음
-        돌려주는 것: Markdown 글자
+        돌려주는 것: 일반 글자 (KB 현황 제목줄이 HTML 로 escape 해서 넣으므로 Markdown 기호를 쓰지 않음)
         """
         started_at = self._started_at
         if not self._running or started_at is None:
             return ""
         minutes = int((datetime.now() - started_at).total_seconds() // 60)
-        return (f"⏳ **'{self._job_name}' 색인 중…** ({started_at:%H:%M} 시작, {minutes}분째) "
+        return (f"⏳ '{self._job_name}' 색인 중… ({started_at:%H:%M} 시작, {minutes}분째) "
                 "끝날 때까지 다른 PDF 는 추가할 수 없습니다. 그동안 챗봇은 기존 매뉴얼로 답합니다.")
 
     def add_pdf(self, db: Database, data: bytes, filename: str) -> tuple[bool, str]:

@@ -1,18 +1,21 @@
 """사용자별 대화 상태 (gr.State에 보관, 전역 변수 사용 금지)
 
 state 는 Gradio 가 사용자마다 따로 들고 있는 dict 하나다. 들어 있는 칸:
-    user        : User | None   로그인한 사원 (set_user). 대화 초기화해도 남음
+    user        : User | None   로그인한 사원 (set_user). 새 대화를 시작해도 남음
     admin_mode  : bool          관리자 대시보드 모드 (ChatApp.change_admin_mode 가 바꿈)
     equipment   : dict | None   명판으로 정한 설비 {"model_name", "aliases", "doc_ids"} (set_equipment)
                                 → pipeline.understand_question · Retriever.search(equipment=...) 가 그대로 읽음
+    conversation_id : str | None  지금 이어 가는 대화(스레드)의 ID. 첫 질문을 저장할 때 만들어지고(save_history),
+                                대화 기록 항목을 열면 그 대화로 바뀌며(resume), 새 대화를 시작하면 비워진다(clear)
 
 화면에 보이는 채팅 내용은 Gradio 채팅창(gr.Chatbot)이 따로 들고 있다 (on_submit 의 history 인자).
 그래서 state 에는 넣지 않고, 화면은 ChatApp 이 채팅창에 [] 를 돌려줘서 지운다.
 대화 기록은 MySQL chat_history 에 저장(save_history)하고, 로그창은 load_history 로 불러온다.
-대화 초기화·로그아웃해도 DB 기록은 남는다.
+새 대화·로그아웃해도 DB 기록은 남는다. 같은 conversation_id 의 질문·답변은 하나의 대화로 묶여 사이드바에 항목 하나로 보인다(load_conversations).
 """
 from __future__ import annotations
 
+import uuid
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -21,11 +24,12 @@ if TYPE_CHECKING:
 
 MAX_HISTORY = 100   # load_history 한 번에 불러오는 최대 개수
 DEFAULT_HISTORY = 20   # limit 을 주지 않거나 숫자가 아닐 때
+MAX_CONVERSATION_ROWS = 1000   # load_conversations 가 대화로 묶기 위해 읽는 최대 기록(질문·답변 한 쌍) 수
 
 
 def new_state() -> dict:
     """처음 접속했을 때(로그인 전)의 빈 대화 상태"""
-    return {"user": None, "admin_mode": False, "equipment": None}
+    return {"user": None, "admin_mode": False, "equipment": None, "conversation_id": None}
 
 
 class ConversationState:
@@ -60,7 +64,7 @@ class ConversationState:
     def set_user(self, state: dict, user: User):
         """
         로그인에 성공한 사원 정보(사원번호, 이름, 권한)를 대화 상태(gr.State, 서버 메모리)에 저장. 권한은 DB에서 읽은 값만 사용. 대화
-        기록 구분에 사용하며, 대화 초기화 시에도 유지
+        기록 구분에 사용하며, 새 대화를 시작해도 유지
 
         Returns: dict
         """
@@ -71,18 +75,30 @@ class ConversationState:
 
     def clear(self, state: dict):
         """
-        대화 초기화 버튼 처리: 설비 필터를 비우고 화면의 대화 내용을 지워 전체 매뉴얼 검색으로 되돌림 (reset_conversation에서 호출)
+        새 대화 버튼 처리: 설비 필터를 비우고 대화 ID 를 비워 다음 질문부터 새 대화로 저장되게 함 (reset_conversation에서 호출)
 
         Returns: dict
         """
         state = {**new_state(), **(state or {})}
         state["equipment"] = None
+        state["conversation_id"] = None
         return state                      # user · admin_mode 는 그대로. 화면 채팅은 ChatApp 이 지움
+
+    def resume(self, state: dict, conversation_id: str):
+        """
+        대화 기록 항목을 열 때: 그 대화를 이어 가도록 대화 ID 를 바꾸고, 다른 대화의 설비 필터는 비움
+
+        Returns: dict
+        """
+        state = {**new_state(), **(state or {})}
+        state["conversation_id"] = conversation_id or None
+        state["equipment"] = None
+        return state
 
     def save_history(self, state: dict, turn: dict):
         """
-        질문·답변 한 쌍을 화면의 대화 기록(로그창)에 추가하고, MySQL에 사원번호별로 저장. 로그아웃 후 다시 로그인해도 볼 수 있음
-        (화면 채팅창은 Gradio 가 들고 있으므로 여기서는 MySQL chat_history 에만 저장)
+        질문·답변 한 쌍을 MySQL에 사원번호별로 저장. 지금 대화(state["conversation_id"])에 붙이고, 없으면 새 대화 ID 를 만들어 돌려주는
+        state 에 담음. 로그아웃 후 다시 로그인해도 볼 수 있음 (화면 채팅창은 Gradio 가 들고 있으므로 여기서는 chat_history 에만 저장)
 
         turn = {"question": str, "answer": dict (응답 JSON)}
         Returns: dict
@@ -96,11 +112,13 @@ class ConversationState:
         user = state.get("user")
         if not question or user is None:  # 빈 질문·로그인 전에는 저장하지 않음
             return state
+        if not state.get("conversation_id"):
+            state["conversation_id"] = uuid.uuid4().hex   # 첫 질문 → 새 대화
         if self._db is not None:
             try:
                 self._db.execute(
-                    "INSERT INTO chat_history (employee_id, question, answer) VALUES (%s, %s, %s)",
-                    (user.employee_id, question, answer),
+                    "INSERT INTO chat_history (employee_id, conversation_id, question, answer) VALUES (%s, %s, %s, %s)",
+                    (user.employee_id, state["conversation_id"], question, answer),
                 )
             except Exception as e:  # noqa: BLE001 — DB 저장이 실패해도 채팅은 계속. 사원번호는 출력하지 않음
                 print(f"[state] 대화 기록 저장 실패: {type(e).__name__}: {e}")
@@ -119,7 +137,7 @@ class ConversationState:
         """
         로그인한 사원의 과거 대화 기록을 MySQL에서 최신순으로 불러옴 (로그창 출력용)
 
-        Returns: list[dict]  [{"created_at", "question", "answer"}, ...]
+        Returns: list[dict]  [{"conversation_id", "created_at", "question", "answer"}, ...]
         """
         employee_id = (employee_id or "").strip()
         if self._db is None or not employee_id:
@@ -130,11 +148,37 @@ class ConversationState:
             limit = DEFAULT_HISTORY
         try:
             rows = self._db.fetch(
-                "SELECT created_at, question, answer FROM chat_history "
+                "SELECT conversation_id, created_at, question, answer FROM chat_history "
                 "WHERE employee_id = %s ORDER BY created_at DESC, id DESC LIMIT %s",
                 (employee_id, limit),
             )
         except Exception as e:  # noqa: BLE001 — 조회 실패해도 화면은 계속
             print(f"[state] 대화 기록 조회 실패: {type(e).__name__}: {e}")
             return []
-        return [{"created_at": r["created_at"], "question": r["question"], "answer": r["answer"]} for r in rows]
+        return [
+            {"conversation_id": r["conversation_id"], "created_at": r["created_at"], "question": r["question"], "answer": r["answer"]}
+            for r in rows
+        ]
+
+    def load_conversations(self, employee_id: str, limit: int = DEFAULT_HISTORY):
+        """
+        로그인한 사원의 과거 대화를 대화(스레드) 단위로 묶어 마지막 활동이 최신인 순서로 불러옴 (사이드바 대화 기록용)
+
+        Returns: list[dict]  [{"conversation_id", "created_at" (마지막 질문 시각), "question" (첫 질문 = 제목),
+                               "turns": [{"created_at", "question", "answer"}, ... 오래된 순]}, ...]
+        """
+        try:
+            limit = max(1, min(int(limit), MAX_HISTORY))
+        except (TypeError, ValueError):
+            limit = DEFAULT_HISTORY
+        rows = self.load_history(employee_id, MAX_CONVERSATION_ROWS)   # 최신순
+        conversations: dict[str, dict] = {}
+        for row in rows:
+            conv = conversations.setdefault(
+                row["conversation_id"], {"conversation_id": row["conversation_id"], "created_at": row["created_at"], "turns": []}
+            )
+            conv["turns"].insert(0, {"created_at": row["created_at"], "question": row["question"], "answer": row["answer"]})
+        result = list(conversations.values())[:limit]   # dict 는 넣은 순서(= 마지막 활동이 최신인 순)를 지킴
+        for conv in result:
+            conv["question"] = conv["turns"][0]["question"]
+        return result

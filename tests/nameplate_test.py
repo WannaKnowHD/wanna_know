@@ -92,8 +92,13 @@ def test_read_nameplate():
     assert image == b"img" and "nameplate" in prompt and schema.__name__ == "NameplateReading"
 
 
+def test_read_nameplate_low_confidence_is_only_recorded():
+    # 확신도는 판단에 쓰지 않음: 모델명을 읽었으면 낮아도 재촬영하지 않고 값만 남긴다 (매칭은 match_model 이 판단)
+    result = reader({"raw_text": "138-ACC", "serial": None, "maker": None, "confidence": 0.4}).read_nameplate(b"img")
+    assert result["retake"] is False and result["confidence"] == 0.4
+
+
 @pytest.mark.parametrize("parsed", [
-    {"raw_text": "138-ACC", "serial": None, "maker": None, "confidence": 0.4},   # 확신도 낮음
     {"raw_text": None, "serial": "978747", "maker": "Hytrol", "confidence": 0.9},  # 모델명 못 읽음
     {"raw_text": "  ", "serial": None, "maker": None, "confidence": 0.9},         # 빈 글자
     None,                                                                         # 형식이 깨진 응답

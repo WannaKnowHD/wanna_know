@@ -27,22 +27,22 @@ class FakeDb(AuthFakeDb):
 
     def __init__(self):
         super().__init__()
-        self.history = []   # {"id", "employee_id", "created_at", "question", "answer"}
+        self.history = []   # {"id", "employee_id", "conversation_id", "created_at", "question", "answer"}
 
     def fetch(self, sql, params=()):
         if "FROM chat_history" in sql:
             self._check()
             rows = [r for r in self.history if r["employee_id"] == params[0]]
             rows.sort(key=lambda r: (r["created_at"], r["id"]), reverse=True)
-            return [{k: r[k] for k in ("created_at", "question", "answer")} for r in rows[: params[1]]]
+            return [{k: r[k] for k in ("conversation_id", "created_at", "question", "answer")} for r in rows[: params[1]]]
         return super().fetch(sql, params)
 
     def execute(self, sql, params=()):
         if sql.startswith("INSERT INTO chat_history"):
             self._check()
             self.history.append(
-                {"id": len(self.history) + 1, "employee_id": params[0], "created_at": datetime.now(),
-                 "question": params[1], "answer": params[2]}
+                {"id": len(self.history) + 1, "employee_id": params[0], "conversation_id": params[1],
+                 "created_at": datetime.now(), "question": params[2], "answer": params[3]}
             )
             return len(self.history)
         return super().execute(sql, params)
@@ -176,8 +176,9 @@ def test_save_history_survives_db_error(env):
 
 # ---------------- 화면 ----------------
 def test_render_history_escapes_html():
-    html = render_history([{"created_at": datetime(2026, 1, 2, 3, 4), "question": "<script>x</script>"}])
-    assert "<script>" not in html and "&lt;script&gt;" in html and "2026-01-02 03:04" in html
+    html = render_history([{"conversation_id": "c1", "created_at": datetime(2026, 1, 2, 3, 4), "question": "<script>x</script>"}],
+                          now=datetime(2026, 1, 2, 9, 0))
+    assert "<script>" not in html and "&lt;script&gt;" in html and "오늘 03:04" in html
     assert "대화 기록이 없습니다" in render_history([])
 
 
