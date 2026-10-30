@@ -56,6 +56,9 @@ class FakePipeline:
 
     def answer(self, question, state, input_type):
         self.calls.append((question, input_type))
+        self.equipment = (state.get("equipment") or {}).get("model_name")   # 답할 때 어떤 설비 기준이었는지
+        if isinstance(self.answer_value, Exception):
+            raise self.answer_value
         if self.answer_value is None:
             raise NotImplementedError("RagPipeline.answer")
         return self.answer_value
@@ -75,17 +78,19 @@ class RecordingState(ConversationState):
 
 def make_app(kind="nameplate", read=None, damage=None, pipeline=None, confidence=0.95):
     conversation = RecordingState()
-    app = ChatApp(conversation=conversation)
+    pipeline = pipeline or FakePipeline()
+    # 앱의 질문 답변(_answer)과 손상 사진 검색이 같은 파이프라인을 쓰게 (실제 앱도 같은 객체)
+    app = ChatApp(conversation=conversation, pipeline=pipeline)
     app._vision_parts = {
         "router": FakeRouter(kind, confidence), "reader": FakeReader(read or {"raw_text": "138-ACC"}),
-        "analyzer": FakeAnalyzer(damage or {}), "models": MODELS, "pipeline": pipeline or FakePipeline(),
+        "analyzer": FakeAnalyzer(damage or {}), "models": MODELS, "pipeline": pipeline,
     }
     return app, conversation
 
 
-def run(app, state=None):
+def run(app, state=None, question=""):
     state = {"user": USER, "admin_mode": False, "equipment": None} if state is None else state
-    return app.on_image(b"img", [{"role": "user", "content": "이전 대화"}], state)
+    return app.on_image(b"img", [{"role": "user", "content": "이전 대화"}], state, question)
 
 
 def last_card(history):
@@ -211,3 +216,76 @@ def test_damage_retake():
     history, _ = run(app)
     assert MSG_DAMAGE_RETAKE in last_card(history)
     assert pipeline.calls == []                   # 재촬영이면 검색·답변을 만들지 않음
+
+
+# ------------------------------------------------------------------------------
+# 사진 + 질문을 함께 보냄 → 둘 다 반영한 답변 카드 1개
+# ------------------------------------------------------------------------------
+QUESTION = "벨트가 미끄러져요"
+
+
+def test_nameplate_with_question_answers_with_that_equipment():
+    pipeline = FakePipeline(answered())
+    app, conversation = make_app(read={"raw_text": "138 ACC"}, pipeline=pipeline)
+    history, state = run(app, question=QUESTION)
+    assert pipeline.calls == [(QUESTION, "nameplate_photo")]
+    assert pipeline.equipment == "138-ACC"                        # 명판으로 설비를 정한 뒤 그 기준으로 답함
+    assert len(history) == 2                                      # 이전 대화 + 카드 1개
+    card = last_card(history)
+    assert "138-ACC 설비를 확인했습니다" in card and "가장자리 마모는" in card   # 사진 결과 줄 + 답변
+    saved = conversation.turns[0]
+    assert len(conversation.turns) == 1 and saved["question"] == f"(사진) 명판 {QUESTION}"
+    assert saved["answer"]["status"] == "answered" and saved["answer"]["input_type"] == "nameplate_photo"
+    assert saved["answer"]["image"]["nameplate"]["match"] == "exact"
+
+
+def test_damage_with_question_searches_both_once():
+    pipeline = FakePipeline(answered())
+    app, conversation = make_app("belt_damage", pipeline=pipeline)
+    run(app, question="이거 왜 이래요?")
+    assert pipeline.calls == [("이거 왜 이래요? (사진: 벨트 가장자리가 닳고 찢어졌어요)", "damage_photo")]
+    saved = conversation.turns[0]
+    assert saved["question"] == "(사진) 손상 부위 이거 왜 이래요?" and saved["answer"]["message"] is None
+
+
+@pytest.mark.parametrize("kind, read, damage, note", [
+    ("other", None, None, MSG_PHOTO_OTHER),                                          # 그 외 사진
+    ("nameplate", {"raw_text": None, "confidence": 0.0, "retake": True}, None, MSG_NAMEPLATE_RETAKE),
+    ("belt_damage", None, {"label": "other", "symptom_ko": "", "retake": True}, MSG_DAMAGE_RETAKE),
+])
+def test_photo_failed_still_answers_question(kind, read, damage, note):
+    """사진 처리가 안 돼도 입력한 질문은 답하고, 사진 안내는 같은 카드 맨 위에"""
+    pipeline = FakePipeline(answered())
+    app, conversation = make_app(kind, read=read, damage=damage, pipeline=pipeline)
+    history, state = run(app, question=QUESTION)
+    assert [q for q, _ in pipeline.calls] == [QUESTION] and state["equipment"] is None
+    answer = conversation.turns[0]["answer"]
+    assert answer["status"] == "answered" and answer["message"] == note
+    assert note in last_card(history)
+
+
+def test_vision_error_still_answers_question():
+    pipeline = FakePipeline(answered())
+    app, conversation = make_app(pipeline=pipeline)
+    app._vision_parts["router"].result = RuntimeError("API down")
+    history, _ = run(app, question=QUESTION)
+    assert pipeline.calls == [(QUESTION, "other_photo")]
+    assert conversation.turns[0]["answer"]["message"] == MSG_PHOTO_ERROR
+
+
+def test_question_not_found_joins_both_notices():
+    """질문 답이 확인되지 않음이면 사진 결과와 안내 문구를 이어서 안내 카드 1개로"""
+    not_found = {"status": "not_found", "input_type": "text", "message": "자료에서 확인되지 않습니다."}
+    app, conversation = make_app(read={"raw_text": "MB-200-400-WD"}, pipeline=FakePipeline(not_found))
+    history, _ = run(app, question=QUESTION)
+    message = conversation.turns[0]["answer"]["message"]
+    assert "목록에 없습니다" in message and message.endswith("자료에서 확인되지 않습니다.")
+    assert conversation.turns[0]["answer"]["status"] == "not_found"
+
+
+def test_without_question_keeps_photo_only_behavior():
+    pipeline = FakePipeline(answered())
+    app, conversation = make_app(read={"raw_text": "138 ACC"}, pipeline=pipeline)
+    run(app, question="   ")
+    assert pipeline.calls == []                                  # 빈 질문이면 명판 결과 카드만
+    assert conversation.turns[0]["question"] == "(사진) 명판"

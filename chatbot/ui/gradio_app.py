@@ -209,7 +209,8 @@ class ChatApp:
                     shown = list(pending["history"]) + [{"role": "user", "content": {"path": pending["image"]}}]
                     if pending["message"]:
                         shown.append({"role": "user", "content": render_user_message(pending["message"])})
-                    history, new_state = self.on_image(Path(pending["image"]).read_bytes(), shown, current)
+                    history, new_state = self.on_image(Path(pending["image"]).read_bytes(), shown, current,
+                                                       pending["message"])   # 함께 입력한 질문도 답변에 반영
                 else:
                     history, new_state = self.on_submit(pending["message"], pending["history"], current)
                 # 방금 저장한 대화가 사이드바 대화 기록 맨 위에 보이게 다시 그림
@@ -357,30 +358,51 @@ class ChatApp:
             print(f"[gradio_app]   message={raw.get('message')!r} error={trace.get('error')} "
                   f"queries_en={trace.get('queries_en')} hits={[(h.get('id'), h.get('score')) for h in trace.get('hits') or []]}")
 
-    def on_image(self, image: bytes, history: list, state: dict):
+    def on_image(self, image: bytes, history: list, state: dict, question: str = ""):
         """
-        업로드한 사진을 입력 판별 후 명판이면 설비 설정(설비 표시), 손상 사진이면 답변 생성, 그 외이면 재촬영 안내
+        업로드한 사진을 입력 판별 후 명판이면 설비 설정(설비 표시), 손상 사진이면 답변 생성, 그 외이면 재촬영 안내.
+        사진과 질문을 함께 보내면 둘 다 반영한 답변 카드 1개를 만든다
 
         받는 것:
-          image   : 사진 파일 내용 (bytes)
-          history : 채팅창 기록 (Gradio messages). 사진 말풍선은 화면(build_ui)이 붙이고, 여기서는 답변 카드만 붙인다
-          state   : 대화 상태. 명판이 models.csv 모델과 정확히 맞을 때만 state["equipment"] 를 바꾼다
+          image    : 사진 파일 내용 (bytes)
+          history  : 채팅창 기록 (Gradio messages). 사진·질문 말풍선은 화면(build_ui)이 붙이고, 여기서는 답변 카드만 붙인다
+          state    : 대화 상태. 명판이 models.csv 모델과 정확히 맞을 때만 state["equipment"] 를 바꾼다
+          question : 사진과 함께 입력한 질문 (없으면 "")
+            - 손상 사진 : "질문 (사진: 증상 문장)" 한 문장으로 검색한다 (사진과 질문이 같은 손상에 대한 것이므로)
+            - 그 밖     : 사진을 먼저 처리하고(명판이면 설비 설정) 질문에 답한 뒤, 사진 결과를 답변 카드 맨 위 줄에 넣는다
+                          사진 처리가 실패해도 질문은 답한다 (입력한 질문을 버리지 않게)
+            한 번에 보낸 사진·질문은 하나의 요청이라 "질문은 매번 독립적으로 처리" 규칙과 맞다 (이전 대화는 쓰지 않음)
         결과는 응답 스키마(AnswerResponse)로 만들어 render_answer 로 그린다 (텍스트 답변과 같은 카드 모양).
         Returns: list, dict
         """
         history = list(history or [])
         state = state if state is not None else {}
+        question = (question or "").strip()
         if not image or state.get("user") is None:   # 빈 사진·로그인 전에는 처리하지 않음 (on_submit 과 같은 규칙)
             return history, state
         try:
-            answer, state = self._analyze_photo(image, state)
+            answer, state, question_used = self._analyze_photo(image, state, question)
         except Exception as e:  # 비전 API 오류 등: 화면이 멈추지 않고 안내 카드만 보여 줌
             print(f"[gradio_app] 사진 분석 실패: {type(e).__name__}: {e}")
-            answer = AnswerResponse(status="error", input_type="other_photo", message=MSG_PHOTO_ERROR)
+            answer, question_used = AnswerResponse(status="error", input_type="other_photo", message=MSG_PHOTO_ERROR), False
+        if question and not question_used:
+            # 사진 처리 뒤의 state 로 답한다 → 명판이 정확히 맞았으면 그 설비 매뉴얼 기준 답변
+            answer = self._with_photo_note(answer, self._answer(question, state, answer.input_type))
         history.append({"role": "assistant", "content": self.render_answer(answer)})
-        turn = {"question": PHOTO_QUESTIONS[answer.input_type], "answer": answer.model_dump(mode="json")}
+        label = PHOTO_QUESTIONS[answer.input_type]
+        turn = {"question": f"{label} {question}" if question else label, "answer": answer.model_dump(mode="json")}
         state = self._conversation.save_history(state, turn)
         return history, state
+
+    @staticmethod
+    def _with_photo_note(photo: AnswerResponse, answer: AnswerResponse) -> AnswerResponse:
+        """사진 결과 + 질문 답변 → 카드 1개. 사진 결과 문구는 message 로 넘겨 답변 카드 맨 위 "사진" 줄에 보이게 한다.
+
+        질문 답변이 확인되지 않음·오류 같은 안내 카드면 두 문구를 이어서 한 안내로 보여 준다.
+        image(판독·분석 결과)와 input_type 은 사진 쪽 값을 남겨 대화 기록·로그에서 사진 요청으로 보이게 한다.
+        """
+        message = " ".join(m for m in (photo.message, answer.message) if m) or None
+        return answer.model_copy(update={"input_type": photo.input_type, "image": photo.image, "message": message})
 
     def _vision(self):
         """사진 처리에 쓰는 객체를 처음 사진이 올 때 한 번 만든다 (on_image 전용).
@@ -401,15 +423,19 @@ class ChatApp:
             }
         return self._vision_parts
 
-    def _analyze_photo(self, image, state):
-        """사진 종류 판별 → 명판 / 손상 / 그 외로 나눔. Returns: (AnswerResponse, state)"""
+    def _analyze_photo(self, image, state, question=""):
+        """사진 종류 판별 → 명판 / 손상 / 그 외로 나눔.
+
+        Returns: (AnswerResponse, state, 질문을 이미 답에 썼는지). 손상 사진을 검색까지 했을 때만 True
+        """
         kind, confidence = self._vision()["router"].classify_image(image)
         if kind == "other":
             return AnswerResponse(status="retake", input_type="other_photo", message=MSG_PHOTO_OTHER,
-                                  image=ImageResult(kind=kind, confidence=confidence)), state
+                                  image=ImageResult(kind=kind, confidence=confidence)), state, False
         if kind == "nameplate":
-            return self._nameplate_answer(image, confidence, state)
-        return self._damage_answer(image, confidence, state)
+            return *self._nameplate_answer(image, confidence, state), False
+        answer, state = self._damage_answer(image, confidence, state, question)
+        return answer, state, answer.status != "retake"
 
     def _nameplate_answer(self, image, confidence, state):
         """명판 판독 → models.csv 매칭. 정확히 맞을 때만 설비를 설정한다. Returns: (AnswerResponse, state)"""
@@ -449,8 +475,8 @@ class ChatApp:
                  if reader._one_char_apart(target, reader.normalize_model(key))}
         return len(names) >= 2
 
-    def _damage_answer(self, image, confidence, state):
-        """손상 분석 → 증상 문장으로 RagPipeline.answer. Returns: (AnswerResponse, state)"""
+    def _damage_answer(self, image, confidence, state, question=""):
+        """손상 분석 → 증상 문장(질문이 있으면 "질문 (사진: 증상 문장)")으로 RagPipeline.answer. Returns: (AnswerResponse, state)"""
         parts = self._vision()
         damage = parts["analyzer"].describe_damage(image)
         image_result = ImageResult(kind="belt_damage", confidence=confidence, damage=DamageResult(
@@ -460,7 +486,9 @@ class ChatApp:
                                   image=image_result), state
         try:
             # 증상 문장을 질문처럼 검색한다. damage_map 의 KB 후보를 넘길 자리는 answer 에 아직 없음 (파이프라인 담당과 협의)
-            answer = parts["pipeline"].answer(damage["symptom_ko"], state, "damage_photo")
+            # 질문이 있으면 함께 넣어 질문 이해·검색어 변환이 사진 증상과 질문을 같이 보게 한다
+            query = f"{question} (사진: {damage['symptom_ko']})" if question else damage["symptom_ko"]
+            answer = parts["pipeline"].answer(query, state, "damage_photo")
             if not isinstance(answer, AnswerResponse):
                 answer = AnswerResponse.model_validate(answer)
             answer = answer.model_copy(update={"image": image_result})   # 화면·로그에서 사진 분석 결과도 함께 보이게
