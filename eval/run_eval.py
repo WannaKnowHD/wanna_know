@@ -260,7 +260,7 @@ class Evaluator:
 # ------------------------------------------------------------------------------
 CASE_COLUMNS = ["case_id", "group", "qtype", "input_type", "question", "status", "wrong", "top1_hit", "top1_kb", "gold_kb",
                 "kb_ids", "gold_causes", "cause_ids", "gold_source", "sources", "gold_model", "matched_model", "image_path",
-                "safety", "top_score", "nf_stage", "removed_cause_ids", "queries_en", "latency_ms", "message"]
+                "safety", "top_score", "nf_stage", "generate_fail", "removed_cause_ids", "queries_en", "latency_ms", "message"]
 
 
 def _build_pipeline(log: bool):
@@ -443,7 +443,9 @@ def _case_row(result: Result) -> dict:
         "image_path": case.image_path or "",
         "safety": len(response.get("safety") or []),
         "top_score": "" if trace.get("top_score") is None else round(trace["top_score"], 3),
-        "nf_stage": _not_found_stage(result), "removed_cause_ids": ";".join(trace.get("removed_cause_ids") or []),
+        "nf_stage": _not_found_stage(result),
+        "generate_fail": (trace.get("generate_fail") or "") if _status(result) == "not_found" else "",
+        "removed_cause_ids": ";".join(trace.get("removed_cause_ids") or []),
         "queries_en": " | ".join(trace.get("queries_en") or []), "latency_ms": round(result.latency_ms),
         "message": response.get("message") or "",
     }

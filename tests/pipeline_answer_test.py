@@ -338,3 +338,24 @@ def test_retry_tells_llm_what_to_fix(make):
     assert second[:len(first)] == first                              # 처음 요청은 그대로 두고
     assert second[-2]["role"] == "assistant" and second[-1]["role"] == "user"   # 첫 답 + 고칠 점을 덧붙임
     assert "한국어" in second[-1]["content"]
+
+
+def test_kb_hints_add_kb_symptom_to_queries(make, kb):
+    """손상 사진: damage_map 의 KB 후보 증상(영어 원문)이 검색어에 더해진다 (v3)"""
+    retriever = FakeRetriever([ts_hit()])
+    make(FakeLLM(UNDERSTAND_TS, QUERIES, ts_answer()), retriever).answer(
+        "모터가 뜨거워요", state(), "damage_photo", kb_hints=[KB_ID, "TS-없는-KB"])
+    queries = retriever.calls[0]["queries"]
+    assert queries[:2] == ["motor overheating", "reducer overheating"]   # 원래 검색어는 그대로
+    assert queries[2:] == [kb[KB_ID]["symptom"]]                          # 없는 KB id 는 건너뜀
+
+
+def test_generate_fail_reason_is_recorded(make):
+    """생성 단계에서 확인되지 않음이 된 이유를 trace 에 남긴다 (진단용)"""
+    english = {**ts_answer(), "summary": "Check the motor load and voltage first."}
+    out = make(FakeLLM(UNDERSTAND_TS, QUERIES, english, english), FakeRetriever([ts_hit()])).answer("모터 과열", state(), "text")
+    assert out["status"] == "not_found" and out["trace"]["generate_fail"] == "not_korean"
+    out = make(FakeLLM(UNDERSTAND_TS, QUERIES, ts_answer(not_found=True)), FakeRetriever([ts_hit()])).answer("모터 과열", state(), "text")
+    assert out["trace"]["generate_fail"] == "llm_not_found"
+    out = make(FakeLLM(UNDERSTAND_TS, QUERIES, english, ts_answer()), FakeRetriever([ts_hit()])).answer("모터 과열", state(), "text")
+    assert out["status"] == "answered" and out["trace"].get("generate_fail") is None   # 재요청으로 통과하면 기록 없음

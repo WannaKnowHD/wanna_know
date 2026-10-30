@@ -527,10 +527,12 @@ class ChatApp:
             return AnswerResponse(status="retake", input_type="damage_photo", message=MSG_DAMAGE_RETAKE,
                                   image=image_result), state
         try:
-            # 증상 문장을 질문처럼 검색한다. damage_map 의 KB 후보를 넘길 자리는 answer 에 아직 없음 (파이프라인 담당과 협의)
+            # 증상 문장을 질문처럼 검색하고, 손상 라벨의 KB 후보(damage_map.csv)를 검색 힌트로 함께 넘긴다 (v3)
             # 질문이 있으면 함께 넣어 질문 이해·검색어 변환이 사진 증상과 질문을 같이 보게 한다
+            hints = parts["analyzer"].map_damage_to_kb(damage["label"])
             query = f"{question} (사진: {damage['symptom_ko']})" if question else damage["symptom_ko"]
-            answer = parts["pipeline"].answer(query, state, "damage_photo")
+            answer = parts["pipeline"].answer(query, state, "damage_photo", kb_hints=hints)
+
             if not isinstance(answer, AnswerResponse):
                 answer = AnswerResponse.model_validate(answer)
             answer = answer.model_copy(update={"image": image_result})   # 화면·로그에서 사진 분석 결과도 함께 보이게
