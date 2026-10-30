@@ -95,14 +95,22 @@ def last_card(history):
 # ------------------------------------------------------------------------------
 # 사진 판별 (I-01)
 # ------------------------------------------------------------------------------
-@pytest.mark.parametrize("kind, confidence", [("other", 0.99), ("nameplate", 0.5)])
-def test_other_or_low_confidence_retake(kind, confidence):
-    app, conversation = make_app(kind, confidence=confidence)
+def test_other_photo_retake():
+    app, conversation = make_app("other", confidence=0.99)
     history, state = run(app)
     assert len(history) == 2 and history[-1]["role"] == "assistant"   # 이전 대화 뒤에 답변 카드 1개
     assert MSG_PHOTO_OTHER in last_card(history)
     assert conversation.turns[0]["answer"]["status"] == "retake"
     assert state["equipment"] is None
+
+
+def test_low_confidence_is_only_recorded():
+    """확신도는 판단에 쓰지 않음: 판별 확신도가 낮아도 명판으로 처리하고 값은 응답에 남긴다"""
+    app, conversation = make_app("nameplate", read={"raw_text": "138 ACC"}, confidence=0.3)
+    _, state = run(app)
+    answer = conversation.turns[0]["answer"]
+    assert answer["status"] == "nameplate" and state["equipment"]["model_name"] == "138-ACC"
+    assert answer["image"]["confidence"] == 0.3
 
 
 def test_not_logged_in_or_empty_image():
@@ -198,7 +206,8 @@ def test_damage_before_pipeline_ready():
 
 def test_damage_retake():
     pipeline = FakePipeline(answered())
-    app, conversation = make_app("belt_damage", damage={"confidence": 0.4, "retake": True}, pipeline=pipeline)
+    app, conversation = make_app("belt_damage", damage={"label": "other", "symptom_ko": "", "retake": True},
+                                 pipeline=pipeline)
     history, _ = run(app)
     assert MSG_DAMAGE_RETAKE in last_card(history)
     assert pipeline.calls == []                   # 재촬영이면 검색·답변을 만들지 않음
