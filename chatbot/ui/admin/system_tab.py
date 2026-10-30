@@ -1,11 +1,72 @@
 """관리자 시스템 현황 탭."""
 
+import math
+
 import gradio as gr
+import pandas as pd
 
 # 단계별 응답 시간 그래프에 표시할 단계 (표시 순서 고정)
 STAGE_NAMES = ["질문 이해", "하이브리드 검색", "근거 검증", "답변 생성"]
 # 최근 오류 표의 열 이름
 ERROR_HEADERS = ["시각", "단계", "오류 내용"]
+
+STAGE_KEYS = {
+    "질문 이해": "understand",
+    "하이브리드 검색": "search",
+    "근거 검증": "verify",
+    "답변 생성": "generate",
+}
+
+
+def aggregate_system_stats(logs: pd.DataFrame) -> dict:
+    """DB에서 읽은 기간별 로그로 시스템 지표를 계산한다."""
+    timings = [value if isinstance(value, dict) else {} for value in logs["latency_ms"]]
+
+    def average_seconds(key: str) -> float | None:
+        values = []
+
+        for timing in timings:
+            value = timing.get(key)
+
+            if (
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(value)
+                and value >= 0
+            ):
+                values.append(value)
+
+        return sum(values) / len(values) / 1000 if values else None
+
+    error_text = logs["error"].fillna("").astype(str)
+    error_rows = logs.loc[error_text.str.strip().ne("")].copy()
+    error_rows = error_rows.sort_values(
+        ["created_at", "log_id"],
+        ascending=False,
+    ).head(20)
+
+    recent_errors = []
+
+    for _, row in error_rows.iterrows():
+        text = str(row["error"]).strip()
+        stage, separator, detail = text.partition(":")
+        recent_errors.append(
+            [
+                pd.Timestamp(row["created_at"]).strftime("%m/%d %H:%M"),
+                stage.strip() if separator else "-",
+                detail.strip() if separator else text,
+            ]
+        )
+
+    return {
+        "total_count": len(logs),
+        "error_count": int(error_text.str.strip().ne("").sum()),
+        "average_seconds": average_seconds("total"),
+        "stage_seconds": {
+            label: average_seconds(key) for label, key in STAGE_KEYS.items()
+        },
+        "recent_errors": pd.DataFrame(recent_errors, columns=ERROR_HEADERS),
+    }
 
 
 def format_seconds(seconds: float | None) -> str:
@@ -70,13 +131,19 @@ def render_period(period_text: str) -> str:
     return f"<p class='system-period-text'>집계 기간 · {period_text}</p>"
 
 
-def render_stage_times(stage_seconds: dict[str, float]) -> str:
+def render_stage_times(stage_seconds: dict[str, float | None]) -> str:
     """
     단계별 평균 응답 시간 막대 그래프 HTML. 막대 길이는 가장 오래 걸린 단계 기준
 
     Returns: str
     """
-    longest = max(stage_seconds.values(), default=0) or 1
+    longest = (
+        max(
+            (value for value in stage_seconds.values() if value is not None),
+            default=0,
+        )
+        or 1
+    )
     rows = []
     for stage in STAGE_NAMES:
         seconds = stage_seconds.get(stage)
@@ -89,6 +156,20 @@ def render_stage_times(stage_seconds: dict[str, float]) -> str:
             "</div>"
         )
     return f"<div class='system-stage-chart'>{''.join(rows)}</div>"
+
+
+def render_system_tab(stats: dict, period_text: str) -> tuple:
+    """시스템 통계를 화면 컴포넌트 순서에 맞춰 반환한다."""
+    return (
+        render_response_time(stats["average_seconds"]),
+        render_error_rate(
+            stats["error_count"],
+            stats["total_count"],
+        ),
+        render_period(period_text),
+        render_stage_times(stats["stage_seconds"]),
+        stats["recent_errors"],
+    )
 
 
 def build_system_tab():
