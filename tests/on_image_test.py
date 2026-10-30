@@ -12,7 +12,8 @@ import pytest
 from chatbot.core.schemas import AnswerResponse, User
 from chatbot.core.state import ConversationState
 from chatbot.rag.glossary import Glossary
-from chatbot.ui.gradio_app import MSG_DAMAGE_RETAKE, MSG_NAMEPLATE_RETAKE, MSG_PHOTO_ERROR, MSG_PHOTO_OTHER, ChatApp
+from chatbot.ui.gradio_app import (MSG_DAMAGE_RETAKE, MSG_NAMEPLATE_RETAKE, MSG_PHOTO_ERROR, MSG_PHOTO_OTHER, PHOTO_QUESTIONS,
+                                    ChatApp)
 from chatbot.vision.vision import NameplateReader
 
 MODELS = Glossary().load_models(os.path.join("data", "models.csv"))
@@ -282,6 +283,59 @@ def test_question_not_found_joins_both_notices():
     message = conversation.turns[0]["answer"]["message"]
     assert "목록에 없습니다" in message and message.endswith("자료에서 확인되지 않습니다.")
     assert conversation.turns[0]["answer"]["status"] == "not_found"
+
+
+# ------------------------------------------------------------------------------
+# 요청 로그 (TS-L-01): 파이프라인을 거치지 않은 사진도 chat_logs 에 1행
+# ------------------------------------------------------------------------------
+class FakeRequestLogger:
+    def __init__(self, fail=False):
+        self.records, self.fail = [], fail
+
+    def build_record(self, answer, question, employee_id, source="user"):
+        return {"answer": answer, "question": question, "employee_id": employee_id, "source": source}
+
+    def log_request(self, record):
+        if self.fail:
+            raise RuntimeError("DB down")
+        self.records.append(record)
+
+
+def logged_app(kind="nameplate", **kw):
+    app, conversation = make_app(kind, **kw)
+    app._pipeline.request_logger = FakeRequestLogger()
+    app._pipeline.log_source = "user"
+    return app, conversation, app._pipeline.request_logger
+
+
+@pytest.mark.parametrize("kind, read, damage, input_type", [
+    ("nameplate", {"raw_text": "138 ACC"}, None, "nameplate_photo"),                        # 설비 설정
+    ("other", None, None, "other_photo"),                                                   # 그 외 사진
+    ("belt_damage", None, {"label": "other", "symptom_ko": "", "retake": True}, "damage_photo"),   # 손상 재촬영
+])
+def test_photo_only_is_logged_once(kind, read, damage, input_type):
+    app, _, request_logger = logged_app(kind, read=read, damage=damage)
+    run(app)
+    (record,) = request_logger.records
+    assert record["employee_id"] == "e1" and record["source"] == "user"
+    assert record["answer"]["input_type"] == input_type
+    assert record["question"] == PHOTO_QUESTIONS[input_type]
+    assert record["answer"]["trace"]["latency_ms"]["total"] >= 0          # 걸린 시간도 남김
+
+
+@pytest.mark.parametrize("kind, question", [("belt_damage", ""), ("nameplate", QUESTION)])
+def test_pipeline_path_is_not_logged_twice(kind, question):
+    """손상 사진 검색·사진+질문은 RagPipeline.answer 가 로그를 남기므로 화면에서 또 남기지 않음"""
+    app, _, request_logger = logged_app(kind, pipeline=FakePipeline(answered()))
+    run(app, question=question)
+    assert request_logger.records == []
+
+
+def test_photo_log_failure_keeps_answer():
+    app, conversation, request_logger = logged_app()
+    request_logger.fail = True
+    history, state = run(app)
+    assert state["equipment"]["model_name"] == "138-ACC" and conversation.turns[0]["answer"]["status"] == "nameplate"
 
 
 def test_without_question_keeps_photo_only_behavior():
