@@ -295,6 +295,27 @@ def upgrade_users_table(conn: pymysql.connections.Connection) -> list[str]:
     return changes
  
  
+def upgrade_chat_history_table(conn: pymysql.connections.Connection) -> list[str]:
+    """conversation_id 가 생기기 전에 만든 chat_history 테이블을 지금 정의에 맞춘다. (이미 맞으면 아무것도 안 함)
+
+    받는 것: DB 연결
+    돌려주는 것: 바꾼 내용 목록 (바꾼 게 없으면 빈 목록)
+    기존 기록은 행마다 고유한 대화 ID 를 채워, 예전 기록 한 건이 각각 별도 대화로 남게 한다 (이어붙이지 않음).
+    """
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'chat_history' AND COLUMN_NAME = 'conversation_id'"
+        )
+        if cursor.fetchone()[0]:
+            return []
+        cursor.execute("ALTER TABLE chat_history ADD COLUMN conversation_id VARCHAR(36) NULL AFTER employee_id")
+        cursor.execute("UPDATE chat_history SET conversation_id = UUID()")
+        cursor.execute("ALTER TABLE chat_history MODIFY conversation_id VARCHAR(36) NOT NULL")
+        cursor.execute("ALTER TABLE chat_history ADD INDEX idx_history_conversation (employee_id, conversation_id)")
+    return ["chat_history.conversation_id 추가 (기존 기록은 한 건씩 별도 대화)"]
+
+
 def upsert_accounts(conn: pymysql.connections.Connection, accounts: list[SeedAccount]) -> dict[str, int]:
     """계정을 users 테이블에 넣거나 고친다.
  
@@ -542,7 +563,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         apply_schema(conn, SCHEMA_PATH)
         print(f"[OK] 테이블 확인 완료 ({SCHEMA_PATH.name})")
-        for change in upgrade_users_table(conn):
+        for change in upgrade_users_table(conn) + upgrade_chat_history_table(conn):
             print(f"[OK] 예전 테이블 정의 변경: {change}")
         counts = upsert_accounts(conn, accounts)
         demo = None if args.no_demo else reset_demo_logs(conn, build_demo_logs(datetime.now(), load_kb_ids(settings.kb_dir)))

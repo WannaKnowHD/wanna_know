@@ -33,10 +33,10 @@ class FakeDb:
         if self.broken:
             raise ConnectionError("db down")
         assert sql.startswith("INSERT INTO chat_history")
-        employee_id, question, answer = params
+        employee_id, conversation_id, question, answer = params
         created = datetime(2026, 10, 28, 9, 0) + timedelta(minutes=len(self.rows))  # noqa: DTZ001 (MySQL DATETIME 처럼 시간대 없음)
-        self.rows.append({"id": len(self.rows) + 1, "employee_id": employee_id, "created_at": created,
-                          "question": question, "answer": answer})
+        self.rows.append({"id": len(self.rows) + 1, "employee_id": employee_id, "conversation_id": conversation_id,
+                          "created_at": created, "question": question, "answer": answer})
         return len(self.rows)
 
     def fetch(self, sql, params=()):
@@ -85,7 +85,7 @@ def test_works_with_empty_state(cs):
     """Gradio 가 처음에 None 이나 빈 dict 를 넘겨도 오류 없이 기본 칸을 채움"""
     for empty in (None, {}):
         state = cs.set_equipment(empty, ACC)
-        assert set(state) == {"user", "admin_mode", "equipment"}
+        assert set(state) == {"user", "admin_mode", "equipment", "conversation_id"}
 
 
 def test_input_state_not_changed(cs):
@@ -101,10 +101,17 @@ def test_clear_resets_equipment_but_keeps_user(cs, db):
     state = cs.set_equipment(logged_in(cs, ADMIN), ACC)
     state["admin_mode"] = True
     state = cs.save_history(state, {"question": "모터가 뜨거워요", "answer": ANSWER})
+    assert state["conversation_id"]
     state = cs.clear(state)
-    assert state["equipment"] is None
+    assert state["equipment"] is None and state["conversation_id"] is None   # 새 대화
     assert state["user"] == ADMIN and state["admin_mode"] is True
     assert len(db.rows) == 1                                   # DB 기록은 유지
+
+
+def test_resume_switches_conversation_and_clears_equipment(cs):
+    state = cs.set_equipment(logged_in(cs), ACC)
+    state = cs.resume(state, "c-old")
+    assert state["conversation_id"] == "c-old" and state["equipment"] is None and state["user"] == ENGINEER
 
 
 def test_clear_user_resets_everything_but_keeps_db(cs, db):
@@ -121,9 +128,18 @@ def test_clear_user_resets_everything_but_keeps_db(cs, db):
 def test_save_history_saves_to_db(cs, db):
     before = logged_in(cs)
     state = cs.save_history(before, {"question": " 모터가 뜨거워요 ", "answer": ANSWER})
-    assert state == before                                     # state 는 바뀌지 않음 (화면 채팅은 Gradio 가 관리)
+    assert state == {**before, "conversation_id": state["conversation_id"]} and state["conversation_id"]   # 첫 질문에 대화 ID 가 생김
     row = db.rows[0]
     assert row["employee_id"] == "e1" and row["question"] == "모터가 뜨거워요" and row["answer"] == ANSWER
+    assert row["conversation_id"] == state["conversation_id"]
+
+
+def test_save_history_same_conversation_until_new_one(cs, db):
+    state = cs.save_history(logged_in(cs), {"question": "첫 질문", "answer": ANSWER})
+    state = cs.save_history(state, {"question": "이어서", "answer": ANSWER})
+    assert db.rows[0]["conversation_id"] == db.rows[1]["conversation_id"]   # 이어서 질문하면 같은 대화
+    state = cs.save_history(cs.clear(state), {"question": "새 대화 질문", "answer": ANSWER})
+    assert db.rows[2]["conversation_id"] != db.rows[0]["conversation_id"]   # 새 대화는 새 ID
 
 
 def test_save_history_keeps_order(cs, db):
@@ -166,7 +182,7 @@ def test_load_history_newest_first_and_only_mine(cs):
     cs.save_history(other, {"question": "관리자 질문", "answer": ANSWER})
     rows = cs.load_history("e1", 10)
     assert [r["question"] for r in rows] == ["3번", "2번", "1번"]
-    assert set(rows[0]) == {"created_at", "question", "answer"}
+    assert set(rows[0]) == {"conversation_id", "created_at", "question", "answer"}
 
 
 def test_load_history_limit(cs, db):
@@ -177,6 +193,38 @@ def test_load_history_limit(cs, db):
     assert len(cs.load_history("e1", 0)) == 1                 # 0 이하는 1개
     cs.load_history("e1", 10_000)
     assert "LIMIT %s" in db.sql[-1]                            # 값은 매개변수로 (SQL 에 직접 넣지 않음)
+
+
+# ---------------------------------------------------------------- load_conversations
+def test_load_conversations_groups_turns_by_conversation(cs):
+    state = logged_in(cs)
+    for q in ("첫 대화 1", "첫 대화 2"):
+        state = cs.save_history(state, {"question": q, "answer": ANSWER})
+    state = cs.clear(state)
+    state = cs.save_history(state, {"question": "둘째 대화 1", "answer": ANSWER})
+    cs.save_history(logged_in(cs, ADMIN), {"question": "관리자 질문", "answer": ANSWER})
+    convs = cs.load_conversations("e1", 10)
+    assert [c["question"] for c in convs] == ["둘째 대화 1", "첫 대화 1"]   # 제목 = 첫 질문, 마지막 활동이 최신인 순
+    assert [t["question"] for t in convs[1]["turns"]] == ["첫 대화 1", "첫 대화 2"]   # 대화 안에서는 오래된 순
+    assert convs[1]["created_at"] == convs[1]["turns"][-1]["created_at"]            # 시각 = 마지막 질문
+
+
+def test_load_conversations_continued_old_conversation_moves_to_top(cs):
+    state = cs.save_history(logged_in(cs), {"question": "A", "answer": ANSWER})
+    cid = state["conversation_id"]
+    cs.save_history(cs.clear(state), {"question": "B", "answer": ANSWER})
+    cs.save_history(cs.resume(state, cid), {"question": "A 이어서", "answer": ANSWER})
+    assert [c["question"] for c in cs.load_conversations("e1", 10)] == ["A", "B"]
+
+
+def test_load_conversations_limit_and_empty(cs, db):
+    state = logged_in(cs)
+    for i in range(3):
+        state = cs.save_history(cs.clear(state), {"question": f"{i}번", "answer": ANSWER})
+    assert len(cs.load_conversations("e1", 2)) == 2
+    assert cs.load_conversations("", 10) == [] and cs.load_conversations("nobody", 10) == []
+    db.broken = True
+    assert cs.load_conversations("e1", 10) == []
 
 
 def test_load_history_empty_or_failure(cs, db):
