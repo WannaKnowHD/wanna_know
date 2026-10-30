@@ -241,9 +241,38 @@ def test_chat_css_files_exist():
     assert ChatApp.launch_options()["css_paths"][-len(CHAT_CSS_PATHS):] == list(CHAT_CSS_PATHS)
 
 
-def test_theme_toggle_is_disabled_and_light_is_forced():
-    """다크 모드는 화면별로 구현하는 동안 꺼 둠 (ui/login/theme.py 의 THEME_TOGGLE_ENABLED). 켜면 이 테스트도 같이 고친다."""
-    from chatbot.ui.login.theme import THEME_INIT_JS, THEME_TOGGLE_ENABLED
+def test_theme_toggle_is_enabled_and_keeps_choice():
+    """10/30: 딥 포레스트 다크를 모든 화면에 맞춰 전환을 켬 (ui/login/theme.py 의 THEME_TOGGLE_ENABLED).
+    처음은 라이트, 고른 값은 localStorage 에 기억하고 Gradio 가 OS 설정으로 dark 를 바꿔도 고른 값으로 되돌림"""
+    from chatbot.ui.login.theme import THEME_INIT_JS, THEME_KEY, THEME_TOGGLE_ENABLED, THEME_TOGGLE_JS
 
-    assert THEME_TOGGLE_ENABLED is False
-    assert "classList.remove('dark')" in THEME_INIT_JS and "localStorage" not in THEME_INIT_JS
+    assert THEME_TOGGLE_ENABLED is True
+    assert f"localStorage.getItem('{THEME_KEY}')" in THEME_INIT_JS and "MutationObserver" in THEME_INIT_JS
+    assert f"localStorage.setItem('{THEME_KEY}'" in THEME_TOGGLE_JS
+
+
+def test_photo_notice_titles_and_retake_button():
+    """Figma 04: 명판으로 설비를 정하면 제목에 모델명, 사진 재촬영이면 확신도 + '다시 촬영'(사진 첨부 버튼을 누름)"""
+    from chatbot.core.schemas import AnswerResponse, DamageResult, Equipment, ImageResult
+
+    nameplate = AnswerResponse(status="nameplate", input_type="nameplate_photo", message="이제부터 CV-1200 매뉴얼 기준",
+                               equipment=Equipment(model="CV-1200", doc_ids=[], source="nameplate"))
+    html = render_answer_card(nameplate)
+    assert "명판에서 모델명 CV-1200을(를) 확인했습니다" in html and "wk-retake" not in html
+    damage = DamageResult(label="other", symptom_ko="", confidence=0.42)
+    retake = AnswerResponse(status="retake", input_type="damage_photo", message="다시 찍어 주세요",
+                            image=ImageResult(kind="belt_damage", confidence=0.9, damage=damage))
+    html = render_answer_card(retake)
+    assert "사진만으로 판단하기 어렵습니다 (확신도 0.42)" in html
+    assert "class='wk-retake'" in html and "#chat-image" in html
+
+
+def test_theme_buttons_are_shown():
+    import gradio as gr
+
+    from chatbot.ui.chat import build_chat_area
+    from chatbot.ui.login.login_form import build_login_form
+
+    with gr.Blocks():
+        area, login = build_chat_area(), build_login_form()
+    assert area.theme_button.visible is True and login.theme_button.visible is True

@@ -86,6 +86,15 @@
   border: none !important;
   border-radius: 0.75rem !important;
 }
+/* 사진 말풍선 (Figma 04): 폭 260 · 안쪽 10px, 사진 240×140 · 모서리 8 */
+#chat-messages .message.user:has(.image-container) { padding: 0.625rem !important; }
+#chat-messages .message.user .image-container img {
+  width: 15rem !important;
+  height: 8.75rem !important;
+  margin: 0 !important;   /* Gradio 기본 8px */
+  object-fit: cover;
+  border-radius: 0.5rem;
+}
 #chat-messages .message.bot {
   background: transparent !important;   /* 답변은 messages.css 의 .wk-card 가 테두리를 가짐 */
   border: none !important;
@@ -125,7 +134,7 @@
   flex-wrap: nowrap !important;
   align-items: center;
   gap: 0.75rem !important;
-  padding: 0.5rem 1.5rem 0 !important;
+  padding: 0.5rem 3rem 0 !important;   /* 왼쪽을 입력 바(48px)와 맞춤 */
 }
 #chat-preview > * { flex: 0 0 auto !important; }
 #chat-preview-image { width: 8rem !important; min-width: 0 !important; border-radius: 0.5rem; overflow: hidden; }
