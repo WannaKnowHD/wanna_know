@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -9,7 +10,7 @@ from typing import TYPE_CHECKING
 import gradio as gr
 from pydantic import ValidationError
 
-from chatbot.core.schemas import AnswerResponse, DamageResult, Equipment, ImageResult, NameplateResult
+from chatbot.core.schemas import AnswerResponse, DamageResult, Equipment, ImageResult, NameplateResult, Trace
 from chatbot.core.state import ConversationState
 from chatbot.ui.chat import (
     CHAT_ASSET_DIR,
@@ -387,19 +388,45 @@ class ChatApp:
         question = (question or "").strip()
         if not image or state.get("user") is None:   # 빈 사진·로그인 전에는 처리하지 않음 (on_submit 과 같은 규칙)
             return history, state
+        started = time.perf_counter()
         try:
             answer, state, question_used = self._analyze_photo(image, state, question)
         except Exception as e:  # 비전 API 오류 등: 화면이 멈추지 않고 안내 카드만 보여 줌
             print(f"[gradio_app] 사진 분석 실패: {type(e).__name__}: {e}")
             answer, question_used = AnswerResponse(status="error", input_type="other_photo", message=MSG_PHOTO_ERROR), False
+        label = PHOTO_QUESTIONS[answer.input_type]
         if question and not question_used:
             # 사진 처리 뒤의 state 로 답한다 → 명판이 정확히 맞았으면 그 설비 매뉴얼 기준 답변
             answer = self._with_photo_note(answer, self._answer(question, state, answer.input_type))
+        elif not question_used:
+            # RagPipeline 을 거치지 않은 사진(명판·그 외·재촬영·오류)은 요청 로그가 남지 않으므로 여기서 남긴다 (TS-L-01)
+            answer = self._log_photo(answer, label, state, started)
         history.append({"role": "assistant", "content": self.render_answer(answer)})
-        label = PHOTO_QUESTIONS[answer.input_type]
         turn = {"question": f"{label} {question}" if question else label, "answer": answer.model_dump(mode="json")}
         state = self._conversation.save_history(state, turn)
         return history, state
+
+    def _log_photo(self, answer: AnswerResponse, question: str, state: dict, started: float) -> AnswerResponse:
+        """파이프라인을 거치지 않은 사진 응답을 chat_logs 에 1행 남기고, 걸린 시간을 trace 에 넣은 응답을 돌려준다.
+
+        대시보드의 입력 유형 비율(M-02)이 사진 요청도 세려면 사진 1건마다 로그가 있어야 한다.
+        로그 저장기는 파이프라인 것(RagPipeline.request_logger)을 같이 써서 텍스트 질문과 같은 형식·같은 source 로 남긴다.
+        저장이 실패해도 화면 답변은 그대로 보여 준다 (RagPipeline._log 와 같은 규칙).
+        """
+        elapsed = int((time.perf_counter() - started) * 1000)
+        answer = answer.model_copy(update={"trace": Trace(latency_ms={"vision": elapsed, "total": elapsed})})
+        request_logger = getattr(self._pipeline, "request_logger", None)
+        if request_logger is None:
+            return answer
+        user = state.get("user")
+        try:
+            record = request_logger.build_record(answer.model_dump(mode="json"), question,
+                                                 getattr(user, "employee_id", None),
+                                                 source=getattr(self._pipeline, "log_source", "user"))
+            request_logger.log_request(record)
+        except Exception as e:  # noqa: BLE001 — 로그 저장 실패로 사진 안내를 막지 않음
+            print(f"[gradio_app] 사진 요청 로그 저장 실패: {type(e).__name__}: {e}")
+        return answer
 
     @staticmethod
     def _with_photo_note(photo: AnswerResponse, answer: AnswerResponse) -> AnswerResponse:
@@ -408,7 +435,12 @@ class ChatApp:
         질문 답변이 확인되지 않음·오류 같은 안내 카드면 두 문구를 이어서 한 안내로 보여 준다.
         image(판독·분석 결과)와 input_type 은 사진 쪽 값을 남겨 대화 기록·로그에서 사진 요청으로 보이게 한다.
         """
-        message = " ".join(m for m in (photo.message, answer.message) if m) or None
+        note = photo.message
+        if photo.status == "nameplate" and photo.equipment is not None:
+            # 단독 명판 카드는 "명판에서 모델명 … 확인했습니다"가 카드 제목(messages._notice_title)이라 message 에 없다.
+            # 합친 카드에는 그 제목이 없으므로 어떤 설비로 인식했는지 앞에 붙인다
+            note = f"명판에서 {photo.equipment.model} 설비를 확인했습니다. {note or ''}".strip()
+        message = " ".join(m for m in (note, answer.message) if m) or None
         return answer.model_copy(update={"input_type": photo.input_type, "image": photo.image, "message": message})
 
     def _vision(self):
