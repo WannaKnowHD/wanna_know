@@ -47,9 +47,9 @@ NOT_INDEXED_MESSAGE = "아직 색인에 없습니다. 챗봇을 끈 상태에서
 COMMON_DOC_IDS = {"fenner_belt"}
 
 # documents 의 코드값 → 화면 글자
-STATUS_LABELS = {"indexing": "⏳ 색인 중", "done": "완료", "failed": "실패"}
-SOURCE_LABELS = {"initial": "초기 문서", "admin_add": "관리자 추가"}
-KB_STATUS_COLUMNS = ["문서명", "파일명", "구분", "쪽 수", "청크 수", "색인 시각", "상태", "실패 사유"]
+STATUS_LABELS = {"indexing": "색인 중", "done": "완료", "failed": "실패"}
+# KB 현황 표의 열 (Figma 08: 파일명 · 페이지 · 청크 수 · 색인 일시 · 상태). 실패 사유는 실패한 행의 파일명 아래에 보여 줌
+KB_STATUS_COLUMNS = ["파일명", "페이지", "청크 수", "색인 일시", "상태", "실패 사유"]
 
 # Windows 파일 이름에 쓸 수 없는 글자
 _FORBIDDEN_NAME_CHARS = set('<>:"/\\|?*')
@@ -203,16 +203,13 @@ def load_documents(db: Database) -> pd.DataFrame:
     """documents 를 KB 현황 표로 읽는다.
 
     받는 것: Database
-    돌려주는 것: DataFrame (열: KB_STATUS_COLUMNS). 초기 문서 → 관리자 추가 순, 같은 구분 안에서는 문서명 순
+    돌려주는 것: DataFrame (열: KB_STATUS_COLUMNS). 초기 문서 → 관리자 추가 순, 같은 구분 안에서는 파일명 순
     """
-    rows = db.fetch("SELECT title, filename, source, pages, chunks, indexed_at, status, error_message "
-                    "FROM documents", ())
+    rows = db.fetch("SELECT filename, source, pages, chunks, indexed_at, status, error_message FROM documents", ())
     # ENUM 정렬 규칙은 DB 마다 달라서 순서는 여기서 정한다
-    rows = sorted(rows, key=lambda row: (row["source"] != "initial", row["title"] or row["filename"]))
+    rows = sorted(rows, key=lambda row: (row["source"] != "initial", row["filename"]))
     table = [[
-        row["title"] or row["filename"],
         row["filename"],
-        SOURCE_LABELS.get(row["source"], row["source"]),
         row["pages"],
         row["chunks"],
         _format_time(row["indexed_at"]),
@@ -222,10 +219,22 @@ def load_documents(db: Database) -> pd.DataFrame:
     return pd.DataFrame(table, columns=KB_STATUS_COLUMNS)
 
 
+def active_bm25_path(settings: Settings) -> Path:
+    """지금 검색에 쓰는 색인의 BM25 파일. (청크 수 · 색인 시각을 여기서 읽는다)
+
+    받는 것: Settings (chroma_dir · bm25_path)
+    돌려주는 것: Path. build_index.py 가 만든 버전 색인({chroma_dir}_current.json)이 있으면 그 파일,
+      없으면 settings.bm25_path (검색기 Retriever 와 같은 규칙: retriever.active_index_paths)
+    """
+    from chatbot.rag.retriever import active_index_paths   # 검색 모듈(chromadb 등)은 필요할 때만 불러온다
+
+    return active_index_paths(settings.chroma_dir, settings.bm25_path)[1]
+
+
 def count_chunks(bm25_path: Path) -> Counter:
     """새 색인(BM25 항목 목록)에서 문서별 청크 수를 센다. KB 항목은 청크가 아니라 세지 않는다.
 
-    받는 것: settings.bm25_path
+    받는 것: BM25 파일 (active_bm25_path)
     돌려주는 것: Counter {doc_id: 청크 수}. 색인 파일이 없으면 빈 Counter
     """
     from chatbot.rag.retriever import load_bm25_items   # 검색 모듈(chromadb 등)은 필요할 때만 불러온다
@@ -237,9 +246,14 @@ def count_chunks(bm25_path: Path) -> Counter:
 
 
 def _format_time(value) -> str:
-    """색인 시각을 표에 보일 글자로 (없으면 빈칸)."""
+    """색인 시각을 표에 보일 글자로 (예: 10/20 09:00, 없으면 빈칸)."""
+    if isinstance(value, str) and value:
+        try:   # sqlite 등은 시각을 글자로 돌려줌
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return value
     if isinstance(value, datetime):
-        return f"{value:%Y-%m-%d %H:%M}"
+        return f"{value:%m/%d %H:%M}"
     return str(value or "")
 
 
@@ -408,7 +422,7 @@ class KbIndexer:
         settings = self.settings
         raw_dir = Path(settings.raw_dir)
         sources = read_sources(raw_dir.parent / "sources.csv")
-        chunks = count_chunks(Path(settings.bm25_path))
+        chunks = count_chunks(active_bm25_path(settings))
         now = datetime.now().replace(microsecond=0)
         pdfs = list_pdfs(raw_dir)
         for path in pdfs:
@@ -437,7 +451,7 @@ class KbIndexer:
                    if (info := document_info(path, raw_dir, sources))["doc_id"] not in existing]
         if not missing:
             return 0
-        bm25_path = Path(settings.bm25_path)
+        bm25_path = active_bm25_path(settings)
         chunks = count_chunks(bm25_path)
         built_at = datetime.fromtimestamp(bm25_path.stat().st_mtime).replace(microsecond=0) if bm25_path.exists() else None
         for path, info in missing:
