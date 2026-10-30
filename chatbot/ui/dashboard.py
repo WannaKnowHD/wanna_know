@@ -489,7 +489,9 @@ class AdminDashboard:
             *render_usage_tab(self.usage_stats(logs, start, end), start, end),
             *render_quality_tab(self.quality_stats(logs), not_found, period),
             not_found,
-            *render_system_tab(self.system_stats(logs), period),
+            *render_system_tab(
+                self.system_stats(logs), f"{period} ({end:%Y-%m-%d})"
+            ),  # Figma 08: "최근 7일 (기준일)"
         ]
 
     def on_review_input(

@@ -102,7 +102,7 @@ def render_response_time(average_seconds: float | None) -> str:
     return render_metric_card(
         "평균 전체 응답 시간",
         format_seconds(average_seconds),
-        "질문 입력 → 답변 완료",
+        "질문 입력 ~ 답변 완료",
     )
 
 
@@ -124,16 +124,17 @@ def render_error_rate(error_count: int, total_count: int) -> str:
 
 def render_period(period_text: str) -> str:
     """
-    집계 기간 표시 HTML
+    집계 기간 표시 HTML (Figma 08: 지표 카드 오른쪽 아래 "최근 7일 (2026-10-21)")
 
     Returns: str
     """
-    return f"<p class='system-period-text'>집계 기간 · {period_text}</p>"
+    return f"<p class='system-period-text'>{period_text}</p>"
 
 
 def render_stage_times(stage_seconds: dict[str, float | None]) -> str:
     """
-    단계별 평균 응답 시간 막대 그래프 HTML. 막대 길이는 가장 오래 걸린 단계 기준
+    단계별 평균 응답 시간 막대 그래프 HTML. 막대 길이는 가장 오래 걸린 단계 기준 (--ratio = 시간 / 가장 긴 시간),
+    시간 글자는 막대 바로 뒤에 붙음 (Figma 08)
 
     Returns: str
     """
@@ -150,8 +151,7 @@ def render_stage_times(stage_seconds: dict[str, float | None]) -> str:
         rows.append(
             "<div class='system-stage-row'>"
             f"<span class='system-stage-name'>{stage}</span>"
-            f"<progress class='system-stage-bar' value='{seconds or 0}' "
-            f"max='{longest}'></progress>"
+            f"<span class='system-stage-bar' style='--ratio: {(seconds or 0) / longest:.3f}'></span>"
             f"<span class='system-stage-value'>{format_seconds(seconds)}</span>"
             "</div>"
         )
@@ -202,6 +202,7 @@ def build_system_tab():
                 headers=ERROR_HEADERS,
                 interactive=False,
                 buttons=[],
+                column_widths=["11.4%", "12%", "76.6%"],   # Figma 08: 시각 140 · 단계 160 · 오류 내용 나머지
                 elem_classes=["system-error-table"],
             )
 

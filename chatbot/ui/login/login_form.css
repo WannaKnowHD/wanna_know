@@ -109,6 +109,18 @@
 }
 #login-submit:hover { filter: brightness(1.08); }
 
+/* 라이트/다크 전환 버튼: Figma 카드에 없어서 카드 크기에 영향 없게 화면 오른쪽 위에 띄움 */
+#login-theme {
+  position: fixed;
+  top: 1.25rem;
+  right: 1.5rem;
+  width: auto !important;
+  min-width: 0 !important;
+  padding: 0.375rem 0.75rem !important;
+  color: var(--wk-sb-muted) !important;          /* 로그인 화면 바탕은 라이트·다크 모두 짙은 초록이라 사이드바 글자색 */
+  border-color: var(--wk-sb-border) !important;
+}
+
 .login-note {
   color: var(--wk-text-muted);
   font-size: 0.75rem;

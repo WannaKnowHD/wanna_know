@@ -4,11 +4,12 @@
   sidebar.py      대화 기록창·사용자 정보·로그아웃    (sidebar.css)
   chat_area.py    상단 바·채팅창·예시 질문·입력 바    (chat_area.css)
   messages.py     말풍선·답변 카드 HTML              (messages.css)
+  source_page.py  원문 보기의 쪽 전체 이미지 (PDF 한 쪽을 그림 파일로)
   fake_answer.py  RagPipeline 연결 전 가짜 응답
 
 관리자 대시보드는 ui/admin, 로그인 화면은 ui/login.
 """
-from chatbot.ui.chat.chat_area import CHAT_AREA_CSS_PATH, EXAMPLE_QUESTIONS, ChatArea, build_chat_area
+from chatbot.ui.chat.chat_area import CHAT_AREA_CSS_PATH, CHAT_ASSET_DIR, EXAMPLE_QUESTIONS, ChatArea, build_chat_area
 from chatbot.ui.chat.chat_screen import CHAT_CSS_PATH, ChatScreen, build_chat_screen
 from chatbot.ui.chat.fake_answer import fake_answer, fake_photo_answer
 from chatbot.ui.chat.messages import (
@@ -18,6 +19,7 @@ from chatbot.ui.chat.messages import (
     render_user_message,
     render_welcome,
 )
+from chatbot.ui.chat.source_page import PAGE_IMAGE_DIR
 from chatbot.ui.chat.sidebar import (
     SIDEBAR_CSS_PATH,
     Sidebar,
@@ -31,7 +33,7 @@ from chatbot.ui.chat.sidebar import (
 CHAT_CSS_PATHS = [CHAT_CSS_PATH, SIDEBAR_CSS_PATH, CHAT_AREA_CSS_PATH, MESSAGES_CSS_PATH]
 
 __all__ = [
-    "CHAT_CSS_PATHS", "EXAMPLE_QUESTIONS",
+    "CHAT_ASSET_DIR", "CHAT_CSS_PATHS", "EXAMPLE_QUESTIONS", "PAGE_IMAGE_DIR",
     "ChatScreen", "build_chat_screen", "ChatArea", "build_chat_area", "Sidebar", "build_sidebar",
     "history_key", "render_history", "render_user_info",
     "render_answer_card", "render_typing", "render_user_message", "render_welcome",
