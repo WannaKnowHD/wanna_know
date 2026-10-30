@@ -116,12 +116,16 @@ def test_good_pdf_passes():
     (b"%PDF-1.7\n broken body", "broken.pdf", "깨져"),           # 깨진 PDF
     (None, "secret.pdf", "암호"),                                # 암호 PDF (아래에서 만듦)
     (None, "scan.pdf", "스캔본"),                                # 글자 없는 PDF (아래에서 만듦)
+    (None, "truncated.pdf", "깨짐"),                             # 중간이 잘린 PDF (복구돼 열리지만 글자가 없음)
 ])
 def test_bad_files_rejected(data, name, word):
     if name == "secret.pdf":
         data = make_pdf(password="1234")
     elif name == "scan.pdf":
         data = make_pdf(text="")
+    elif name == "truncated.pdf":
+        data = make_pdf(pages=2)
+        data = data[: len(data) // 3]
     with pytest.raises(PdfCheckError, match=word):
         check_pdf(data, name)
 
@@ -298,6 +302,8 @@ def test_progress_text_only_while_indexing(env):
     assert indexer.progress_text() == ""
     indexer.add_pdf(DocumentsDb(), make_pdf(), "belt.pdf")
     assert "'belt.pdf' 색인 중" in seen[0] and "시작" in seen[0]          # 색인하는 동안
+    assert "**" not in seen[0]                                         # 제목줄이 escape 하므로 Markdown 기호 없음
+    assert "**" not in render_kb_header(1, seen[0])
     assert indexer.progress_text() == ""                                  # 끝난 뒤
 
 
