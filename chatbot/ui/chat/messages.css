@@ -71,10 +71,29 @@
 .wk-source summary { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; list-style: none; }
 .wk-source summary::-webkit-details-marker { display: none; }
 .wk-link { color: var(--wk-chat-text); font-size: 0.8125rem; font-weight: 500; text-decoration: underline; }
+/* 인용문: 출처 칩 바로 아래에 붙여서(위 여백 없음) 최대 3줄. Gradio 본문(prose)의 blockquote 여백도 걷어 냄 */
 .wk-quote {
-  margin: 0.5rem 0 0; padding: 0.5rem 0.75rem;
-  border-left: 3px solid var(--wk-chat-border); color: var(--wk-chat-muted); font-size: 0.8125rem;
+  margin: 0 !important; padding: 0.5rem 0.75rem !important;
+  border-left: 3px solid var(--wk-chat-border); color: var(--wk-chat-muted); font-size: 0.8125rem; line-height: 1.5;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
 }
+
+/* 쪽 전체 보기 (원문 보기 안의 두 번째 토글): 쪽 이미지, 누르면 화면 가득 크게 · 다시 누르면 닫힘 */
+.wk-page { margin: 0.375rem 0 0; }
+.wk-page > summary { display: inline-block; cursor: pointer; list-style: none; }
+.wk-page > summary::-webkit-details-marker { display: none; }
+.wk-zoom { display: block; margin-top: 0.375rem; cursor: zoom-in; }
+.wk-zoom input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+.wk-page-image {
+  display: block; width: 100%; max-width: 30rem; height: auto; margin: 0 !important;
+  border: 1px solid var(--wk-chat-border); border-radius: 0.5rem;
+}
+.wk-zoom:has(input:checked) {
+  position: fixed; inset: 0; z-index: 1000; margin: 0;
+  display: flex; justify-content: center; align-items: flex-start;
+  padding: 2rem; overflow: auto; background: rgba(0, 0, 0, 0.75); cursor: zoom-out;
+}
+.wk-zoom:has(input:checked) .wk-page-image { width: auto; max-width: 100%; border: none; border-radius: 0.25rem; }
 
 /* 안내 카드: 근거 부족(되묻기)·명판 결과·재촬영 (Figma 03·04) */
 .wk-notice { gap: 0.75rem; }

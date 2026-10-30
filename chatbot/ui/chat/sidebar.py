@@ -14,7 +14,57 @@ if TYPE_CHECKING:
 
 SIDEBAR_CSS_PATH = Path(__file__).parent / "sidebar.css"
 
-BRAND = "컨베이어 문제 해결 챗봇"   # 사이드바 맨 위 제목 (Figma Page 3 대화 기록창). 서비스 이름 Wanna Know 는 채팅 상단 바
+BRAND = "Wanna Know"   # 사이드바 맨 위 서비스 이름 (Figma 01~04 대화 기록창). 챗봇 이름 칩은 채팅 상단 바
+SIDEBAR_MIN_PX = 200   # 사이드바 오른쪽 경계를 끌어 줄일 수 있는 최소 너비
+SIDEBAR_MAX_PX = 480   # 늘릴 수 있는 최대 너비 (창 너비의 절반을 넘지 않음)
+
+# 사이드바 오른쪽 경계에 손잡이를 붙여, 끌면 너비가 바뀌게 함 (← · → 키로 16px 씩, 두 번 누르면 처음 너비 260px).
+# 너비는 sidebar.css 의 --wk-sb-width 로 넘기고, 다음에 열 때도 같은 너비가 되게 브라우저(localStorage)에 기억
+SIDEBAR_RESIZE_JS = f"""
+const sidebar = document.getElementById('chat-sidebar');
+if (sidebar && !sidebar.querySelector(':scope > .sb-resizer')) {{
+  const KEY = 'wk-sidebar-width';
+  const clamp = (px) => Math.round(Math.min(Math.max(px, {SIDEBAR_MIN_PX}), {SIDEBAR_MAX_PX}, window.innerWidth / 2));
+  const width = () => sidebar.getBoundingClientRect().width;
+  const apply = (px) => sidebar.style.setProperty('--wk-sb-width', clamp(px) + 'px');
+  const save = () => {{ try {{ localStorage.setItem(KEY, String(Math.round(width()))); }} catch (e) {{}} }};
+  try {{ const saved = Number(localStorage.getItem(KEY)); if (saved) apply(saved); }} catch (e) {{}}
+
+  const handle = document.createElement('div');
+  handle.className = 'sb-resizer';
+  handle.tabIndex = 0;
+  handle.setAttribute('role', 'separator');
+  handle.setAttribute('aria-orientation', 'vertical');
+  handle.setAttribute('aria-label', '사이드바 너비 조절');
+  handle.title = '끌어서 너비 조절 · 두 번 누르면 처음 너비';
+  handle.addEventListener('pointerdown', (event) => {{
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    const left = sidebar.getBoundingClientRect().left;
+    const move = (e) => apply(e.clientX - left);
+    const stop = () => {{
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', stop);
+      handle.removeEventListener('pointercancel', stop);
+      document.body.classList.remove('sb-resizing');
+      save();
+    }};
+    document.body.classList.add('sb-resizing');
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+  }});
+  handle.addEventListener('keydown', (event) => {{
+    const step = {{ArrowLeft: -16, ArrowRight: 16}}[event.key];
+    if (step) {{ event.preventDefault(); apply(width() + step); save(); }}
+  }});
+  handle.addEventListener('dblclick', () => {{
+    sidebar.style.removeProperty('--wk-sb-width');
+    try {{ localStorage.removeItem(KEY); }} catch (e) {{}}
+  }});
+  sidebar.appendChild(handle);
+}}
+"""
 
 # 대화 기록 항목을 누르면(Enter · Space 도) 그 항목의 순서와 history_key 를 담아 click 이벤트를 보냄 → ChatApp.open_history (C-03).
 # 목록 HTML 은 값이 바뀔 때마다 다시 그려지므로 항목마다가 아니라 목록 전체(element)에 한 번 걸어 둔다
@@ -50,8 +100,9 @@ class Sidebar:
 
 
 def build_sidebar() -> Sidebar:
-    """사이드바 구성: 제목, 대화 초기화 버튼, 대화 기록 목록, (아래쪽) 사원 정보와 로그아웃 버튼"""
+    """사이드바 구성: 서비스 이름, 대화 초기화 버튼, 대화 기록 목록, (아래쪽) 사원 정보와 로그아웃 버튼, 오른쪽 경계의 너비 조절 손잡이"""
     with gr.Column(scale=0, min_width=260, elem_id="chat-sidebar") as root:
+        gr.HTML("", elem_id="sb-resize-host", js_on_load=SIDEBAR_RESIZE_JS)   # 손잡이만 붙이고 자신은 숨김 (sidebar.css)
         gr.HTML(f"<span class='sb-brand'>{BRAND}</span>")
         reset_button = gr.Button("대화 초기화", elem_classes=["sb-button"])
         gr.HTML("<span class='sb-label'>대화 기록</span>")

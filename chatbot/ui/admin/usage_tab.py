@@ -1,6 +1,6 @@
 """관리자 운영 현황 탭 (SCR-05 · Figma 06 운영 현황, WBS 3.8.3). 막대 · 표는 HTML 로 그리고 모양은 admin.css 의 .adm-*
 
-화면 순서 (Figma 06): 기간 표시 → 1행 [일별 질문 수 | 입력 유형 비율] → 2행 [설비 모델별 질문 수 | 자주 묻는 증상 Top 10].
+화면 순서: 기간 표시 → 1행 [일별 질문 수 | 입력 유형 비율 | 설비 모델별 질문 수] → 2행 [자주 묻는 증상 Top 10].
 값은 AdminDashboard.usage_stats 결과를 render_usage_tab 에 넣어 만든다. 질문 · 모델명 · 증상 글자는 모두 escape 한다.
 """
 
@@ -14,7 +14,7 @@ INPUT_TYPE_ORDER = ["텍스트 질문", "명판 사진", "손상 사진", "그 �
 OTHER_PHOTO = "그 외 사진"   # Figma 에는 텍스트 · 명판 · 손상 3가지만 있어서, 그 외 사진은 건수가 있을 때만 보임
 NO_QUESTIONS = "이 기간에는 질문이 없습니다"
 DAILY_BAR_MAX_REM = 9.375    # 일별 질문 수 막대 최대 높이 (Figma 150px)
-MODEL_BAR_MAX_REM = 18.75    # 설비 모델별 막대 최대 길이 (Figma 300px)
+MODEL_BAR_RESERVE_REM = 12.5   # 설비 모델별 한 줄에서 막대 말고 차지하는 너비 (모델명 7.5rem · 간격 · 건수). 가장 긴 막대 = 남는 너비
 DENSE_DAYS = 14              # 이보다 날이 많으면(최근 30일) 막대 위 숫자를 빼고 날짜는 띄엄띄엄 표시
 
 
@@ -56,8 +56,8 @@ def build_usage_tab(periods: list[str], default: str) -> UsageTab:
         with gr.Row(elem_classes=["adm-row"]):
             daily = gr.HTML()
             input_types = gr.HTML()
-        with gr.Row(elem_classes=["adm-row"]):
             models = gr.HTML()
+        with gr.Row(elem_classes=["adm-row"]):
             top_symptoms = gr.HTML()
     return UsageTab(period, caption, daily, input_types, models, top_symptoms)
 
@@ -139,7 +139,7 @@ def render_models(models) -> str:
     rows = "".join(
         "<li class='adm-hbar'>"
         f"<span class='adm-hbar-label' title='{escape(str(name))}'>{escape(str(name))}</span>"
-        f"<span class='adm-hbar-fill' style='width:{count / top * MODEL_BAR_MAX_REM:.3f}rem'></span>"
+        f"<span class='adm-hbar-fill' style='width:calc((100% - {MODEL_BAR_RESERVE_REM}rem) * {count / top:.4f})'></span>"
         f"<span class='adm-hbar-value'>{count:,}건</span>"
         "</li>"
         for name, count in zip(models["설비 모델"], counts)
@@ -157,7 +157,7 @@ def render_top_symptoms(top_symptoms) -> str:
         return _card("자주 묻는 증상 Top 10", f"<p class='adm-empty'>{NO_QUESTIONS}</p>")
     originals = top_symptoms["원문"] if "원문" in top_symptoms else [""] * len(top_symptoms)
     rows = "".join(
-        f"<tr><td>{int(rank)}</td><td><span class='adm-symptom'>{escape(str(symptom))}</span>"
+        f"<tr><td class='adm-rank'>{int(rank)}</td><td><span class='adm-symptom'>{escape(str(symptom))}</span>"
         + (f"<span class='adm-symptom-original'>{escape(str(original))}</span>" if original else "")
         + f"</td><td>{int(count):,}</td></tr>"
         for rank, symptom, original, count in zip(
@@ -166,7 +166,7 @@ def render_top_symptoms(top_symptoms) -> str:
     )
     table = (
         "<table class='adm-table'><colgroup><col class='adm-col-rank'><col><col class='adm-col-count'></colgroup>"
-        f"<thead><tr><th>순위</th><th>증상</th><th>질문 수</th></tr></thead><tbody>{rows}</tbody></table>"
+        f"<thead><tr><th class='adm-rank'>순위</th><th>증상</th><th>질문 수</th></tr></thead><tbody>{rows}</tbody></table>"
     )
     return _card("자주 묻는 증상 Top 10", table)
 
