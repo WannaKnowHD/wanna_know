@@ -22,7 +22,7 @@
   width: 100%;
   max-width: 27.5rem;          /* 440px */
   margin: 0 auto;
-  padding: 2.0rem 1.875rem;
+  padding: 2.5rem;             /* Figma 로그인 카드 안쪽 여백 40px */
   gap: 1.125rem !important;    /* 18px */
   box-shadow: none;
   flex: 0 0 auto !important;   /* 카드가 화면 높이만큼 늘어나지 않게 */
@@ -46,7 +46,7 @@
   font-size: 0.6875rem;        /* 11px */
   font-weight: 700;
   line-height: 1.2;
-  padding: 0.3125rem 0.5rem;
+  padding: 0.3125rem 0.75rem;  /* Figma 태그 위아래 5px · 좌우 12px */
   border-radius: 0.25rem;
 }
 .dark .login-tag { border-radius: 999px; padding: 0.3125rem 0.75rem; letter-spacing: 0.02em; }
@@ -104,7 +104,7 @@
   border-radius: 0.5rem !important;
   height: 2.3125rem;           /* 37px */
   font-size: 0.875rem;
-  font-weight: 600;
+  font-weight: 500;            /* Figma Button/Primary Medium */
   box-shadow: none !important;
 }
 #login-submit:hover { filter: brightness(1.08); }

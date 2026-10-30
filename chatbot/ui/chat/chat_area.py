@@ -6,7 +6,7 @@ from pathlib import Path
 
 import gradio as gr
 
-from chatbot.ui.chat.messages import render_equipment, render_welcome
+from chatbot.ui.chat.messages import render_welcome
 from chatbot.ui.login.theme import THEME_TOGGLE_ENABLED
 
 CHAT_AREA_CSS_PATH = Path(__file__).parent / "chat_area.css"
@@ -20,6 +20,7 @@ EXAMPLE_QUESTIONS = (
     "벨트 가장자리가 닳았어요",    # TS-FENNERBELT-T01-18
     "주간 점검 뭐 해야 해?",       # maintenance KB 중 interval "weekly" 6개
 )
+SERVICE_NAME = "Wanna Know"   # 채팅 상단 바 왼쪽 (예전 설비 표시 자리)
 INPUT_PLACEHOLDER = "증상이나 알람 코드를 입력하세요"
 
 
@@ -28,7 +29,7 @@ class ChatArea:
     """build_chat_area 가 만든 화면 요소 (이벤트를 연결할 때 씀)"""
 
     root: gr.Column
-    equipment: gr.HTML
+    brand: gr.HTML
     admin_button: gr.Button
     theme_button: gr.Button
     chatbot: gr.Chatbot
@@ -43,10 +44,10 @@ class ChatArea:
 
 
 def build_chat_area() -> ChatArea:
-    """채팅 영역 구성: 현재 설비·관리자 전환·라이트/다크 버튼, 채팅창, 예시 질문, 사진 첨부·질문 입력·전송"""
+    """채팅 영역 구성: 서비스 이름(Wanna Know)·관리자 전환·라이트/다크 버튼, 채팅창, 예시 질문, 사진 첨부·질문 입력·전송"""
     with gr.Column(scale=1, elem_id="chat-area") as root:
         with gr.Row(elem_id="chat-topbar", equal_height=True):
-            equipment = gr.HTML(render_equipment(None), elem_id="chat-equipment")
+            brand = gr.HTML(f"<span class='ca-brand'>{SERVICE_NAME}</span>", elem_id="chat-brand")   # Figma 로고 자리
             admin_button = gr.Button("관리자 전환", visible=False, elem_classes=["ca-button"])
             theme_button = gr.Button(
                 "라이트 / 다크", elem_classes=["ca-button", "theme-toggle"], visible=THEME_TOGGLE_ENABLED
@@ -83,6 +84,6 @@ def build_chat_area() -> ChatArea:
             )
             send_button = gr.Button("전송", variant="primary", elem_id="chat-send")
     return ChatArea(
-        root, equipment, admin_button, theme_button, chatbot, examples, example_buttons,
+        root, brand, admin_button, theme_button, chatbot, examples, example_buttons,
         preview_row, preview, preview_remove, image_button, message, send_button,
     )

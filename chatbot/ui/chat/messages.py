@@ -22,7 +22,8 @@ NOTICE_TITLES: dict[Status, str] = {
     "error": "답변을 만들지 못했습니다",
 }
 
-NO_EQUIPMENT_TEXT = "전체 매뉴얼"   # 설비를 정하지 않았을 때 (대화 초기화한 상태, Figma 다크 시안 01)
+TYPING_TEXT = "매뉴얼에서 근거를 확인하고 있어요…"   # 답변 생성 중 (Figma 01-1)
+TYPING_NOTE = "답변이 준비되면 바로 표시됩니다"
 NO_IMAGE_TEXT = "이미지를 불러올 수 없습니다"   # image_path 의 파일이 없거나 읽을 수 없을 때 (카드는 깨지지 않고 글자만 보임)
 IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}   # 이 확장자만 화면에 넣음
 TABLE_FIGURE_TYPES = ("table", "figure")   # 원문 보기에 잘라 둔 이미지를 같이 보여 주는 근거 종류
@@ -49,15 +50,13 @@ def render_user_message(text: str) -> str:
     return f"<div class='wk-user-text'>{escape(text or '')}</div>"
 
 
-def render_equipment(equipment: dict | None) -> str:
-    """상단 바의 현재 설비 표시 (C-01, Figma: '설비' + 칩). equipment 는 state["equipment"] ({"model_name", ...}) 이거나 None.
-    설비가 있으면 칩을 채워서 모델명을, 없으면 "전체 매뉴얼"을 보여 줌"""
-    name = (equipment or {}).get("model_name") if equipment else None
-    chip_class = "wk-chip wk-chip-on" if name else "wk-chip"
+def render_typing() -> str:
+    """답변을 만드는 동안 채팅창에 보이는 말풍선 (Figma 01-1 답변 생성 중: 점 3개 + 안내 + 아래 작은 안내).
+    Gradio 처리 중 표시(주황 로딩 · processing 시간)는 숨겼으므로 이 말풍선이 기다리는 동안의 표시. 답변 카드가 오면 이 자리가 바뀜"""
     return (
-        "<div class='wk-equipment'>"
-        "<span class='wk-equipment-label'>설비</span>"
-        f"<span class='{chip_class}'>{escape(name or NO_EQUIPMENT_TEXT)}</span>"
+        "<div class='wk-typing'>"
+        f"<div class='wk-typing-bubble'><span class='wk-dots'><i></i><i></i><i></i></span><span>{TYPING_TEXT}</span></div>"
+        f"<p class='wk-typing-note'>{TYPING_NOTE}</p>"
         "</div>"
     )
 

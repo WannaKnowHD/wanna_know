@@ -11,11 +11,11 @@ import pandas as pd
 
 REVIEWED = "담당자 확인"
 KB_UPDATE_NEEDED = "KB 업데이트 필요"
-# 답 못 찾은 질문 목록의 열 (Figma 07: 날짜 · 질문 · 설비 · 담당자 확인 · KB 업데이트 필요).
+# 답 못 찾은 질문 목록의 열 (Figma 07 라이트: 날짜 · 질문 · 담당자 확인 · KB 업데이트 필요).
 # 맨 뒤 "No"는 chat_logs.log_id 로, 체크박스를 저장할 때 행을 찾는 데 쓰고 화면에서는 admin.css 가 숨김
 # (맨 앞에 두면 Gradio 가 첫 칸을 따로 그려 제목 행과 본문 행의 칸이 어긋남)
-NOT_FOUND_HEADERS = ["날짜", "질문", "설비", REVIEWED, KB_UPDATE_NEEDED, "No"]
-NOT_FOUND_TYPES = ["str", "str", "str", "bool", "bool", "number"]
+NOT_FOUND_HEADERS = ["날짜", "질문", REVIEWED, KB_UPDATE_NEEDED, "No"]
+NOT_FOUND_TYPES = ["str", "str", "bool", "bool", "number"]
 REVIEW_HELP = (   # Figma 07 문구 그대로
     "체크박스를 누르면 바로 저장됩니다. 확인한 질문은 '담당자 확인', KB 보강이 필요하면 'KB 업데이트 필요'도 체크하세요."
 )
@@ -53,8 +53,8 @@ def build_quality_tab() -> QualityTab:
                 headers=NOT_FOUND_HEADERS,
                 datatype=NOT_FOUND_TYPES,
                 interactive=True,
-                static_columns=[0, 1, 2, 5],   # 체크박스 두 열만 고칠 수 있음
-                column_widths=["9%", "58%", "10%", "10%", "13%", "0%"],   # Figma 열 너비 110 · 790 · 120 · 120 · 170, No 는 0
+                static_columns=[0, 1, 4],   # 체크박스 두 열만 고칠 수 있음
+                column_widths=["9%", "69%", "9%", "13%", "0%"],   # Figma 열 너비 110 · 910 · 120 · 170, No 는 0
                 buttons=[],
                 show_label=False,
                 max_height=480,

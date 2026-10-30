@@ -1,4 +1,4 @@
-"""채팅 화면 설비 표시 · 대화 초기화 · 예시 질문 · 대화 기록 클릭 확인 (WBS 3.7.3). DB·화면 없이 검사함.
+"""채팅 화면 상단 바 · 사이드바 · 대화 초기화 · 예시 질문 · 대화 기록 클릭 확인 (WBS 3.7.3). DB·화면 없이 검사함.
 
 화면 틀·가짜 응답은 chat_ui_test.py(3.7.1), 대화 기록(show_history)은 login_ui_test.py 가 확인한다.
 
@@ -24,9 +24,10 @@ from chatbot.ui.chat import (  # noqa: E402
     build_sidebar,
     fake_answer,
     history_key,
-    render_equipment,
     render_history,
+    render_typing,
 )
+from chatbot.ui.chat.sidebar import BRAND  # noqa: E402
 from chatbot.ui.gradio_app import ChatApp  # noqa: E402
 
 USER = User("e1", "사원", "user")
@@ -52,27 +53,28 @@ def test_example_questions_are_short(text):
     assert 0 < len(text) <= 20  # 칩 한 줄에 들어가는 길이
 
 
-# ---------------- 설비 표시 (C-01) ----------------
-def test_show_equipment_with_model():
-    app = ChatApp()
-    html = app.show_equipment(app._conversation.set_equipment({"user": USER}, ACC))  # {"model_name", "aliases", "doc_ids"}
-    assert "138-ACC" in html and "wk-chip-on" in html and "전체 매뉴얼" not in html
+# ---------------- 상단 바 · 사이드바 제목 (10/30: 설비 표시 삭제) ----------------
+def test_topbar_shows_service_name_and_sidebar_title():
+    with gr.Blocks():
+        area = build_chat_area()
+        build_sidebar()
+    assert "Wanna Know" in area.brand.value and "설비" not in area.brand.value
+    assert BRAND == "컨베이어 문제 해결 챗봇"
 
 
-def test_show_equipment_without_model():
-    for state in ({}, {"equipment": None}, None):
-        html = ChatApp().show_equipment(state)
-        assert "전체 매뉴얼" in html and "wk-chip-on" not in html
+def test_typing_bubble():
+    html = render_typing()   # 답변 생성 중 (Figma 01-1)
+    assert "wk-typing" in html and "매뉴얼에서 근거를 확인하고 있어요" in html and html.count("<i></i>") == 3
 
 
-def test_show_equipment_accepts_model_object():
-    app = ChatApp()
-    assert app.show_equipment({"equipment": ACC}) == app.show_equipment(app._conversation.set_equipment({}, ACC))
-
-
-def test_show_equipment_escapes_model_name():
-    html = ChatApp().show_equipment({"equipment": {"model_name": "<b>x</b>"}})
-    assert "<b>x</b>" not in html and "&lt;b&gt;" in html
+def test_events_hide_gradio_progress(env):  # noqa: F811
+    """처리 중 Gradio 표시(주황 로딩 · processing 시간)를 끈 이벤트들. 켜져 있으면 채팅창에 스크롤바가 하나 더 생김"""
+    app, _, _ = env
+    demo = app.build_ui()
+    shown = {dep.get("api_name"): dep.get("show_progress") for dep in demo.config["dependencies"]}
+    for name in ("load_event", "login_event", "logout_event", "admin_event", "back_event", "show_question_event",
+                 "answer_event", "attach_event", "remove_event", "reset_event", "history_event", "refresh"):
+        assert shown.get(name) == "hidden", name
 
 
 # ---------------- 대화 초기화 (C-02) ----------------
@@ -83,19 +85,16 @@ def test_reset_conversation_keeps_user_and_clears_equipment():
     assert new_state["equipment"] is None
     assert new_state["user"] == USER and new_state["admin_mode"] is True
     assert state["equipment"]["model_name"] == "138-ACC"  # 받은 dict 는 고치지 않음
-    assert app.show_equipment(new_state) == render_equipment(None)
 
 
 # ---------------- 로그인 · 로그아웃 때 다시 그리기 ----------------
-def test_screen_redraws_equipment_on_login_and_logout(env):  # noqa: F811
-    app, _, conversation = env
+def test_screen_redraws_history_on_login_and_logout(env):  # noqa: F811
+    app, _, _ = env
     token, state = app.on_login("e1", "pw-eng", {})
-    *_, equipment, _error = app._screen(state)   # 끝에서 둘째: 현재 설비, 마지막: 로그인 안내
-    assert equipment == render_equipment(None)
-    state = conversation.set_equipment(state, ACC)
-    assert "138-ACC" in app._screen(state)[-2]
+    *_, history, _error = app._screen(state)   # 끝에서 둘째: 대화 기록, 마지막: 로그인 안내
+    assert "아직 대화 기록이 없습니다" in history
     _, state = app.on_logout(token, state)
-    assert app._screen(state)[-2] == render_equipment(None)
+    assert app._screen(state)[-2] == ""          # 로그아웃하면 대화 기록 칸을 비움
 
 
 def test_build_ui(env):  # noqa: F811

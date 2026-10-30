@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 SIDEBAR_CSS_PATH = Path(__file__).parent / "sidebar.css"
 
-BRAND = "Wanna Know"
+BRAND = "컨베이어 문제 해결 챗봇"   # 사이드바 맨 위 제목 (Figma Page 3 대화 기록창). 서비스 이름 Wanna Know 는 채팅 상단 바
 
 # 대화 기록 항목을 누르면(Enter · Space 도) 그 항목의 순서와 history_key 를 담아 click 이벤트를 보냄 → ChatApp.open_history (C-03).
 # 목록 HTML 은 값이 바뀔 때마다 다시 그려지므로 항목마다가 아니라 목록 전체(element)에 한 번 걸어 둔다

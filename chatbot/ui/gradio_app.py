@@ -17,7 +17,7 @@ from chatbot.ui.chat import (
     build_chat_screen,
     history_key,
     render_answer_card,
-    render_equipment,
+    render_typing,
     render_history,
     render_user_info,
     render_user_message,
@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from chatbot.core.config import Settings
     from chatbot.pipeline import RagPipeline
 
+HIDE = {"show_progress": "hidden"}   # 이벤트 처리 중 Gradio 기본 표시(주황 로딩 애니메이션 · processing 시간) 끄기
 MSG_BAD_ANSWER = "답변 형식이 올바르지 않아 표시할 수 없습니다. 다시 질문해 주세요."   # 응답이 AnswerResponse 형식에 맞지 않을 때
 MSG_NO_PIPELINE = "답변 기능을 아직 사용할 수 없습니다. 관리자에게 문의해 주세요."     # RagPipeline 을 만들지 못했을 때 (색인 없음 등)
 MSG_ANSWER_ERROR = "답변을 만드는 중 문제가 생겼어요. 잠시 후 다시 질문해 주세요."     # RagPipeline.answer 밖에서 예외가 났을 때
@@ -89,7 +90,7 @@ class ChatApp:
     def _screen(self, state: dict):
         """state 에 맞는 화면 상태를 만든다 (로그인 화면 / 채팅 화면 / 관리자 대시보드 중 하나만 보임).
 
-        Returns: (로그인 화면, 채팅 화면, 관리자 화면, 관리자 전환 버튼, 사이드바 사원 정보, 관리자 사원 정보, 대화 기록, 현재 설비, 로그인 안내)
+        Returns: (로그인 화면, 채팅 화면, 관리자 화면, 관리자 전환 버튼, 사이드바 사원 정보, 관리자 사원 정보, 대화 기록, 로그인 안내)
         """
         user = state.get("user")
         admin_mode = bool(state.get("admin_mode")) and user is not None and user.is_admin
@@ -102,7 +103,6 @@ class ChatApp:
             render_user_info(user),
             AdminDashboard.render_user_info(user),
             history,
-            self.show_equipment(state),
             render_login_error(state.get("login_error")),
         )
 
@@ -133,7 +133,7 @@ class ChatApp:
 
             screen = [
                 login.root, chat.root, admin_view, area.admin_button, sidebar.user_info, admin_user_info,
-                sidebar.history, area.equipment, login.error,
+                sidebar.history, login.error,
             ]
             # 채팅창을 처음 상태(빈 채팅창 + 예시 질문)로 되돌릴 때 함께 바꾸는 요소
             pending_image = gr.State(None)   # 첨부했지만 아직 보내지 않은 사진 경로 (미리보기 중)
@@ -169,19 +169,20 @@ class ChatApp:
                 new_state = dict(current or {})
                 return (new_state, *self._screen({**new_state, "admin_mode": False}))
 
-            demo.load(load_event, inputs=[token_state], outputs=[state, *screen])
+            # 처리 중 표시(Gradio 주황 로딩 · processing 시간)는 모든 이벤트에서 숨김 (HIDE). 답변을 기다릴 때는 render_typing 말풍선
+            demo.load(load_event, inputs=[token_state], outputs=[state, *screen], **HIDE)
             login_inputs = [login.employee, login.password, state]
             login_outputs = [token_state, state, *screen]
-            login.button.click(login_event, inputs=login_inputs, outputs=login_outputs)
-            login.password.submit(login_event, inputs=login_inputs, outputs=login_outputs)
-            login.employee.submit(login_event, inputs=login_inputs, outputs=login_outputs)
+            login.button.click(login_event, inputs=login_inputs, outputs=login_outputs, **HIDE)
+            login.password.submit(login_event, inputs=login_inputs, outputs=login_outputs, **HIDE)
+            login.employee.submit(login_event, inputs=login_inputs, outputs=login_outputs, **HIDE)
             logout_outputs = [token_state, state, *screen, login.employee, login.password, *fresh_chat]
-            sidebar.logout_button.click(logout_event, inputs=[token_state, state], outputs=logout_outputs)
-            self._dashboard.logout_button.click(logout_event, inputs=[token_state, state], outputs=logout_outputs)
-            area.admin_button.click(admin_event, inputs=[state], outputs=[state, *screen]).then(
-                self._dashboard.refresh, inputs=self._dashboard.refresh_inputs, outputs=self._dashboard.refresh_outputs
+            sidebar.logout_button.click(logout_event, inputs=[token_state, state], outputs=logout_outputs, **HIDE)
+            self._dashboard.logout_button.click(logout_event, inputs=[token_state, state], outputs=logout_outputs, **HIDE)
+            area.admin_button.click(admin_event, inputs=[state], outputs=[state, *screen], **HIDE).then(
+                self._dashboard.refresh, inputs=self._dashboard.refresh_inputs, outputs=self._dashboard.refresh_outputs, **HIDE
             )   # 대시보드로 넘어가면 기본 기간(최근 7일) 값을 채움
-            self._dashboard.back_button.click(back_event, inputs=[state], outputs=[state, *screen])
+            self._dashboard.back_button.click(back_event, inputs=[state], outputs=[state, *screen], **HIDE)
             bind_theme_toggle(login.theme_button, area.theme_button)
 
             # ---- 채팅: 질문 보내기 · 사진 첨부(미리보기) · 예시 질문 · 대화 초기화 ----
@@ -197,11 +198,12 @@ class ChatApp:
                     shown.append({"role": "user", "content": {"path": image}})
                 if message:
                     shown.append({"role": "user", "content": render_user_message(message)})
+                shown.append({"role": "assistant", "content": render_typing()})   # 답변 생성 중 말풍선 (Figma 01-1). 답변이 오면 바뀜
                 return shown, pending, "", gr.update(visible=False), *clear_preview
 
             def answer_event(pending, history, current):
                 if pending is None:
-                    return history, current, gr.update(visible=not history), self.show_equipment(current), gr.update()
+                    return history, current, gr.update(visible=not history), gr.update()
                 if pending["image"]:
                     # 사진 말풍선은 이미 보였으므로 on_image(3.7.5)에는 말풍선까지 붙인 기록을 넘겨 답변 카드만 붙게 함
                     shown = list(pending["history"]) + [{"role": "user", "content": {"path": pending["image"]}}]
@@ -211,8 +213,7 @@ class ChatApp:
                 else:
                     history, new_state = self.on_submit(pending["message"], pending["history"], current)
                 # 방금 저장한 대화가 사이드바 대화 기록 맨 위에 보이게 다시 그림
-                return (history, new_state, gr.update(visible=not history), self.show_equipment(new_state),
-                        render_history(self.show_history(new_state)))
+                return history, new_state, gr.update(visible=not history), render_history(self.show_history(new_state))
 
             def attach_event(file):
                 return file, gr.update(visible=bool(file)), file
@@ -229,23 +230,23 @@ class ChatApp:
 
             def reset_event(current):
                 new_state = self.reset_conversation(current)
-                return (new_state, self.show_equipment(new_state), *fresh_values)
+                return (new_state, *fresh_values)
 
             pending_question = gr.State(None)   # 질문은 보였지만 아직 답변이 붙지 않은 요청
             question_outputs = [area.chatbot, pending_question, area.message, area.examples, *preview_outputs]
             question_inputs = [area.message, area.chatbot, state, pending_image]
             answer_inputs = [pending_question, area.chatbot, state]
-            answer_outputs = [area.chatbot, state, area.examples, area.equipment, sidebar.history]
+            answer_outputs = [area.chatbot, state, area.examples, sidebar.history]
             for trigger in (area.send_button.click, area.message.submit):
-                trigger(show_question_event, inputs=question_inputs, outputs=question_outputs).then(
-                    answer_event, inputs=answer_inputs, outputs=answer_outputs
+                trigger(show_question_event, inputs=question_inputs, outputs=question_outputs, **HIDE).then(
+                    answer_event, inputs=answer_inputs, outputs=answer_outputs, **HIDE
                 )
-            area.image_button.upload(attach_event, inputs=[area.image_button], outputs=preview_outputs)
-            area.preview_remove.click(remove_event, outputs=preview_outputs)
-            sidebar.reset_button.click(reset_event, inputs=[state], outputs=[state, area.equipment, *fresh_chat])
-            sidebar.history.click(history_event, inputs=[state], outputs=[area.chatbot, area.examples])
+            area.image_button.upload(attach_event, inputs=[area.image_button], outputs=preview_outputs, **HIDE)
+            area.preview_remove.click(remove_event, outputs=preview_outputs, **HIDE)
+            sidebar.reset_button.click(reset_event, inputs=[state], outputs=[state, *fresh_chat], **HIDE)
+            sidebar.history.click(history_event, inputs=[state], outputs=[area.chatbot, area.examples], **HIDE)
             for button, template in zip(area.example_buttons, EXAMPLE_QUESTIONS):
-                button.click(lambda t=template: self.show_examples(t)[1], inputs=None, outputs=[area.message])
+                button.click(lambda t=template: self.show_examples(t)[1], inputs=None, outputs=[area.message], **HIDE)
 
         return demo
 
@@ -528,18 +529,6 @@ class ChatApp:
         """
         # 설비 필터는 ConversationState.clear 가 비우고, 화면의 채팅창은 build_ui 의 reset_event 가 [] 로 지움
         return self._conversation.clear(state)
-
-    def show_equipment(self, state: dict) -> str:
-        """
-        현재 설비 표시 (C-01): 명판으로 정한 설비가 있으면 모델명을 채운 칩으로, 없으면 "전체 매뉴얼"을 상단 바에 표시.
-        로그인·새로고침·로그아웃(_screen), 질문 전송, 대화 초기화 뒤에 다시 그림
-
-        Returns: str (HTML)
-        """
-        equipment = (state or {}).get("equipment")
-        if equipment is not None and not isinstance(equipment, dict):   # schemas.Model 이 그대로 들어와도 표시
-            equipment = {"model_name": getattr(equipment, "model_name", None)}
-        return render_equipment(equipment)
 
     def change_admin_mode(self, state: dict):
         """
