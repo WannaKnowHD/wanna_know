@@ -94,7 +94,7 @@ class ChatApp:
         """
         user = state.get("user")
         admin_mode = bool(state.get("admin_mode")) and user is not None and user.is_admin
-        history = render_history(self.show_history(state)) if user is not None else ""
+        history = render_history(self.show_history(state), active=state.get("conversation_id")) if user is not None else ""
         return (
             gr.update(visible=user is None),
             gr.update(visible=user is not None and not admin_mode),
@@ -108,7 +108,7 @@ class ChatApp:
 
     def build_ui(self):
         """
-        로그인 화면(사원번호·비밀번호 입력창, 로그인 버튼), 채팅 화면(채팅창, 텍스트 입력창, 사진 첨부, 예시 질문 버튼, 대화 기록, 대화 초기화,
+        로그인 화면(사원번호·비밀번호 입력창, 로그인 버튼), 채팅 화면(채팅창, 텍스트 입력창, 사진 첨부, 예시 질문 버튼, 대화 기록, 새 대화,
         관리자 전환 버튼, 현재 설비 표시, 로그아웃 버튼)과 관리자 대시보드 탭(운영 현황·답변 품질·시스템·KB 현황)을 구성. 로그인 전에는 로그인
         화면만 표시하고, 관리자 전환 버튼은 관리자 계정에게만 표시. 세션 토큰은 gr.BrowserState(고정 저장 키·암호 키)에, 로그인한
         사원(User)은 gr.State에 보관
@@ -185,7 +185,7 @@ class ChatApp:
             self._dashboard.back_button.click(back_event, inputs=[state], outputs=[state, *screen], **HIDE)
             bind_theme_toggle(login.theme_button, area.theme_button)
 
-            # ---- 채팅: 질문 보내기 · 사진 첨부(미리보기) · 예시 질문 · 대화 초기화 ----
+            # ---- 채팅: 질문 보내기 · 사진 첨부(미리보기) · 예시 질문 · 새 대화 ----
             # 질문 말풍선을 먼저 보여 주고(show_question_event), 이어서 답변을 만들어 붙인다(answer_event)
             def show_question_event(message, history, current, image):
                 history = list(history or [])
@@ -213,7 +213,9 @@ class ChatApp:
                 else:
                     history, new_state = self.on_submit(pending["message"], pending["history"], current)
                 # 방금 저장한 대화가 사이드바 대화 기록 맨 위에 보이게 다시 그림
-                return history, new_state, gr.update(visible=not history), render_history(self.show_history(new_state))
+                return history, new_state, gr.update(visible=not history), render_history(
+                    self.show_history(new_state), active=new_state.get("conversation_id")
+                )
 
             def attach_event(file):
                 return file, gr.update(visible=bool(file)), file
@@ -221,12 +223,13 @@ class ChatApp:
             def remove_event():
                 return None, gr.update(visible=False), None
 
-            def history_event(current, evt: gr.EventData):   # 대화 기록 항목을 누르면 그 대화를 채팅창에 보여 줌 (C-03)
+            def history_event(current, evt: gr.EventData):   # 대화 기록 항목을 누르면 그 대화 전체를 채팅창에 보여 주고 이어 가게 함 (C-03)
                 data = evt._data if isinstance(evt._data, dict) else {}
-                messages = self.open_history(current, data.get("index"), data.get("key"))
-                if messages is None:   # 그사이 기록이 바뀌어 찾지 못하면 채팅창은 그대로
-                    return gr.update(), gr.update()
-                return messages, gr.update(visible=False)
+                opened = self.open_history(current, data.get("index"), data.get("key"))
+                if opened is None:   # 그사이 기록이 바뀌어 찾지 못하면 채팅창은 그대로
+                    return gr.update(), gr.update(), gr.update()
+                messages, new_state = opened
+                return messages, gr.update(visible=False), new_state
 
             def reset_event(current):
                 new_state = self.reset_conversation(current)
@@ -244,7 +247,7 @@ class ChatApp:
             area.image_button.upload(attach_event, inputs=[area.image_button], outputs=preview_outputs, **HIDE)
             area.preview_remove.click(remove_event, outputs=preview_outputs, **HIDE)
             sidebar.reset_button.click(reset_event, inputs=[state], outputs=[state, *fresh_chat], **HIDE)
-            sidebar.history.click(history_event, inputs=[state], outputs=[area.chatbot, area.examples], **HIDE)
+            sidebar.history.click(history_event, inputs=[state], outputs=[area.chatbot, area.examples, state], **HIDE)
             for button, template in zip(area.example_buttons, EXAMPLE_QUESTIONS):
                 button.click(lambda t=template: self.show_examples(t)[1], inputs=None, outputs=[area.message], **HIDE)
 
@@ -486,19 +489,20 @@ class ChatApp:
 
     def show_history(self, state: dict):
         """
-        로그인한 사원의 과거 대화 기록을 ConversationState.load_history로 MySQL에서 불러와 목록(로그창)으로 출력
+        로그인한 사원의 과거 대화를 ConversationState.load_conversations로 MySQL에서 대화(스레드) 단위로 불러와 목록(로그창)으로 출력
 
         Returns: list
         """
         user = state.get("user")
-        return self._conversation.load_history(user.employee_id) if user is not None else []
+        return self._conversation.load_conversations(user.employee_id) if user is not None else []
 
     def open_history(self, state: dict, index, key: str | None = None):
         """
-        대화 기록 목록의 항목을 누르면 그 대화의 질문·답변을 채팅창에 다시 보여 줌 (C-03). index 는 목록 순서(최신순),
-        key 는 항목에 달아 둔 history_key(저장 시각 + 질문). 목록을 그린 뒤 새 대화가 저장돼 순서가 밀렸으면 key 로 다시 찾음
+        대화 기록 목록의 항목을 누르면 그 대화의 모든 질문·답변을 순서대로 채팅창에 다시 보여 주고, 이어서 질문하면 같은 대화에 쌓이도록
+        대화 ID 를 바꿈 (C-03). index 는 목록 순서(마지막 활동이 최신인 순), key 는 항목에 달아 둔 history_key(대화 ID).
+        목록을 그린 뒤 순서가 밀렸으면 key 로 다시 찾음
 
-        Returns: list | None (채팅창 기록: 질문 말풍선 + 답변 카드. 찾지 못하면 None)
+        Returns: tuple[list, dict] | None (채팅창 기록: 질문 말풍선 + 답변 카드 반복, 바뀐 대화 상태. 찾지 못하면 None)
         """
         rows = self.show_history(state or {})
         try:
@@ -510,24 +514,27 @@ class ChatApp:
             row = next((r for r in rows if history_key(r) == key), None)
         if row is None:
             return None
-        answer = row.get("answer")
-        if isinstance(answer, (str, bytes)):   # DB 드라이버에 따라 JSON 칸이 글자로 올 수 있음
-            try:
-                answer = json.loads(answer)
-            except ValueError:
-                answer = None
-        return [
-            {"role": "user", "content": render_user_message(str(row.get("question") or ""))},
-            {"role": "assistant", "content": self.render_answer(answer or {})},   # 깨진 답변은 안내 카드로 보임
-        ]
+        messages = []
+        for turn in row["turns"]:
+            answer = turn.get("answer")
+            if isinstance(answer, (str, bytes)):   # DB 드라이버에 따라 JSON 칸이 글자로 올 수 있음
+                try:
+                    answer = json.loads(answer)
+                except ValueError:
+                    answer = None
+            messages += [
+                {"role": "user", "content": render_user_message(str(turn.get("question") or ""))},
+                {"role": "assistant", "content": self.render_answer(answer or {})},   # 깨진 답변은 안내 카드로 보임
+            ]
+        return messages, self._conversation.resume(state, row["conversation_id"])
 
     def reset_conversation(self, state: dict):
         """
-        대화 초기화: 설비 필터를 비우고 화면의 대화 내용을 지워 전체 매뉴얼 검색으로 되돌림
+        새 대화: 설비 필터와 대화 ID 를 비우고 화면의 대화 내용을 지워 새 대화로 시작 (다음 질문부터 새 대화로 저장됨)
 
         Returns: dict
         """
-        # 설비 필터는 ConversationState.clear 가 비우고, 화면의 채팅창은 build_ui 의 reset_event 가 [] 로 지움
+        # 설비 필터·대화 ID 는 ConversationState.clear 가 비우고, 화면의 채팅창은 build_ui 의 reset_event 가 [] 로 지움
         return self._conversation.clear(state)
 
     def change_admin_mode(self, state: dict):
