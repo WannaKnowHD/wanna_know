@@ -1,6 +1,6 @@
 """관리자 운영 현황 탭 (SCR-05 · Figma 06 운영 현황, WBS 3.8.3). 막대 · 표는 HTML 로 그리고 모양은 admin.css 의 .adm-*
 
-화면 순서: 기간 표시 → 1행 [일별 질문 수 | 입력 유형 비율 | 설비 모델별 질문 수] → 2행 [자주 묻는 증상 Top 10].
+화면 순서: 기간 표시 → 1열 [일별 질문 수 · 입력 유형 비율 · 설비 모델별 질문 수 (세로로)] | 2열 [자주 묻는 증상 Top 10].
 값은 AdminDashboard.usage_stats 결과를 render_usage_tab 에 넣어 만든다. 질문 · 모델명 · 증상 글자는 모두 escape 한다.
 """
 
@@ -54,11 +54,12 @@ def build_usage_tab(periods: list[str], default: str) -> UsageTab:
             )
             caption = gr.HTML(elem_classes=["adm-caption"])
         with gr.Row(elem_classes=["adm-row"]):
-            daily = gr.HTML()
-            input_types = gr.HTML()
-            models = gr.HTML()
-        with gr.Row(elem_classes=["adm-row"]):
-            top_symptoms = gr.HTML()
+            with gr.Column(elem_classes=["adm-col"]):   # 1열: 일별 → 입력 유형 → 설비 모델 (위에서 아래로)
+                daily = gr.HTML()
+                input_types = gr.HTML()
+                models = gr.HTML()
+            with gr.Column(elem_classes=["adm-col"]):   # 2열: 자주 묻는 증상 Top 10
+                top_symptoms = gr.HTML()
     return UsageTab(period, caption, daily, input_types, models, top_symptoms)
 
 
