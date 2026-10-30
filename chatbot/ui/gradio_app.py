@@ -12,7 +12,9 @@ from pydantic import ValidationError
 from chatbot.core.schemas import AnswerResponse, DamageResult, Equipment, ImageResult, NameplateResult
 from chatbot.core.state import ConversationState
 from chatbot.ui.chat import (
+    CHAT_ASSET_DIR,
     CHAT_CSS_PATHS,
+    PAGE_IMAGE_DIR,
     EXAMPLE_QUESTIONS,
     build_chat_screen,
     history_key,
@@ -84,8 +86,13 @@ class ChatApp:
 
     @staticmethod
     def launch_options() -> dict:
-        """app.py 가 launch(**ChatApp.launch_options()) 로 넘기는 값 (스타일 파일과 다크 모드 복원 스크립트)"""
-        return {"css_paths": [ADMIN_CSS_PATH, *LOGIN_CSS_PATHS, *CHAT_CSS_PATHS], "js": THEME_INIT_JS}
+        """app.py 가 launch(**ChatApp.launch_options()) 로 넘기는 값 (스타일 파일, 다크 모드 복원 스크립트,
+        화면이 /gradio_api/file= 로 읽는 폴더: 상단 바 로고 · 원문 보기 쪽 이미지)"""
+        return {
+            "css_paths": [ADMIN_CSS_PATH, *LOGIN_CSS_PATHS, *CHAT_CSS_PATHS],
+            "js": THEME_INIT_JS,
+            "allowed_paths": [str(CHAT_ASSET_DIR), str(PAGE_IMAGE_DIR)],
+        }
 
     def _screen(self, state: dict):
         """state 에 맞는 화면 상태를 만든다 (로그인 화면 / 채팅 화면 / 관리자 대시보드 중 하나만 보임).

@@ -21,6 +21,8 @@
   --admin-track: #e9eeea;           /* 입력 유형 막대 3번째 (손상 사진) */
   --admin-other: #b8c4bc;           /* 입력 유형 막대 4번째 (그 외 사진, 있을 때만) */
   --admin-check-border: #aeb9b2;    /* 꺼진 체크박스 테두리 */
+  /* 켜진 체크박스의 체크 표시 (Figma 담당자 확인 체크박스: 20px 칸에 2px 흰 선) */
+  --admin-check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 10.75L8.5 14.25L15 6.75' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   /* 채팅 화면과 같은 글꼴. Gradio 기본 글꼴이면 "KB" 같은 영문만 다른 글꼴 · 크기로 보임 */
   --font: "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
 
@@ -49,7 +51,8 @@ body.dark #admin-root {
   --admin-accent-soft: #1f6b4a;
   --admin-track: #222c27;
   --admin-other: #3a4842;
-  --admin-check-border: #4a5a52;
+  --admin-check-border: #4a5952;
+  --admin-check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 10.75L8.5 14.25L15 6.75' fill='none' stroke='%2306140d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 /* ── 풀화면: Gradio 기본 최대 너비·여백 제거 ───────── */
@@ -440,6 +443,7 @@ body.dark #admin-root {
   background: transparent !important;
   color: var(--admin-text) !important;
   font-size: 0.75rem !important;
+  text-align: center;
 }
 
 #admin-period .icon-wrap {
@@ -452,7 +456,7 @@ body.dark #admin-root {
   font-size: 0.75rem;
 }
 
-/* ── 카드 두 개씩 한 줄 (Figma: 678px + 간격 20px + 678px, 카드 높이는 내용만큼) ── */
+/* ── 카드 한 줄 (1행: 일별 · 입력 유형 · 설비 모델 3개, 2행: Top 10 하나). 간격 20px, 카드 높이는 내용만큼 ── */
 #admin-root .adm-row {
   gap: 1.25rem !important;
   align-items: flex-start !important;
@@ -594,7 +598,10 @@ body.dark #admin-root {
   white-space: nowrap;
 }
 
+/* 너비는 usage_tab.render_models 가 "남는 너비 × 비율"로 정함 (카드 폭이 바뀌어도 가장 긴 막대가 넘치지 않게) */
 .adm-hbar-fill {
+  flex: 0 0 auto;
+  min-width: 2px;
   height: 0.875rem;
   border-radius: 3px;
   background: var(--admin-accent);
@@ -645,6 +652,10 @@ body.dark #admin-root {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.adm-table .adm-rank {
+  text-align: center;
 }
 
 .adm-table th {
@@ -765,10 +776,38 @@ body.dark #admin-root {
   font-size: 0.8125rem;
 }
 
-#not-found-table input[type="checkbox"] {
+/* 체크박스 (Figma 담당자 확인 · KB 업데이트 필요 체크박스 20px): 꺼짐 = 바탕색 + 1.5px 테두리, 켜짐 = 초록 칸 + 체크 표시.
+   Gradio 기본은 테두리 1px 이고 마우스를 올리면 테두리 · 바탕색이 바뀌어서 상태마다 직접 지정 */
+#not-found-table input[type="checkbox"],
+#not-found-table input[type="checkbox"]:hover,
+#not-found-table input[type="checkbox"]:focus {
+  appearance: none;
+  box-sizing: border-box;
   width: 1.25rem;
   height: 1.25rem;
-  accent-color: var(--admin-accent);
+  margin: 0;
+  background: var(--admin-surface) !important;
+  border: 1.5px solid var(--admin-check-border) !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+}
+
+#not-found-table input[type="checkbox"]:checked,
+#not-found-table input[type="checkbox"]:checked:hover,
+#not-found-table input[type="checkbox"]:checked:focus {
+  background: var(--admin-check-mark) center / 100% 100% no-repeat border-box, var(--admin-accent) !important;
+  border-color: var(--admin-accent) !important;
+}
+
+/* KB 업데이트 필요(3번째 열)는 같은 행의 담당자 확인(2번째 열)이 체크돼 있을 때만 누를 수 있음.
+   담당자 확인 없이 체크된 값이 와도 AdminDashboard.on_review_input 이 되돌림 */
+#not-found-table .virtual-row:has([data-col="2"] input:not(:checked)) [data-col="3"] {
+  cursor: not-allowed;
+}
+
+#not-found-table .virtual-row:has([data-col="2"] input:not(:checked)) [data-col="3"] .bool-cell {
+  pointer-events: none;
+  opacity: 0.4;
 }
 
 /* 제목 칸 글자를 고치지 못하게 (Gradio 는 제목 칸을 눌러 이름을 바꿀 수 있음) */

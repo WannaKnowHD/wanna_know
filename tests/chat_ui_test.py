@@ -71,7 +71,7 @@ def test_answer_card_order_and_escape():
     assert positions == sorted(positions)             # 요약 → 안전 문구 → 원인·조치 → 그림 → 출처·원문
     assert "wk-cause" in html and "<ol class='wk-actions'>" in html and "원문 보기" in html
     evil = fake_answer("벨트").model_copy(update={"summary": "<img src=x onerror=alert(1)>"})
-    assert "<img" not in render_answer_card(evil)
+    assert "<img src=x" not in render_answer_card(evil)
 
 
 def test_answer_card_merges_duplicate_causes():
@@ -105,13 +105,44 @@ def test_answer_card_shows_table_and_figure_images(tmp_path):
     assert html.count("data:image/png;base64,") == 2
 
     text_source = source.model_copy(update={"chunk_type": "text"})          # 본문 근거에는 이미지를 넣지 않음
-    assert "<img" not in render_answer_card(base.model_copy(update={"sources": [text_source], "figures": []}))
+    assert "wk-image" not in render_answer_card(base.model_copy(update={"sources": [text_source], "figures": []}))
 
     missing = str(tmp_path / "none.png")
     broken = base.model_copy(update={"sources": [source.model_copy(update={"image_path": missing})],
                                      "figures": [figure.model_copy(update={"image_path": missing})]})
     html = render_answer_card(broken)
-    assert "<img" not in html and "이미지를 불러올 수 없습니다" in html and "원문 보기" in html
+    assert "wk-image" not in html and "이미지를 불러올 수 없습니다" in html and "원문 보기" in html
+
+
+def test_source_quote_first_then_page_toggle(tmp_path, monkeypatch):
+    """원문 보기: 출처 바로 아래 인용문 → 잘라 둔 표 이미지 → 쪽 전체 보기(누르면 확대). 쪽 이미지가 없으면 토글을 뺀다"""
+    import chatbot.ui.chat.messages as messages
+
+    image = tmp_path / "crop.png"
+    image.write_bytes(b"\x89PNG fake")
+    base = fake_answer("벨트")
+    source = base.sources[0].model_copy(update={"chunk_type": "table", "image_path": str(image)})
+    answer = base.model_copy(update={"sources": [source], "figures": []})
+
+    monkeypatch.setattr(messages, "page_image_url", lambda doc_id, page: f"/gradio_api/file=/pages/{doc_id}_p{page}.jpg")
+    html = render_answer_card(answer)
+    assert html.index("</summary><blockquote class='wk-quote'>") < html.index("wk-image") < html.index("wk-page")
+    assert f"p.{source.page} 전체 보기" in html and "class='wk-zoom'" in html and "<input type='checkbox'>" in html
+
+    monkeypatch.setattr(messages, "page_image_url", lambda doc_id, page: None)
+    assert "wk-page" not in render_answer_card(answer)
+
+
+@pytest.mark.parametrize(("page", "page_map", "expected"), [
+    (23, "1-19>21", 3),            # fenner_belt: 파일 1쪽 = 인쇄 21쪽
+    (57, "1-24>6;25-31>54", 28),   # preco_l_series 두 번째 구간
+    (7, "1-24>6;25-31>54", 2),
+    (7, "", 7),                    # page_map 이 없으면 그대로
+])
+def test_source_page_to_file_page(page, page_map, expected):
+    from chatbot.ui.chat.source_page import to_file_page
+
+    assert to_file_page(page, page_map) == expected
 
 
 def test_answer_card_safety_shows_source():

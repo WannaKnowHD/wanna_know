@@ -11,6 +11,7 @@ from html import escape
 from pathlib import Path
 
 from chatbot.core.schemas import ActionStep, AnswerResponse, Cause, Figure, SafetyNote, Source, Status
+from chatbot.ui.chat.source_page import page_image_url
 
 MESSAGES_CSS_PATH = Path(__file__).parent / "messages.css"
 
@@ -121,15 +122,33 @@ def _render_steps(steps: list[ActionStep]) -> str:
     return "".join(f"<p class='wk-line'>{_circled(i)} {escape(s.text)}</p>" for i, s in enumerate(steps, start=1))
 
 
+def _render_page(source: Source) -> str:
+    """원문 보기 안의 두 번째 토글: 그 쪽 전체 이미지. 이미지를 누르면 화면 가득 크게, 한 번 더 누르면 닫힘
+    (label 안 체크박스를 messages.css 가 :has(:checked) 로 받음. 채팅창 HTML 이라 자바스크립트 없이 동작해야 함).
+    PDF 를 찾지 못하면 빈 글자"""
+    url = page_image_url(source.doc_id, source.page)
+    if url is None:
+        return ""
+    alt = escape(f"{source.doc_title} p.{source.page}")
+    return (
+        "<details class='wk-page'>"
+        f"<summary class='wk-link'>p.{source.page} 전체 보기</summary>"
+        f"<label class='wk-zoom' title='눌러서 크게 보기'><input type='checkbox'>"
+        f"<img class='wk-page-image' src='{escape(url)}' alt='{alt}' loading='lazy'></label>"
+        "</details>"
+    )
+
+
 def _render_sources(sources: list[Source]) -> str:
-    """출처 칩 + 원문 보기 (눌러서 펼치는 <details>, 자바스크립트 없이 동작). 근거가 표·그림이면 잘라 둔 이미지도 같이 보여 줌"""
+    """출처 칩 + 원문 보기 (눌러서 펼치는 <details>, 자바스크립트 없이 동작).
+    펼치면 출처 바로 아래에 인용문(최대 3줄), 근거가 표·그림이면 잘라 둔 이미지, 그다음 "쪽 전체 보기" 토글"""
     parts = []
     for s in sources:
         picture = _image(s.image_path, f"{s.doc_title} p.{s.page}") if s.chunk_type in TABLE_FIGURE_TYPES else ""
         parts.append(
             "<details class='wk-source'>"
             f"<summary><span class='wk-chip'>{escape(f'{s.doc_title} · p.{s.page}')}</span><span class='wk-link'>원문 보기</span></summary>"
-            f"{picture}<blockquote class='wk-quote'>{escape(s.quote)}</blockquote>"
+            f"<blockquote class='wk-quote'>{escape(s.quote)}</blockquote>{picture}{_render_page(s)}"
             "</details>"
         )
     return "".join(parts)

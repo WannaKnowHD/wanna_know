@@ -58,8 +58,8 @@ def test_topbar_shows_service_name_and_sidebar_title():
     with gr.Blocks():
         area = build_chat_area()
         build_sidebar()
-    assert "Wanna Know" in area.brand.value and "설비" not in area.brand.value
-    assert BRAND == "컨베이어 문제 해결 챗봇"
+    assert "컨베이어 문제 해결 챗봇" in area.brand.value and "설비" not in area.brand.value
+    assert BRAND == "Wanna Know"
 
 
 def test_typing_bubble():
