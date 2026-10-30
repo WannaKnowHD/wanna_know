@@ -9,6 +9,7 @@
   3) chatbot/db/schema.sql 을 실행해 테이블을 만든다.             (이미 있으면 건너뜀)
      예전 정의로 만든 users 테이블이면 지금 정의로 맞춘다.       (role 'engineer' → 'user', 해시 칸 길이)
   4) 아래 DEFAULT_ACCOUNTS 의 계정을 users 테이블에 넣는다.        (비밀번호는 해시로 바꿔서)
+  5) 최근 7일치 데모 로그를 chat_logs · kb_gaps 에 넣는다.            (대시보드 시연용, --no-demo 로 끔)
  
 [비밀번호는 어디에?]
   이 파일에는 사원번호·이름·권한과 "비밀번호를 읽을 .env 항목 이름"만 적는다.
@@ -19,6 +20,7 @@
   - 같은 사원번호가 있으면 새로 넣지 않고 이름·권한·비밀번호를 고친다. (중복 계정 없음)
   - 바뀐 게 없는 계정은 건드리지 않는다.
   - 아래 목록에 없는 기존 계정은 지우지 않는다.
+  - 데모 로그는 데모 계정(D0001)의 로그만 지우고 다시 넣는다. (실제 사원 로그는 그대로)
  
 [실행 전 준비]
   1) .env 가 모두 채워져 있어야 한다. (python chatbot/core/config.py 가 [OK])
@@ -29,13 +31,18 @@
  
 [실행]  프로젝트 최상단 폴더에서, 가상환경을 켠 상태로
   python scripts/seed.py
+  python scripts/seed.py --no-demo   # 데모 로그 없이 테이블·계정만
 ==============================================================================
 """
 import hashlib   # 비밀번호 해시 계산 (PBKDF2)
 import hmac      # 두 해시를 안전하게 비교 (compare_digest)
+import argparse  # 실행 옵션(--no-demo) 읽기
+import json      # 데모 로그의 JSON 칸(kb_ids · latency_ms)
+import random    # 데모 로그 시각·점수 만들기 (같은 날이면 같은 값)
 import secrets   # 예측할 수 없는 무작위 값 생성 (소금값)
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
  
 # 이 파일은 scripts/ 안에 있어서, 그대로 두면 chatbot 패키지(chatbot/core/config.py)를 못 찾는다.
@@ -49,6 +56,7 @@ from pymysql.constants import CLIENT        # noqa: E402  접속 옵션 상수
 # ※ "from config import ..." 로 쓰면 가상환경에 설치된 다른 config 패키지를 가져온다. 전체 경로로 쓴다.
 from chatbot.core.config import BASE_DIR, ConfigError, Settings, load_seed_passwords   # noqa: E402
 from chatbot.db.db import TIME_ZONE                     # noqa: E402  시간대 기준 (db.py 와 같게)
+from chatbot.core.logger import LOG_COLUMNS                # noqa: E402  chat_logs 열 (logger.py 와 같게)
  
  
 # ------------------------------------------------------------------------------
@@ -113,6 +121,7 @@ class AccountSpec:
 DEFAULT_ACCOUNTS: list[AccountSpec] = [
     AccountSpec("A0001", "관리자", "admin", "SEED_ADMIN_PASSWORD"),
     AccountSpec("E0001", "이정빈", "user", "SEED_USER_PASSWORD"),
+    AccountSpec("D0001", "데모 사원", "user", "SEED_USER_PASSWORD"),   # 데모 로그(4-1) 전용 계정
 ]
  
  
@@ -327,14 +336,186 @@ def upsert_accounts(conn: pymysql.connections.Connection, accounts: list[SeedAcc
  
  
 # ------------------------------------------------------------------------------
+# 4-1. 데모 로그 (WBS 5.1.1)  ← 대시보드 운영 현황·답변 품질 탭 시연용
+# ------------------------------------------------------------------------------
+# 최근 7일치 질문 기록을 chat_logs(+ 검토 상태 kb_gaps)에 넣어 대시보드가 비어 있지 않게 한다.
+# 데모 로그는 모두 데모 계정(D0001)의 것이다. 다시 실행하면 D0001 로그만 지우고 새로 넣는다.
+#   → 여러 번 돌려도 쌓이지 않고, 실제 사원의 로그는 건드리지 않는다.
+DEMO_EMPLOYEE_ID = "D0001"
+DEMO_DAYS = 7               # 오늘을 포함한 최근 며칠에 나눠 넣을지 (대시보드 기본 기간 "최근 7일")
+DEMO_RANDOM_SEED = 1102     # 같은 날 다시 돌리면 같은 데모 로그가 나오게 고정 (발표일 11/02)
+DEMO_REVIEWER_ID = "A0001"  # 검토 상태(kb_gaps)의 처리자. DEFAULT_ACCOUNTS 의 관리자
+DEMO_ERROR = "generate/llm_timeout: 답변 생성이 30초 안에 끝나지 않았습니다"
+
+
+@dataclass(frozen=True)
+class DemoScenario:
+    """데모 질문 한 종류. repeat 번 기록된다.
+
+    outcome (응답 결과):
+      answered 답변 / not_found 답 못 찾음 / nameplate 명판 인식만 / retake 재촬영 안내 /
+      out_of_scope 정비와 무관한 질문 / error 오류
+    input_type · question_type 은 chat_logs 에 저장되는 값 그대로 (logger.py · schema.sql 과 같게)
+    """
+
+    question: str
+    input_type: str             # text · nameplate · damage · other
+    question_type: str | None   # troubleshooting · maintenance · procedure · out_of_scope
+    kb_id: str | None           # 근거 KB (kb/ 에 없는 id 면 근거 없이 기록)
+    model: str | None           # 설비 모델명 (data/models.csv 표기)
+    outcome: str
+    repeat: int
+    confidence: float | None = None   # 사진 판별 확신도
+    safety: bool = True               # 답변에 안전 문구가 붙었는지
+    review: tuple[bool, bool] | None = None   # 답 못 찾음 첫 기록의 (담당자 확인, KB 업데이트 필요)
+
+
+DEMO_SCENARIOS: list[DemoScenario] = [
+    DemoScenario("벨트가 꼬리 풀리 쪽에서 한쪽으로 쏠려요", "text", "troubleshooting", "TS-FENNERBELT-T01-01", None, "answered", 4),
+    DemoScenario("벨트가 미끄러져요", "text", "troubleshooting", "TS-FENNERBELT-T01-07", None, "answered", 4),
+    DemoScenario("138-ACC 컨베이어가 시동이 안 걸리고 모터가 자꾸 멈춰요", "text", "troubleshooting",
+                 "TS-HYTROL138ACC-T01-01", "138-ACC", "answered", 3),
+    DemoScenario("드르륵 갈리는 소리가 크게 나요", "text", "troubleshooting", "TS-HYTROL138ACC-T01-03", "138-ACC", "answered", 2),
+    DemoScenario("구동부는 도는데 벨트가 안 움직여요", "text", "troubleshooting", "TS-HYTROL138ACC-T02-01", "138-LRC", "answered", 2),
+    DemoScenario("L500 모터가 과열돼요", "text", "troubleshooting", "TS-PRECOLSERIES-T04-03", "L500", "answered", 3),
+    DemoScenario("벨트 가장자리가 끊어졌어요", "damage", "troubleshooting", "TS-FENNERBELT-T01-19", None, "answered", 2,
+                 confidence=0.84),
+    DemoScenario("벨트 이음부가 벌어졌어요", "damage", "troubleshooting", "TS-FENNERBELT-T01-17", None, "answered", 2,
+                 confidence=0.78),
+    DemoScenario("138-ACC 드라이브 체인 장력은 어떻게 점검하나요?", "text", "maintenance",
+                 "MT-HYTROL138ACC-T03-09", "138-ACC", "answered", 3),
+    DemoScenario("L650 베어링 윤활은 언제 하나요?", "text", "maintenance", "MT-PRECOLSERIES-T02-04", "L650", "answered", 2),
+    DemoScenario("감속기 온도는 얼마나 자주 확인하나요?", "text", "maintenance", "MT-HYTROL138ACC-T03-05", "138-ACC",
+                 "answered", 2, safety=False),
+    DemoScenario("(명판 사진)", "nameplate", None, None, "138-ACC", "nameplate", 3, confidence=0.93, safety=False),
+    DemoScenario("(흐린 사진)", "other", None, None, None, "retake", 2, confidence=0.42, safety=False),
+    DemoScenario("인버터 E07 에러가 떠요", "text", "troubleshooting", None, "L400", "not_found", 2, safety=False,
+                 review=(True, True)),
+    DemoScenario("롤러 베어링 교체 규격이 뭔가요?", "text", "maintenance", None, "138-ACC", "not_found", 1, safety=False,
+                 review=(True, False)),
+    DemoScenario("벨트 연결 클립은 어디서 사나요?", "text", "maintenance", None, None, "not_found", 1, safety=False),
+    DemoScenario("오늘 점심 메뉴 추천해 주세요", "text", "out_of_scope", None, None, "out_of_scope", 1, safety=False),
+    DemoScenario("모터에서 타는 냄새가 나요", "text", "troubleshooting", None, "138-ACC", "error", 1, safety=False),
+]
+
+
+def load_kb_ids(kb_dir: Path) -> set[str]:
+    """kb/<종류>/*.json 에 있는 KB id 를 모은다. (데모 로그에 실제로 있는 KB 만 쓰려고)
+
+    받는 것: KB 폴더 (Settings.kb_dir)
+    돌려주는 것: kb_id 집합. 읽지 못한 파일은 건너뛴다.
+    """
+    kb_ids: set[str] = set()
+    for path in sorted(Path(kb_dir).glob("*/*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for entry in data if isinstance(data, list) else [data]:
+            if isinstance(entry, dict) and entry.get("kb_id"):
+                kb_ids.add(entry["kb_id"])
+    return kb_ids
+
+
+def _demo_latency(rng: random.Random, outcome: str, has_photo: bool) -> dict[str, int]:
+    """결과에 맞는 단계별 응답 시간(ms). 대시보드 시스템 탭의 p50·p95 계산에 쓰인다."""
+    stages: dict[str, int] = {}
+    if has_photo:
+        stages["vision"] = rng.randint(1500, 3000)
+    if outcome in ("answered", "not_found", "out_of_scope", "error"):
+        stages["understand"] = rng.randint(600, 1200)
+    if outcome in ("answered", "not_found", "error"):
+        stages["search"] = rng.randint(400, 900)
+    if outcome == "answered":
+        stages["generate"] = rng.randint(1500, 4000)
+        stages["verify"] = rng.randint(5, 40)
+        stages["safety"] = rng.randint(1, 10)
+    stages["total"] = sum(stages.values())
+    return stages
+
+
+def build_demo_logs(now: datetime, kb_ids: set[str]) -> list[dict]:
+    """DEMO_SCENARIOS 로 데모 로그 행들을 만든다. (DB 를 쓰지 않는 계산만)
+
+    받는 것: 지금 시각(데모 기간의 끝), kb/ 에 있는 KB id 집합
+    돌려주는 것: [{"created_at", chat_logs 열(LOG_COLUMNS)..., "review": (확인, 업데이트 필요) 또는 None}]
+      - 오늘을 포함한 최근 DEMO_DAYS 일, 09~18시 사이 (지금보다 늦은 시각은 만들지 않음)
+      - 같은 날 다시 만들면 같은 결과 (DEMO_RANDOM_SEED + 날짜로 고정)
+    """
+    rng = random.Random(DEMO_RANDOM_SEED * 100_000 + now.date().toordinal())
+    logs: list[dict] = []
+    for scenario in DEMO_SCENARIOS:
+        for index in range(scenario.repeat):
+            day = now.date() - timedelta(days=rng.randrange(DEMO_DAYS))
+            created_at = datetime.combine(day, datetime.min.time()) + timedelta(minutes=rng.randint(9 * 60, 18 * 60))
+            if created_at > now:   # 오늘 아직 오지 않은 시각이면 지금보다 조금 앞으로
+                created_at = now - timedelta(minutes=rng.randint(1, 120))
+            answered = scenario.outcome == "answered"
+            searched = scenario.outcome in ("answered", "not_found", "error")
+            logs.append({
+                "created_at": created_at.replace(second=0, microsecond=0),
+                "source": "user",
+                "employee_id": DEMO_EMPLOYEE_ID,
+                "question": scenario.question,
+                "input_type": scenario.input_type,
+                "question_type": scenario.question_type,
+                "equipment_model": scenario.model,
+                "kb_ids": [scenario.kb_id] if answered and scenario.kb_id in kb_ids else [],
+                "top_score": round(rng.uniform(0.62, 0.95) if answered or scenario.outcome == "error"
+                                   else rng.uniform(0.25, 0.5), 3) if searched else None,
+                "not_found": scenario.outcome == "not_found",
+                "safety_included": answered and scenario.safety,
+                "confidence": scenario.confidence,
+                "latency_ms": _demo_latency(rng, scenario.outcome, scenario.input_type != "text"),
+                "error": DEMO_ERROR if scenario.outcome == "error" else None,
+                "review": scenario.review if index == 0 else None,
+            })
+    return sorted(logs, key=lambda log: log["created_at"])
+
+
+def reset_demo_logs(conn: pymysql.connections.Connection, logs: list[dict]) -> tuple[int, int]:
+    """데모 계정의 기존 로그를 지우고 새 데모 로그를 넣는다. (검토 상태 kb_gaps 포함)
+
+    받는 것: DB 연결, build_demo_logs 결과
+    돌려주는 것: (지운 로그 수, 넣은 로그 수)
+    중간에 실패하면 main 이 rollback 해서 기존 데모 로그가 그대로 남는다.
+    """
+    columns = ("created_at", *LOG_COLUMNS)
+    insert_sql = f"INSERT INTO chat_logs ({', '.join(columns)}) VALUES ({', '.join(['%s'] * len(columns))})"
+    with conn.cursor() as cursor:
+        # 검토 상태를 먼저 지운다 (예전 정의로 만든 kb_gaps 에는 ON DELETE CASCADE 가 없을 수 있어서)
+        cursor.execute("DELETE g FROM kb_gaps g JOIN chat_logs l ON g.log_id = l.log_id WHERE l.employee_id = %s",
+                       (DEMO_EMPLOYEE_ID,))
+        deleted = cursor.execute("DELETE FROM chat_logs WHERE employee_id = %s", (DEMO_EMPLOYEE_ID,))
+        for log in logs:
+            values = tuple(json.dumps(log[c], ensure_ascii=False) if c in ("kb_ids", "latency_ms") else log[c]
+                           for c in columns)
+            cursor.execute(insert_sql, values)
+            if log["review"] is not None:
+                reviewed, kb_update_needed = log["review"]
+                reviewed_at = min(log["created_at"] + timedelta(hours=20), datetime.now().replace(microsecond=0))
+                cursor.execute(
+                    "INSERT INTO kb_gaps (log_id, reviewed, kb_update_needed, reviewed_by, reviewed_at) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    (cursor.lastrowid, reviewed, kb_update_needed, DEMO_REVIEWER_ID, reviewed_at),
+                )
+    conn.commit()
+    return deleted, len(logs)
+ 
+ 
+# ------------------------------------------------------------------------------
 # 5. 전체 흐름
 # ------------------------------------------------------------------------------
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """seed 전체 과정을 실행한다.
  
-    받는 것: 없음
+    받는 것: 실행 옵션 (없으면 명령줄에서 읽음. --no-demo: 데모 로그를 넣지 않음)
     돌려주는 것: 종료 코드 (0 = 성공, 1 = 실패)
     """
+    parser = argparse.ArgumentParser(description="테이블 만들기 + 초기 계정·데모 로그 넣기")
+    parser.add_argument("--no-demo", action="store_true", help="데모 로그를 넣지 않음 (테이블·계정만)")
+    args = parser.parse_args(argv)
+ 
     # 1) DB 에 접속하기 전에 계정 목록·설정·비밀번호를 먼저 검사한다. (실수를 일찍 잡기 위해)
     try:
         check_account_specs(DEFAULT_ACCOUNTS)
@@ -364,9 +545,10 @@ def main() -> int:
         for change in upgrade_users_table(conn):
             print(f"[OK] 예전 테이블 정의 변경: {change}")
         counts = upsert_accounts(conn, accounts)
+        demo = None if args.no_demo else reset_demo_logs(conn, build_demo_logs(datetime.now(), load_kb_ids(settings.kb_dir)))
     except (pymysql.MySQLError, SeedError) as error:
         conn.rollback()
-        print(f"[실패] 작업 중 오류가 나서 계정 변경을 취소했습니다: {error}")
+        print(f"[실패] 작업 중 오류가 나서 진행 중이던 변경을 취소했습니다: {error}")
         return 1
     finally:
         conn.close()   # 성공하든 실패하든 연결은 꼭 닫는다
@@ -375,6 +557,8 @@ def main() -> int:
     print(f"[OK] 계정 처리 완료: 새로 추가 {counts['added']} / 수정 {counts['updated']} / 그대로 {counts['unchanged']}")
     for account in accounts:
         print(f"  - {account.employee_id}  {account.name}  ({account.role})")
+    if demo is not None:
+        print(f"[OK] 데모 로그: 지운 {demo[0]} / 넣은 {demo[1]} (데모 계정 {DEMO_EMPLOYEE_ID}, 최근 {DEMO_DAYS}일)")
     return 0
  
  

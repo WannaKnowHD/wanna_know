@@ -29,6 +29,7 @@ from chatbot.ui.dashboard import (  # noqa: E402
     AdminDashboard,
     find_review_changes,
     load_kb_symptoms,
+    load_kb_symptoms_ko,
     period_range,
 )
 
@@ -266,6 +267,52 @@ def test_render_quality_tab_kpi_cards(logs):
 def test_admin_title_matches_figma():
     assert ADMIN_TITLE == "관리자 대시보드"
 
+
+
+# ---------------- 10/30 다듬기: 한국어 증상 · 검토 체크 순서 · 기간 입력 막기 ----------------
+def test_kb_symptoms_ko_covers_every_kb():
+    """data/kb_symptoms_ko.csv 에 kb/ 의 모든 KB 한국어 증상이 있음 (새 KB 를 넣으면 이 표도 채워야 함)"""
+    korean = load_kb_symptoms_ko(ROOT / "data" / "kb_symptoms_ko.csv")
+    missing = set(load_kb_symptoms(ROOT / "kb")) - set(korean)
+    assert not missing, f"한국어 증상이 없는 KB: {sorted(missing)}"
+    assert load_kb_symptoms_ko(ROOT / "없는 파일.csv") == {}
+
+
+def test_top_symptoms_korean_with_original(logs):
+    dashboard = AdminDashboard(kb_symptoms={"TS-HYTROL138ACC-T01-04": "Motor or reducer overheating."},
+                               kb_symptoms_ko={"TS-HYTROL138ACC-T01-04": "<모터> 과열"})
+    top = dashboard.usage_stats(logs, WEEK_START, TODAY)["top_symptoms"]
+    assert top.loc[0, "증상"] == "<모터> 과열" and top.loc[0, "원문"] == "Motor or reducer overheating."
+    assert top.loc[1, "증상"] == "TS-FENNERBELT-T01-07" and top.loc[1, "원문"] == ""   # 한국어가 없으면 원문만
+    html = render_usage_tab(dashboard.usage_stats(logs, WEEK_START, TODAY), WEEK_START, TODAY)[4]
+    assert "&lt;모터&gt; 과열" in html and "adm-symptom-original'>Motor or reducer overheating." in html
+
+
+def test_kb_update_needs_reviewed(db, logs):
+    dashboard = AdminDashboard(db)
+    previous = dashboard.not_found_list(logs)        # No 5: 담당자 확인 O, No 4: 둘 다 X
+    edited = previous.copy()
+    edited.loc[1, "KB 업데이트 필요"] = True           # 담당자 확인 없이 KB 업데이트 필요만 체크
+    table, _, message = dashboard.on_review_input(edited, previous, {"user": ADMIN})
+    assert not table.loc[1, "KB 업데이트 필요"] and "담당자 확인을 먼저" in message
+    assert db.fetch("SELECT * FROM kb_gaps WHERE log_id = %s", (4,)) == []      # 저장하지 않음
+
+    reviewed = previous.copy()
+    reviewed.loc[0, "KB 업데이트 필요"] = True        # 담당자 확인한 행은 체크 가능
+    table, snapshot, _ = dashboard.on_review_input(reviewed, previous, {"user": ADMIN})
+    assert bool(table.loc[0, "KB 업데이트 필요"])
+    unchecked = snapshot.copy()
+    unchecked.loc[0, "담당자 확인"] = False            # 담당자 확인을 풀면 KB 업데이트 필요도 함께 풀림
+    table, _, _ = dashboard.on_review_input(unchecked, snapshot, {"user": ADMIN})
+    assert not table.loc[0, "담당자 확인"] and not table.loc[0, "KB 업데이트 필요"]
+    assert db.fetch("SELECT kb_update_needed FROM kb_gaps WHERE log_id = %s", (5,))[0]["kb_update_needed"] == 0
+
+
+def test_period_dropdown_is_not_typeable(db):
+    dashboard = AdminDashboard(db)
+    with gr.Blocks():
+        dashboard.build_admin_tab(gr.State({"user": ADMIN}))
+    assert dashboard.period_input.filterable is False   # 글자를 칠 수 없고 목록에서만 고름
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
