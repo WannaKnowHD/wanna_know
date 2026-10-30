@@ -13,17 +13,28 @@ from typing import TYPE_CHECKING
 import gradio as gr
 import pandas as pd
 
-from chatbot.ui.admin.usage_tab import build_usage_tab, render_usage_tab
-from chatbot.ui.admin.quality_tab import KB_UPDATE_NEEDED, REVIEWED, build_quality_tab, render_quality_tab
-from chatbot.ui.admin.system_tab import build_system_tab
-from chatbot.ui.admin.kb_tab import build_kb_tab
 from chatbot.ui.admin.kb_files import KB_STATUS_COLUMNS, KbIndexer, load_documents
+from chatbot.ui.admin.kb_tab import build_kb_tab
+from chatbot.ui.admin.quality_tab import (
+    KB_UPDATE_NEEDED,
+    REVIEWED,
+    build_quality_tab,
+    render_quality_tab,
+)
+from chatbot.ui.admin.system_tab import (
+    aggregate_system_stats,
+    build_system_tab,
+    render_system_tab,
+)
+from chatbot.ui.admin.usage_tab import build_usage_tab, render_usage_tab
 
 if TYPE_CHECKING:
+    from datetime import date
+
+    from pandas import DataFrame
+
     from chatbot.core.schemas import User
     from chatbot.db.db import Database
-    from datetime import date
-    from pandas import DataFrame
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +43,22 @@ ADMIN_CSS_PATH = Path(__file__).parent / "admin" / "admin.css"
 
 # load_logs 가 돌려주는 열 (chat_logs 열 + kb_gaps 검토 상태). 통계 함수(usage_stats · quality_stats · not_found_list)가 이 이름을 씀
 LOG_TABLE_COLUMNS = [
-    "log_id", "created_at", "employee_id", "question", "input_type", "question_type", "equipment_model",
-    "kb_ids", "top_score", "not_found", "safety_included", "confidence", "latency_ms",
-    "error", "reviewed", "kb_update_needed",
+    "log_id",
+    "created_at",
+    "employee_id",
+    "question",
+    "input_type",
+    "question_type",
+    "equipment_model",
+    "kb_ids",
+    "top_score",
+    "not_found",
+    "safety_included",
+    "confidence",
+    "latency_ms",
+    "error",
+    "reviewed",
+    "kb_update_needed",
 ]
 LOG_JSON_COLUMNS = ("kb_ids", "latency_ms")
 LOG_BOOL_COLUMNS = ("not_found", "safety_included", "reviewed", "kb_update_needed")
@@ -57,12 +81,17 @@ SAVE_REVIEW_SQL = (
 # 기간 선택: 이름 → 오늘을 포함한 일수. 운영 현황·답변 품질 탭이 같은 기간의 로그를 씀 (Figma 기본: 최근 7일)
 PERIODS = {"오늘": 1, "최근 7일": 7, "최근 30일": 30}
 DEFAULT_PERIOD = "최근 7일"
-ADMIN_TITLE = "관리자 대시보드"       # Figma 06~09 상단 바 왼쪽 제목
-BACK_LABEL = "뒤로가기 (채팅 화면)"   # Figma 상단 바 버튼 · 화면설계서 SCR-05 3번
+ADMIN_TITLE = "관리자 대시보드"  # Figma 06~09 상단 바 왼쪽 제목
+BACK_LABEL = "뒤로가기 (채팅 화면)"  # Figma 상단 바 버튼 · 화면설계서 SCR-05 3번
 
 # chat_logs.input_type → 화면 이름 (usage_tab.INPUT_TYPE_ORDER 와 같은 순서)
-INPUT_TYPE_LABELS = {"text": "텍스트 질문", "nameplate": "명판 사진", "damage": "손상 사진", "other": "그 외 사진"}
-NO_MODEL_LABEL = "미지정(전체)"   # 설비 모델 없이 전체 매뉴얼에서 찾은 질문
+INPUT_TYPE_LABELS = {
+    "text": "텍스트 질문",
+    "nameplate": "명판 사진",
+    "damage": "손상 사진",
+    "other": "그 외 사진",
+}
+NO_MODEL_LABEL = "미지정(전체)"  # 설비 모델 없이 전체 매뉴얼에서 찾은 질문
 TOP_SYMPTOMS = 10
 
 
@@ -114,21 +143,27 @@ class AdminDashboard:
             start, end = end, start
         # end 당일 기록까지 포함: end 다음 날 00:00 미만
         begin = datetime.combine(start, time.min).strftime("%Y-%m-%d %H:%M:%S")
-        until = datetime.combine(end + timedelta(days=1), time.min).strftime("%Y-%m-%d %H:%M:%S")
+        until = datetime.combine(end + timedelta(days=1), time.min).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
         rows = db.fetch(LOAD_LOGS_SQL, (begin, until))
 
         logs = pd.DataFrame(rows, columns=LOG_TABLE_COLUMNS)
         if logs.empty:
             return logs
         logs["created_at"] = pd.to_datetime(logs["created_at"])
-        for column in LOG_JSON_COLUMNS:   # MySQL(db.fetch)는 이미 풀어 주고, sqlite 는 글자로 옴
+        for (
+            column
+        ) in LOG_JSON_COLUMNS:  # MySQL(db.fetch)는 이미 풀어 주고, sqlite 는 글자로 옴
             empty = [] if column == "kb_ids" else {}
             logs[column] = logs[column].map(lambda v, empty=empty: _from_json(v, empty))
-        for column in LOG_BOOL_COLUMNS:   # MySQL BOOLEAN 은 0 · 1 로 옴
+        for column in LOG_BOOL_COLUMNS:  # MySQL BOOLEAN 은 0 · 1 로 옴
             logs[column] = logs[column].fillna(0).astype(bool)
         return logs
 
-    def usage_stats(self, logs: DataFrame, start: date | None = None, end: date | None = None):
+    def usage_stats(
+        self, logs: DataFrame, start: date | None = None, end: date | None = None
+    ):
         """
         운영 현황 탭: 일별 질문 수, 입력 유형 비율(텍스트·명판 사진·손상 사진·그 외 사진), 설비 모델별 질문 수, 자주 묻는 증상 Top 10.
         logs 는 load_logs 결과. start·end(load_logs 와 같은 기간)를 주면 질문이 없는 날도 0 으로 채움
@@ -136,28 +171,48 @@ class AdminDashboard:
         Returns: dict (total, daily, input_types, models, top_symptoms. 표 값은 화면에 바로 넣는 DataFrame)
         """
         total = len(logs)
-        days = pd.to_datetime(logs["created_at"]).dt.date   # 빈 기간이면 load_logs 가 형 변환 없이 돌려줌
-        first = _as_date(start) if start is not None else (days.min() if total else date.today())
-        last = _as_date(end) if end is not None else (days.max() if total else date.today())
-        if first > last:   # load_logs 처럼 거꾸로 넣어도 같은 기간
+        days = pd.to_datetime(
+            logs["created_at"]
+        ).dt.date  # 빈 기간이면 load_logs 가 형 변환 없이 돌려줌
+        first = (
+            _as_date(start)
+            if start is not None
+            else (days.min() if total else date.today())
+        )
+        last = (
+            _as_date(end)
+            if end is not None
+            else (days.max() if total else date.today())
+        )
+        if first > last:  # load_logs 처럼 거꾸로 넣어도 같은 기간
             first, last = last, first
         all_days = pd.date_range(first, last, freq="D").date
         day_counts = days.value_counts()
-        daily = pd.DataFrame({
-            "날짜": [f"{day:%m/%d}" for day in all_days],
-            "질문 수": [int(day_counts.get(day, 0)) for day in all_days],
-        })
+        daily = pd.DataFrame(
+            {
+                "날짜": [f"{day:%m/%d}" for day in all_days],
+                "질문 수": [int(day_counts.get(day, 0)) for day in all_days],
+            }
+        )
 
         type_counts = logs["input_type"].value_counts()
-        input_types = pd.DataFrame({
-            "입력 유형": list(INPUT_TYPE_LABELS.values()),
-            "건수": [int(type_counts.get(key, 0)) for key in INPUT_TYPE_LABELS],
-        })
-        input_types["비율(%)"] = (input_types["건수"] / total * 100).round(1) if total else 0.0
+        input_types = pd.DataFrame(
+            {
+                "입력 유형": list(INPUT_TYPE_LABELS.values()),
+                "건수": [int(type_counts.get(key, 0)) for key in INPUT_TYPE_LABELS],
+            }
+        )
+        input_types["비율(%)"] = (
+            (input_types["건수"] / total * 100).round(1) if total else 0.0
+        )
 
         models = (
-            logs["equipment_model"].fillna(NO_MODEL_LABEL).replace("", NO_MODEL_LABEL)
-            .value_counts().rename_axis("설비 모델").reset_index(name="질문 수")
+            logs["equipment_model"]
+            .fillna(NO_MODEL_LABEL)
+            .replace("", NO_MODEL_LABEL)
+            .value_counts()
+            .rename_axis("설비 모델")
+            .reset_index(name="질문 수")
         )
         return {
             "total": total,
@@ -175,10 +230,14 @@ class AdminDashboard:
         Returns: dict (total, not_found, not_found_rate, answered, safety_included, safety_rate)
         """
         total = len(logs)
-        not_found_rows = logs["not_found"].astype(bool)   # 빈 기간이면 load_logs 가 bool 로 바꾸지 않은 채 돌려줌
+        not_found_rows = logs["not_found"].astype(
+            bool
+        )  # 빈 기간이면 load_logs 가 bool 로 바꾸지 않은 채 돌려줌
         not_found = int(not_found_rows.sum())
         # 명판 인식·재촬영 안내는 검색을 하지 않아 top_score 가 비어 있으므로 빠짐
-        answered_rows = logs["top_score"].notna() & ~not_found_rows & logs["error"].isna()
+        answered_rows = (
+            logs["top_score"].notna() & ~not_found_rows & logs["error"].isna()
+        )
         answered = int(answered_rows.sum())
         safety_included = int(logs.loc[answered_rows, "safety_included"].sum())
         return {
@@ -190,13 +249,9 @@ class AdminDashboard:
             "safety_rate": safety_included / answered if answered else 0.0,
         }
 
-    def system_stats(self, logs: DataFrame, results_dir: str):
-        """
-        시스템 탭: 단계별 응답 시간(p50·p95), 오류 비율, 평가 버전별 점수(v0~v3)
-
-        Returns: dict
-        """
-        raise NotImplementedError("AdminDashboard.system_stats")
+    def system_stats(self, logs: DataFrame, results_dir: str = ""):
+        """선택 기간의 운영 로그로 시스템 지표를 집계한다."""
+        return aggregate_system_stats(logs)
 
     def not_found_list(self, logs: DataFrame):
         """
@@ -207,15 +262,21 @@ class AdminDashboard:
 
         Returns: DataFrame (열은 quality_tab.NOT_FOUND_HEADERS, load_logs 와 같은 최신순)
         """
-        rows = logs[logs["not_found"].astype(bool)].sort_values(["created_at", "log_id"], ascending=False)
-        return pd.DataFrame({
-            "날짜": pd.to_datetime(rows["created_at"]).dt.strftime("%m/%d %H:%M"),
-            "질문": rows["question"].fillna(""),
-            "설비": rows["equipment_model"].fillna(NO_MODEL_LABEL).replace("", NO_MODEL_LABEL),
-            REVIEWED: rows["reviewed"].astype(bool),
-            KB_UPDATE_NEEDED: rows["kb_update_needed"].astype(bool),
-            "No": rows["log_id"].astype(int),
-        }).reset_index(drop=True)
+        rows = logs[logs["not_found"].astype(bool)].sort_values(
+            ["created_at", "log_id"], ascending=False
+        )
+        return pd.DataFrame(
+            {
+                "날짜": pd.to_datetime(rows["created_at"]).dt.strftime("%m/%d %H:%M"),
+                "질문": rows["question"].fillna(""),
+                "설비": rows["equipment_model"]
+                .fillna(NO_MODEL_LABEL)
+                .replace("", NO_MODEL_LABEL),
+                REVIEWED: rows["reviewed"].astype(bool),
+                KB_UPDATE_NEEDED: rows["kb_update_needed"].astype(bool),
+                "No": rows["log_id"].astype(int),
+            }
+        ).reset_index(drop=True)
 
     def save_review(
         self, log_id: int, reviewed: bool, kb_update_needed: bool, user: User
@@ -227,9 +288,19 @@ class AdminDashboard:
         Returns: bool (관리자가 아니거나 DB 오류면 False)
         """
         if user is None or not user.is_admin:
-            logger.warning("관리자가 아닌 사용자의 검토 상태 저장을 막음 (log_id=%s)", log_id)
+            logger.warning(
+                "관리자가 아닌 사용자의 검토 상태 저장을 막음 (log_id=%s)", log_id
+            )
             return False
-        params = (log_id, reviewed, kb_update_needed, user.employee_id, reviewed, kb_update_needed, user.employee_id)
+        params = (
+            log_id,
+            reviewed,
+            kb_update_needed,
+            user.employee_id,
+            reviewed,
+            kb_update_needed,
+            user.employee_id,
+        )
         try:
             self.db.execute(SAVE_REVIEW_SQL, params)
         except Exception:
@@ -280,7 +351,9 @@ class AdminDashboard:
             return self.kb_status(self.db)
         except Exception as error:
             logger.exception("KB 현황 조회 실패")
-            raise gr.Error("문서 목록을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.") from error
+            raise gr.Error(
+                "문서 목록을 불러오지 못했습니다. 잠시 후 새로고침해 주세요."
+            ) from error
 
     def _wire_kb_tab(self, kb_tab, state: gr.State):
         """
@@ -294,13 +367,17 @@ class AdminDashboard:
         def status_values() -> tuple:
             # 목록 · 자동 갱신(색인 중일 때만 켜짐) · 추가 버튼(색인 중이면 잠금) · 진행 안내
             running = indexer.is_running()
-            return (self._kb_table(), gr.Timer(active=running), gr.Button(interactive=not running),
-                    indexer.progress_text())
+            return (
+                self._kb_table(),
+                gr.Timer(active=running),
+                gr.Button(interactive=not running),
+                indexer.progress_text(),
+            )
 
         def show(current: dict | None):
             _require_admin(current)
             if self.db is not None:
-                try:   # 목록에 없는 PDF(초기 문서 등)를 지금 색인 기준으로 채움. 색인 중이면 건너뜀
+                try:  # 목록에 없는 PDF(초기 문서 등)를 지금 색인 기준으로 채움. 색인 중이면 건너뜀
                     indexer.fill_missing_documents(self.db)
                 except Exception:
                     logger.exception("KB 현황 목록 채우기 실패")
@@ -309,17 +386,33 @@ class AdminDashboard:
         def add(path: str | None, current: dict | None):
             user = _require_admin(current)
             if not path:
-                return ("추가할 PDF 를 먼저 선택해 주세요.", *status_values(), gr.skip())
+                return (
+                    "추가할 PDF 를 먼저 선택해 주세요.",
+                    *status_values(),
+                    gr.skip(),
+                )
             file = Path(path)
             started, message = self.add_pdf(file.read_bytes(), file.name, user)
-            return (message if started else f"⚠️ {message}", *status_values(), None if started else gr.skip())
+            return (
+                message if started else f"⚠️ {message}",
+                *status_values(),
+                None if started else gr.skip(),
+            )
 
-        status_outputs = [kb_tab.table, kb_tab.timer, kb_tab.add_button, kb_tab.progress]
+        status_outputs = [
+            kb_tab.table,
+            kb_tab.timer,
+            kb_tab.add_button,
+            kb_tab.progress,
+        ]
         kb_tab.tab.select(fn=show, inputs=[state], outputs=status_outputs)
         kb_tab.refresh_button.click(fn=show, inputs=[state], outputs=status_outputs)
         kb_tab.timer.tick(fn=show, inputs=[state], outputs=status_outputs)
-        kb_tab.add_button.click(fn=add, inputs=[kb_tab.upload, state],
-                                outputs=[kb_tab.message, *status_outputs, kb_tab.upload])
+        kb_tab.add_button.click(
+            fn=add,
+            inputs=[kb_tab.upload, state],
+            outputs=[kb_tab.message, *status_outputs, kb_tab.upload],
+        )
 
     def build_admin_tab(self, state: gr.State | None = None):
         """
@@ -342,14 +435,20 @@ class AdminDashboard:
                 )
                 # 로그인한 사원 정보는 ChatApp 이 render_user_info 로 갱신
                 self.user_info_display = gr.HTML(self.render_user_info(None))
-                self.back_button = gr.Button(BACK_LABEL, elem_classes=["admin-header-button"])
-                self.logout_button = gr.Button("로그아웃", elem_classes=["admin-header-button"])
+                self.back_button = gr.Button(
+                    BACK_LABEL, elem_classes=["admin-header-button"]
+                )
+                self.logout_button = gr.Button(
+                    "로그아웃", elem_classes=["admin-header-button"]
+                )
 
             with gr.Tabs(elem_id="admin-tabs"):
-                usage_tab = build_usage_tab(list(PERIODS), DEFAULT_PERIOD)   # 운영 현황 (기간 선택 포함)
-                quality_tab = build_quality_tab()                           # 답변 품질
-                build_system_tab()                                          # 시스템 (3.8.5)
-                kb_tab = build_kb_tab()                                     # KB 현황 (3.8.6, _wire_kb_tab 이 연결)
+                usage_tab = build_usage_tab(
+                    list(PERIODS), DEFAULT_PERIOD
+                )  # 운영 현황 (기간 선택 포함)
+                quality_tab = build_quality_tab()  # 답변 품질
+                system_outputs = build_system_tab()  # 시스템 (3.8.5)
+                kb_tab = build_kb_tab()  # KB 현황 (3.8.6, _wire_kb_tab 이 연결)
 
         session_state = state if state is not None else gr.State({})
         # 마지막으로 그린 "답 못 찾은 질문 목록". 체크박스가 바뀐 행을 찾을 때 비교 기준
@@ -357,15 +456,26 @@ class AdminDashboard:
         # ChatApp 은 관리자 전환 뒤 .then(self.refresh, self.refresh_inputs, self.refresh_outputs) 로 처음 값을 채움
         self.period_input = usage_tab.period
         self.refresh_inputs = [self.period_input, session_state]
-        self.refresh_outputs = [*usage_tab.outputs(), *quality_tab.outputs(), review_snapshot]
-        self.period_input.change(fn=self.refresh, inputs=self.refresh_inputs, outputs=self.refresh_outputs)
+        self.refresh_outputs = [
+            *usage_tab.outputs(),
+            *quality_tab.outputs(),
+            review_snapshot,
+            *system_outputs,
+        ]
+        self.period_input.change(
+            fn=self.refresh, inputs=self.refresh_inputs, outputs=self.refresh_outputs
+        )
         quality_tab.not_found_table.input(
             fn=self.on_review_input,
             inputs=[quality_tab.not_found_table, review_snapshot, session_state],
-            outputs=[quality_tab.not_found_table, review_snapshot, quality_tab.review_status],
+            outputs=[
+                quality_tab.not_found_table,
+                review_snapshot,
+                quality_tab.review_status,
+            ],
         )
 
-        self._wire_kb_tab(kb_tab, session_state)   # KB 현황 탭 (WBS 3.8.6)
+        self._wire_kb_tab(kb_tab, session_state)  # KB 현황 탭 (WBS 3.8.6)
 
         return admin_view
 
@@ -377,22 +487,29 @@ class AdminDashboard:
         Returns: list (refresh_outputs 순서의 화면 값)
         """
         _require_admin(state)
-        period = period if period in PERIODS else DEFAULT_PERIOD   # 화면 밖에서 이상한 값이 와도 기본 기간으로
+        period = (
+            period if period in PERIODS else DEFAULT_PERIOD
+        )  # 화면 밖에서 이상한 값이 와도 기본 기간으로
         start, end = period_range(period, date.today())
         try:
             logs = self.load_logs(start, end, self.db)
         except Exception as error:
             # DB 가 끊겨도 화면이 멈추지 않게 안내만 띄움 (문구는 4.2.6 · 6.1.1 에서 확정)
             logger.exception("관리자 대시보드 로그 조회 실패")
-            raise gr.Error("로그를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.") from error
+            raise gr.Error(
+                "로그를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."
+            ) from error
         not_found = self.not_found_list(logs)
         return [
             *render_usage_tab(self.usage_stats(logs, start, end), start, end),
             *render_quality_tab(self.quality_stats(logs), not_found, period),
             not_found,
+            *render_system_tab(self.system_stats(logs), period),
         ]
 
-    def on_review_input(self, table: DataFrame, previous: DataFrame | None, state: dict | None):
+    def on_review_input(
+        self, table: DataFrame, previous: DataFrame | None, state: dict | None
+    ):
         """
         답 못 찾은 질문 목록에서 체크박스가 바뀐 행만 save_review 로 kb_gaps 에 저장.
         KB 업데이트 필요는 담당자 확인을 한 질문에만 체크할 수 있음: 담당자 확인 없이 체크하면 되돌리고, 담당자 확인을 풀면 함께 풂.
@@ -400,7 +517,7 @@ class AdminDashboard:
 
         Returns: DataFrame, DataFrame, str (목록, 새 비교 기준, 안내 문구)
         """
-        if previous is None:   # 새로고침으로 목록을 그리기 전
+        if previous is None:  # 새로고침으로 목록을 그리기 전
             return table, table, ""
         user = _current_user(state)
         result = previous.copy()
@@ -461,7 +578,9 @@ def period_range(period: str, today: date) -> tuple[date, date]:
     return today - timedelta(days=PERIODS[period] - 1), today
 
 
-def find_review_changes(previous: DataFrame, current: DataFrame) -> list[tuple[int, bool, bool]]:
+def find_review_changes(
+    previous: DataFrame, current: DataFrame
+) -> list[tuple[int, bool, bool]]:
     """
     답 못 찾은 질문 목록에서 체크박스 값이 바뀐 행의 (log_id, 담당자 확인, KB 업데이트 필요) 목록
 
@@ -475,7 +594,7 @@ def find_review_changes(previous: DataFrame, current: DataFrame) -> list[tuple[i
     for _, row in current.iterrows():
         try:
             log_id = int(row["No"])
-        except (TypeError, ValueError):   # 화면에서 빈 행을 새로 만든 경우
+        except (TypeError, ValueError):  # 화면에서 빈 행을 새로 만든 경우
             continue
         after = (_to_bool(row[REVIEWED]), _to_bool(row[KB_UPDATE_NEEDED]))
         if log_id in before and after != before[log_id]:
