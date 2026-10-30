@@ -20,6 +20,7 @@ body {
   --wk-bubble-bg: #e9eeea;
   --wk-send-bg: #0f6b4a;
   --wk-send-text: #ffffff;
+  --wk-brand-text: #0f6b4a;   /* 상단 바 서비스 이름 (Wanna Know) */
   --wk-safety-bg: #fff4d6;
   --wk-safety-border: #e0a100;
   --wk-safety-text: #16201b;
@@ -40,7 +41,8 @@ body.dark {
   --wk-chat-control-bg: #222c27;
   --wk-bubble-bg: #222c27;
   --wk-send-bg: #34c77b;
-  --wk-send-text: #0b100e;
+  --wk-send-text: #06140d;   /* Figma 딥 포레스트: 초록 버튼 위 글자 */
+  --wk-brand-text: #6fe0a6;
   --wk-safety-bg: #2e2508;
   --wk-safety-border: #f5b83d;
   --wk-safety-text: #ffe7a3;

@@ -22,6 +22,11 @@ NOTICE_TITLES: dict[Status, str] = {
     "error": "답변을 만들지 못했습니다",
 }
 
+# 사진 재촬영 안내 카드의 버튼 (Figma 04 '다시 촬영'): 입력 바의 사진 첨부(#chat-image)를 눌러 파일 선택 창을 엶
+RETAKE_BUTTON_HTML = (
+    "<button type='button' class='wk-retake' onclick=\"document.querySelector('#chat-image')?.click()\">다시 촬영</button>"
+)
+
 TYPING_TEXT = "매뉴얼에서 근거를 확인하고 있어요…"   # 답변 생성 중 (Figma 01-1)
 TYPING_NOTE = "답변이 준비되면 바로 표시됩니다"
 NO_IMAGE_TEXT = "이미지를 불러올 수 없습니다"   # image_path 의 파일이 없거나 읽을 수 없을 때 (카드는 깨지지 않고 글자만 보임)
@@ -144,6 +149,17 @@ def _render_figures(figures: list[Figure]) -> str:
     return "".join(parts)
 
 
+def _notice_title(answer: AnswerResponse) -> str:
+    """안내 카드 제목. 명판으로 설비를 정하면 모델명, 사진 재촬영이면 확신도를 붙임 (Figma 04)"""
+    if answer.status == "nameplate" and answer.equipment is not None:
+        return f"명판에서 모델명 {answer.equipment.model}을(를) 확인했습니다"
+    title = NOTICE_TITLES[answer.status]
+    if answer.status == "retake" and answer.image is not None:
+        confidence = answer.image.damage.confidence if answer.image.damage else answer.image.confidence
+        return f"{title} (확신도 {confidence:.2f})"
+    return title
+
+
 def render_answer_card(answer: AnswerResponse) -> str:
     """응답 한 건(schemas.AnswerResponse)을 답변 카드 HTML 로 바꿈. 응답 JSON(dict)은 호출하는 쪽이 먼저 검사해서 넘긴다.
 
@@ -151,10 +167,12 @@ def render_answer_card(answer: AnswerResponse) -> str:
     그 밖의 status(못 찾음·재촬영 등)는 제목과 message 만 있는 안내 카드 (Figma 03·04).
     """
     if answer.status != "answered":
+        button = RETAKE_BUTTON_HTML if answer.status == "retake" else ""
         return (
             "<div class='wk-card wk-notice'>"
-            f"<div class='wk-notice-title'>{escape(NOTICE_TITLES[answer.status])}</div>"
+            f"<div class='wk-notice-title'>{escape(_notice_title(answer))}</div>"
             f"<p class='wk-notice-text'>{escape(answer.message or '')}</p>"
+            f"{button}"
             "</div>"
         )
 
