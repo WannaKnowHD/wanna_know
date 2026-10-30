@@ -50,9 +50,10 @@ def test_describe_damage_low_confidence_is_only_recorded():
     assert result["retake"] is False and result["confidence"] == 0.3
 
 
-def test_describe_damage_other_without_symptom_retake():
-    # other 는 대표 증상이 없어서, 모델도 문장을 비우면 검색할 말이 없음 → 재촬영
-    result = analyzer({"label": "other", "symptom_ko": "", "confidence": 0.9}).describe_damage(b"img")
+@pytest.mark.parametrize("symptom", ["", "사진이 어두워서 손상 여부를 확인할 수 없습니다."])
+def test_describe_damage_other_retake(symptom):
+    # other 는 문장이 있어도 재촬영 (손상이 아닌 문장을 검색하지 않게. 통합 테스트 TS-I-06)
+    result = analyzer({"label": "other", "symptom_ko": symptom, "confidence": 0.9}).describe_damage(b"img")
     assert result["retake"] is True
 
 

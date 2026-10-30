@@ -46,3 +46,10 @@ V벨트,V벨트,V-BELTS
 처리량 부족,이송 능력 부족,The specified capacity has not been reached
 트레드 롤러 안 돎,트레드 롤러 정지,tread rollers not turning
 압력 롤러,압력 롤러,pressure rollers
+래깅,풀리 라깅,lagging;Pulley lagging worn
+풀리 래깅,풀리 커버 마모,Severe pulley cover wear;Pulley lagging worn
+라깅 마모,풀리 커버 마모,Severe pulley cover wear;Pulley lagging worn
+찢어,벨트 찢어짐,gouging or stripping of top cover;Longitudinal grooving or cracking of bottom cover;Covers harden or crack
+찢김,벨트 찢어짐,gouging or stripping of top cover;Longitudinal grooving or cracking of bottom cover;Covers harden or crack
+가장자리,벨트 에지 손상,Excessive edge wear;broken edges;Transverse breaks at belt edge
+구멍,벨트 구멍,star breaks in carcass;Short breaks in carcass;very small cover punctures

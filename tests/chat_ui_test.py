@@ -74,6 +74,15 @@ def test_answer_card_order_and_escape():
     assert "<img src=x" not in render_answer_card(evil)
 
 
+def test_answer_card_shows_photo_note_first():
+    """사진+질문 답변(on_image)은 message 의 사진 결과가 요약보다 먼저 "사진" 줄로 보임. 텍스트 답변에는 없음"""
+    assert "wk-label'>사진<" not in render_answer_card(fake_answer("벨트"))
+    note = fake_answer("벨트").model_copy(update={"message": "명판에서 138-ACC 설비를 <확인>했습니다."})
+    html = render_answer_card(note)
+    assert html.index("사진") < html.index("요약")
+    assert "&lt;확인&gt;" in html                       # 문구도 이스케이프
+
+
 def test_answer_card_merges_duplicate_causes():
     """같은 원인이 KB마다 반복되면 한 블록으로 합치고, 조치는 중복 없이 순서대로 보인다"""
     from chatbot.core.schemas import Cause
