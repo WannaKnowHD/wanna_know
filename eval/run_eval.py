@@ -312,7 +312,8 @@ def _build_photo(pipeline):
     app = ChatApp(pipeline=pipeline)
 
     def photo(image: bytes, state: dict) -> dict:
-        answer, _ = app._analyze_photo(image, state)
+        # _analyze_photo 는 (응답, state, 질문을 썼는지)를 돌려준다. 평가 사진 문항은 질문이 없으므로 응답만 쓴다
+        answer, *_ = app._analyze_photo(image, state)
         return answer if isinstance(answer, dict) else answer.model_dump(mode="json")
 
     return photo
