@@ -51,7 +51,7 @@ h1.login-title.theme-dark-only,
   border-radius: 0.5rem !important;
   box-shadow: none !important;
   font-size: 0 !important;
-  gap: 0 !important;
+  gap: 0.375rem !important;
 }
 .theme-toggle::before {
   content: "";
