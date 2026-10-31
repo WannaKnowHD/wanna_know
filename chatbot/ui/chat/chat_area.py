@@ -77,7 +77,7 @@ def build_chat_area() -> ChatArea:
             show_label=False,
             sanitize_html=False,   # 내용은 messages.py 가 escape 해서 만든 HTML 만 들어옴
             buttons=[],
-            autoscroll=True,
+            autoscroll=False,   # 답변이 길어져도 사용자가 읽던 위치를 강제로 끝으로 옮기지 않음
             elem_id="chat-messages",
         )
 
