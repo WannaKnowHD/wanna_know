@@ -128,7 +128,7 @@ def _render_steps(steps: list[ActionStep]) -> str:
 
 
 def _render_page(source: Source) -> str:
-    """원문 보기 안의 두 번째 토글: 그 쪽 전체 이미지. 이미지를 누르면 화면 가득 크게, 한 번 더 누르면 닫힘
+    """원문을 펼치면 바로 보이는 쪽 전체 이미지. 이미지를 누르면 화면 가득 크게, 한 번 더 누르면 닫힘
     (label 안 체크박스를 messages.css 가 :has(:checked) 로 받음. 채팅창 HTML 이라 자바스크립트 없이 동작해야 함).
     PDF 를 찾지 못하면 빈 글자"""
     url = page_image_url(source.doc_id, source.page)
@@ -136,24 +136,36 @@ def _render_page(source: Source) -> str:
         return ""
     alt = escape(f"{source.doc_title} p.{source.page}")
     return (
-        "<details class='wk-page'>"
-        f"<summary class='wk-link'>p.{source.page} 전체 보기</summary>"
+        "<div class='wk-page'>"
         f"<label class='wk-zoom' title='눌러서 크게 보기'><input type='checkbox'>"
         f"<img class='wk-page-image' src='{escape(url)}' alt='{alt}' loading='lazy'></label>"
-        "</details>"
+        "</div>"
     )
 
 
 def _render_sources(sources: list[Source]) -> str:
-    """출처 칩 + 원문 보기 (눌러서 펼치는 <details>, 자바스크립트 없이 동작).
-    펼치면 출처 바로 아래에 인용문(최대 3줄), 근거가 표·그림이면 잘라 둔 이미지, 그다음 "쪽 전체 보기" 토글"""
+    """문서·페이지별 출처 하나에 인용문과 이미지를 모아 한 번에 펼친다."""
+    grouped: dict[tuple[str, int], list[Source]] = {}
+    for source in sources:
+        grouped.setdefault((source.doc_id, source.page), []).append(source)
+
     parts = []
-    for s in sources:
-        picture = _image(s.image_path, f"{s.doc_title} p.{s.page}") if s.chunk_type in TABLE_FIGURE_TYPES else ""
+    for group in grouped.values():
+        s = group[0]
+        quotes = dict.fromkeys(source.quote for source in group if source.quote)
+        quote_html = "".join(
+            f"<blockquote class='wk-quote'>{escape(quote)}</blockquote>"
+            for quote in quotes
+        )
+        image_paths = dict.fromkeys(
+            source.image_path for source in group
+            if source.chunk_type in TABLE_FIGURE_TYPES and source.image_path
+        )
+        pictures = "".join(_image(path, f"{s.doc_title} p.{s.page}") for path in image_paths)
         parts.append(
             "<details class='wk-source'>"
             f"<summary><span class='wk-chip'>{escape(f'{s.doc_title} · p.{s.page}')}</span><span class='wk-link'>원문 보기</span></summary>"
-            f"<blockquote class='wk-quote'>{escape(s.quote)}</blockquote>{picture}{_render_page(s)}"
+            f"{quote_html}{pictures}{_render_page(s)}"
             "</details>"
         )
     return "".join(parts)
