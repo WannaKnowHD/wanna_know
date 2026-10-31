@@ -904,6 +904,13 @@
   color: var(--admin-accent-text) !important;
 }
 
+/* KB 현황: 상태 제목과 배지만 열 중앙에 정렬 */
+#admin-root #admin-kb-tab .kb-table .kb-state,
+#admin-root #admin-kb-tab .kb-table tbody td:last-child:not(.kb-empty) {
+  text-align: center;
+  white-space: nowrap;
+}
+
 /* 이미 조정한 기간 드롭다운의 폭·여백 유지 */
 #admin-period { width: 6.25rem !important; min-width: 6.25rem !important; }
 #admin-period .wrap-inner { min-height: 2rem !important; gap: 0.375rem !important; }
