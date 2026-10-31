@@ -68,7 +68,8 @@
 .wk-caption { color: var(--wk-chat-muted); font-size: 0.75rem; margin-top: 0.375rem; }
 
 .wk-source { margin: 0; }
-.wk-source summary { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; list-style: none; }
+.wk-source summary { display: flex; align-items: center; gap: 0.5rem; cursor: default; list-style: none; pointer-events: none; }
+.wk-source > summary > .wk-link { pointer-events: auto; cursor: pointer; }
 .wk-source summary::-webkit-details-marker { display: none; }
 .wk-link { color: var(--wk-chat-text); font-size: 0.8125rem; font-weight: 500; text-decoration: underline; }
 /* 인용문: 출처 칩 바로 아래에 붙여서(위 여백 없음) 최대 3줄. Gradio 본문(prose)의 blockquote 여백도 걷어 냄 */

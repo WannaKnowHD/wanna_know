@@ -214,7 +214,7 @@ def test_build_admin_tab_and_refresh(db):
         state = gr.State({"user": ADMIN})
         view = dashboard.build_admin_tab(state)
     assert isinstance(view, gr.Column)
-    assert dashboard.back_button.value == BACK_LABEL == "뒤로가기 (채팅 화면)"   # Figma 상단 바
+    assert dashboard.back_button.value == BACK_LABEL == "채팅화면"   # 채팅 화면 이동 버튼
     assert dashboard.period_input.value == "최근 7일"                            # 운영 현황 탭 맨 위 기간 표시
     values = dashboard.refresh("최근 30일", {"user": ADMIN})
     assert len(values) == len(dashboard.refresh_outputs)

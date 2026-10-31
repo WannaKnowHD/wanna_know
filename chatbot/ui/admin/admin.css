@@ -119,6 +119,7 @@
 }
 
 .admin-mode-chip {
+  visibility: hidden; /* 기존 공간을 유지해 주변 요소가 움직이지 않도록 표시만 숨김 */
   display: inline-flex;
   align-items: center;
   height: 2rem;
@@ -451,15 +452,15 @@
 
 #admin-period .wrap-inner {
   min-height: 1.75rem !important;
-  padding: 0 0.625rem 0 1.375rem !important;   /* 왼쪽 = 0.75rem + 아이콘 폭만큼 더: 글자가 알약 가운데에 오게 */
+  padding: 0 0.625rem !important;
   background: var(--admin-surface) !important;
   border: 1px solid var(--admin-border) !important;
   border-radius: 999px !important;
   box-shadow: none !important;
 }
 
-.gradio-container.gradio-container-6-31-0 .contain #admin-period .wrap-inner {
-  margin: 0px 0.5rem 0px 0.0rem !important;
+#admin-period .wrap-inner {
+  margin: 0 !important;
 }
 
 #admin-period input {
@@ -469,7 +470,7 @@
   background: transparent !important;
   color: var(--admin-text) !important;
   font-size: 0.75rem !important;
-  text-align: center;
+  text-align: left;
 }
 
 #admin-period .icon-wrap {
@@ -824,6 +825,15 @@
   font-size: 0.8125rem;
 }
 
+/* 검토용 두 열만 제목과 체크박스를 각 열의 가운데에 정렬 */
+#not-found-table [data-heading="2"] .cell-wrap,
+#not-found-table [data-heading="3"] .cell-wrap,
+#not-found-table [data-col="2"] .cell-wrap,
+#not-found-table [data-col="3"] .cell-wrap {
+  justify-content: center !important;
+  text-align: center;
+}
+
 /* 체크박스 (Figma 담당자 확인 · KB 업데이트 필요 체크박스 20px): 꺼짐 = 바탕색 + 1.5px 테두리, 켜짐 = 초록 칸 + 체크 표시.
    Gradio 기본은 테두리 1px 이고 마우스를 올리면 테두리 · 바탕색이 바뀌어서 상태마다 직접 지정 */
 #not-found-table input[type="checkbox"],
@@ -886,4 +896,66 @@
 #not-found-table .body-cell .cell-wrap {
   padding-top: 0.5rem !important;
   padding-bottom: 0.5rem !important;
+}
+
+/* 표의 위로 이동 버튼: 기존 반투명 효과는 유지하고 관리자 강조색만 적용 */
+#admin-root #not-found-table .scroll-top-button {
+  background: var(--admin-accent) !important;
+  color: var(--admin-accent-text) !important;
+}
+
+/* KB 현황: 상태 제목과 배지만 열 중앙에 정렬 */
+#admin-root #admin-kb-tab .kb-table .kb-state,
+#admin-root #admin-kb-tab .kb-table tbody td:last-child:not(.kb-empty) {
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* 이미 조정한 기간 드롭다운의 폭·여백 유지 */
+#admin-period { width: 6.25rem !important; min-width: 6.25rem !important; }
+#admin-period .wrap-inner { min-height: 2rem !important; gap: 0.375rem !important; }
+#admin-period input { min-width: 0 !important; width: 100% !important; }
+#admin-period .icon-wrap { flex: 0 0 0.75rem; }
+
+/* 원래 카드 배치는 유지하고 일별·입력 유형 카드만 조금 줄인다. */
+#admin-root .adm-daily-panel .adm-bars {
+  --adm-daily-bar-max: clamp(6rem, 13dvh, 8.125rem);
+  min-height: calc(var(--adm-daily-bar-max) + 2.375rem);
+}
+#admin-root .adm-types-panel .adm-stack { height: 1.25rem; }
+#admin-root .adm-types-panel .adm-legend {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+#admin-root .adm-types-panel .adm-legend li {
+  gap: 0.375rem;
+  white-space: nowrap;
+  font-size: clamp(0.6875rem, 0.9vw, 0.8125rem);
+}
+#admin-root .adm-types-panel .adm-swatch { flex-shrink: 0; }
+
+/* 운영 현황의 상단 빈 공간만 축소. 카드와 다른 탭의 배치는 유지한다. */
+#admin-tabs [role="tabpanel"]:has(.adm-usage-row) {
+  padding-top: clamp(0.5rem, 1.2dvh, 1rem) !important;
+  padding-bottom: 0.75rem !important;
+}
+
+/* Top 10만 행 높이를 소폭 늘려 아래쪽 빈 공간을 줄인다. */
+@media (min-width: 901px) {
+  #admin-root .adm-top-panel .adm-table td {
+    padding-top: clamp(0.875rem, 1.875dvh, 1rem) !important;
+    padding-bottom: clamp(0.875rem, 1.875dvh, 1rem) !important;
+  }
+}
+
+/* 모바일은 왼쪽 세 카드 다음에 Top 10을 표시한다. 카드 높이는 내용에 맡긴다. */
+@media (max-width: 900px) {
+  #admin-root .adm-usage-row { flex-wrap: wrap !important; }
+  #admin-root .adm-usage-row > .adm-col {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+  }
+  #admin-root .adm-types-panel .adm-legend { grid-template-columns: 1fr; }
+  #admin-root .adm-types-panel .adm-legend li { font-size: 0.8125rem; }
 }

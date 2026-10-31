@@ -32,7 +32,7 @@ EXAMPLE_FULL_QUESTIONS = {
     "벨트 가장자리가 닳았어요": "컨베이어 벨트 가장자리가 닳고 손상됐어요",
     "주간 점검 뭐 해야 해?": "컨베이어 주간 점검은 뭘 해야 하나요?",
 }
-SERVICE_NAME = "Wanna Know"   # 채팅 상단 바 왼쪽 (예전 설비 표시 자리)
+SERVICE_NAME = "컨베이어 문제 해결 챗봇"   # 채팅 상단 바 왼쪽 (예전 설비 표시 자리)
 INPUT_PLACEHOLDER = "증상이나 알람 코드를 입력하세요"
 
 
@@ -68,7 +68,7 @@ def build_chat_area() -> ChatArea:
             )
             admin_button = gr.Button("관리자 전환", visible=False, elem_classes=["ca-button"])
             theme_button = gr.Button(
-                "라이트 / 다크", elem_classes=["ca-button", "theme-toggle"], visible=THEME_TOGGLE_ENABLED
+                "테마 전환", elem_classes=["ca-button", "theme-toggle"], visible=THEME_TOGGLE_ENABLED
             )
 
         chatbot = gr.Chatbot(
@@ -77,7 +77,7 @@ def build_chat_area() -> ChatArea:
             show_label=False,
             sanitize_html=False,   # 내용은 messages.py 가 escape 해서 만든 HTML 만 들어옴
             buttons=[],
-            autoscroll=True,
+            autoscroll=False,   # 답변이 길어져도 사용자가 읽던 위치를 강제로 끝으로 옮기지 않음
             elem_id="chat-messages",
         )
 
