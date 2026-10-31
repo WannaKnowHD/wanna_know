@@ -10,6 +10,7 @@ import gradio as gr
 from chatbot.ui.login.theme import THEME_TOGGLE_ENABLED
 
 LOGIN_FORM_CSS_PATH = Path(__file__).parent / "login_form.css"
+LOGIN_LOGO_PATH = Path(__file__).parent.parent / "chat" / "assets" / "login_symbol.svg"
 
 # 안내 문구 (기능명세서 on_login)
 MSG_EMPTY = "사번과 비밀번호를 입력하세요."
@@ -18,11 +19,9 @@ MSG_SERVER = "서버에 연결할 수 없습니다. 잠시 후 다시 시도해 
 
 LOGIN_HEADER_HTML = (
     "<div class='login-header'>"
-    # 라이트: 초록 태그 + "Wanna Know" / 다크(딥 포레스트): 알약 태그 + 한글 제목 (Figma 00 로그인 두 시안)
-    "<span class='login-tag theme-light-only'>컨베이어 문제 해결 챗봇</span>"
-    "<span class='login-tag theme-dark-only'>AI TROUBLESHOOTING ASSISTANT</span>"
-    "<h1 class='login-title theme-light-only'>Wanna Know</h1>"
-    "<h1 class='login-title theme-dark-only'>컨베이어 문제 해결 챗봇</h1>"
+    f"<img class='login-logo' src='/gradio_api/file={escape(LOGIN_LOGO_PATH.as_posix(), quote=True)}' alt='팀 로고' width='65' height='79'>"
+    "<span class='login-tag'>컨베이어 문제 해결 챗봇</span>"
+    "<h1 class='login-title'>WannaKnow</h1>"
     "<p class='login-subtitle'>사번과 비밀번호로 로그인하세요</p>"
     "</div>"
 )
@@ -55,7 +54,7 @@ def build_login_form() -> LoginForm:
             gr.HTML(LOGIN_NOTE_HTML)
         # Figma 로그인 카드에는 전환 버튼이 없어서 카드 밖(화면 오른쪽 위)에 둠
         theme_button = gr.Button(
-            "라이트 / 다크 전환", elem_id="login-theme", elem_classes=["theme-toggle"], size="sm",
+            "테마 전환", elem_id="login-theme", elem_classes=["theme-toggle"], size="sm",
             visible=THEME_TOGGLE_ENABLED,
         )
     return LoginForm(root, employee, password, error, button, theme_button)

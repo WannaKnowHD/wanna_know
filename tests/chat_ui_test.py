@@ -123,8 +123,8 @@ def test_answer_card_shows_table_and_figure_images(tmp_path):
     assert "wk-image" not in html and "이미지를 불러올 수 없습니다" in html and "원문 보기" in html
 
 
-def test_source_quote_first_then_page_toggle(tmp_path, monkeypatch):
-    """원문 보기: 출처 바로 아래 인용문 → 잘라 둔 표 이미지 → 쪽 전체 보기(누르면 확대). 쪽 이미지가 없으면 토글을 뺀다"""
+def test_source_quote_first_then_page_image(tmp_path, monkeypatch):
+    """원문을 한 번 펼치면 인용·표·페이지를 표시하며 불필요한 전체 보기 문구는 없다."""
     import chatbot.ui.chat.messages as messages
 
     image = tmp_path / "crop.png"
@@ -136,7 +136,7 @@ def test_source_quote_first_then_page_toggle(tmp_path, monkeypatch):
     monkeypatch.setattr(messages, "page_image_url", lambda doc_id, page: f"/gradio_api/file=/pages/{doc_id}_p{page}.jpg")
     html = render_answer_card(answer)
     assert html.index("</summary><blockquote class='wk-quote'>") < html.index("wk-image") < html.index("wk-page")
-    assert f"p.{source.page} 전체 보기" in html and "class='wk-zoom'" in html and "<input type='checkbox'>" in html
+    assert "전체 보기" not in html and "class='wk-zoom'" in html and "<input type='checkbox'>" in html
 
     monkeypatch.setattr(messages, "page_image_url", lambda doc_id, page: None)
     assert "wk-page" not in render_answer_card(answer)
@@ -285,3 +285,4 @@ def test_theme_buttons_are_shown():
     with gr.Blocks():
         area, login = build_chat_area(), build_login_form()
     assert area.theme_button.visible is True and login.theme_button.visible is True
+    assert area.theme_button.value == login.theme_button.value == "테마 전환"

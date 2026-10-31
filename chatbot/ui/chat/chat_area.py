@@ -68,7 +68,7 @@ def build_chat_area() -> ChatArea:
             )
             admin_button = gr.Button("관리자 전환", visible=False, elem_classes=["ca-button"])
             theme_button = gr.Button(
-                "라이트 / 다크", elem_classes=["ca-button", "theme-toggle"], visible=THEME_TOGGLE_ENABLED
+                "테마 전환", elem_classes=["ca-button", "theme-toggle"], visible=THEME_TOGGLE_ENABLED
             )
 
         chatbot = gr.Chatbot(

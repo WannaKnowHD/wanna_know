@@ -14,6 +14,12 @@ THEME_TOGGLE_ENABLED = True
 # 다크는 <body class="dark"> 로 켜고, 고른 값을 브라우저(localStorage)에 기억함. theme.css 가 .dark 기준으로 색을 바꿈
 THEME_KEY = "wk-theme"
 
+_SYNC_BUTTONS_JS = (
+    " const label = document.body.classList.contains('dark') ? '라이트 모드로 전환' : '다크 모드로 전환';"
+    " document.querySelectorAll('button.theme-toggle, .theme-toggle button').forEach(button => {"
+    " button.setAttribute('aria-label', label); button.setAttribute('title', label); });"
+)
+
 # 끈 상태: Gradio 가 브라우저 설정(OS 다크 모드)을 따라 dark 를 붙여도 계속 떼어 내 라이트로 고정
 _FORCE_LIGHT_JS = (
     "() => { const keep = () => document.body.classList.remove('dark'); keep();"
@@ -24,17 +30,20 @@ _KEEP_CHOICE_JS = (
     "() => { let dark = false; try { dark = localStorage.getItem('%s') === 'dark'; } catch (e) {}"
     " window.wkTheme = dark ? 'dark' : 'light';"
     " const keep = () => { const on = window.wkTheme === 'dark';"
-    " if (document.body.classList.contains('dark') !== on) document.body.classList.toggle('dark', on); }; keep();"
-    " new MutationObserver(keep).observe(document.body, {attributes: true, attributeFilter: ['class']}); }" % THEME_KEY
-)
+    " if (document.body.classList.contains('dark') !== on) document.body.classList.toggle('dark', on);"
+    + _SYNC_BUTTONS_JS
+    + " }; keep();"
+    " new MutationObserver(keep).observe(document.body, {attributes: true, attributeFilter: ['class'], childList: true, subtree: true}); }"
+) % THEME_KEY
 
 # 페이지를 열 때 실행됨. app.py 가 launch(js=...) 로 넘김 (ChatApp.launch_options)
 THEME_INIT_JS = _KEEP_CHOICE_JS if THEME_TOGGLE_ENABLED else _FORCE_LIGHT_JS
 THEME_TOGGLE_JS = (
     "() => { window.wkTheme = document.body.classList.contains('dark') ? 'light' : 'dark';"
     " document.body.classList.toggle('dark', window.wkTheme === 'dark');"
-    " try { localStorage.setItem('%s', window.wkTheme); } catch (e) {} }" % THEME_KEY
-)
+    + _SYNC_BUTTONS_JS
+    + " try { localStorage.setItem('%s', window.wkTheme); } catch (e) {} }"
+) % THEME_KEY
 
 
 def bind_theme_toggle(*buttons) -> None:
