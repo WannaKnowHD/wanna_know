@@ -82,7 +82,7 @@ SAVE_REVIEW_SQL = (
 PERIODS = {"오늘": 1, "최근 7일": 7, "최근 30일": 30}
 DEFAULT_PERIOD = "최근 7일"
 ADMIN_TITLE = "관리자 대시보드"  # Figma 06~09 상단 바 왼쪽 제목
-BACK_LABEL = "뒤로가기 (채팅 화면)"  # Figma 상단 바 버튼 · 화면설계서 SCR-05 3번
+BACK_LABEL = "채팅화면"  # 채팅 화면으로 이동하는 상단 바 버튼
 
 # chat_logs.input_type → 화면 이름 (usage_tab.INPUT_TYPE_ORDER 와 같은 순서)
 INPUT_TYPE_LABELS = {

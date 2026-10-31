@@ -13,7 +13,7 @@ import gradio as gr
 INPUT_TYPE_ORDER = ["텍스트 질문", "명판 사진", "손상 사진", "그 외 사진"]
 OTHER_PHOTO = "그 외 사진"   # Figma 에는 텍스트 · 명판 · 손상 3가지만 있어서, 그 외 사진은 건수가 있을 때만 보임
 NO_QUESTIONS = "이 기간에는 질문이 없습니다"
-DAILY_BAR_MAX_REM = 9.375    # 일별 질문 수 막대 최대 높이 (Figma 150px)
+DAILY_BAR_MAX_REM = 8.125    # 일별 질문 수 막대 최대 높이 130px (기본 디자인 150px에서 소폭 축소)
 MODEL_BAR_RESERVE_REM = 12.5   # 설비 모델별 한 줄에서 막대 말고 차지하는 너비 (모델명 7.5rem · 간격 · 건수). 가장 긴 막대 = 남는 너비
 DENSE_DAYS = 14              # 이보다 날이 많으면(최근 30일) 막대 위 숫자를 빼고 날짜는 띄엄띄엄 표시
 
@@ -53,13 +53,13 @@ def build_usage_tab(periods: list[str], default: str) -> UsageTab:
                 scale=0, min_width=0, elem_id="admin-period",
             )
             caption = gr.HTML(elem_classes=["adm-caption"])
-        with gr.Row(elem_classes=["adm-row"]):
+        with gr.Row(elem_classes=["adm-row", "adm-usage-row"]):
             with gr.Column(elem_classes=["adm-col"]):   # 1열: 일별 → 입력 유형 → 설비 모델 (위에서 아래로)
-                daily = gr.HTML()
-                input_types = gr.HTML()
+                daily = gr.HTML(elem_classes=["adm-daily-panel"])
+                input_types = gr.HTML(elem_classes=["adm-types-panel"])
                 models = gr.HTML()
             with gr.Column(elem_classes=["adm-col"]):   # 2열: 자주 묻는 증상 Top 10
-                top_symptoms = gr.HTML()
+                top_symptoms = gr.HTML(elem_classes=["adm-top-panel"])
     return UsageTab(period, caption, daily, input_types, models, top_symptoms)
 
 
@@ -93,7 +93,7 @@ def render_daily(daily) -> str:
     bars = "".join(
         f"<div class='adm-bar' title='{escape(label)} · {count}건'>"
         f"<span class='adm-bar-value'>{'' if dense else count}</span>"
-        f"<span class='adm-bar-fill' style='height:{count / top * DAILY_BAR_MAX_REM if top else 0:.3f}rem'></span>"
+        f"<span class='adm-bar-fill' style='height:calc(var(--adm-daily-bar-max, {DAILY_BAR_MAX_REM}rem) * {count / top if top else 0:.5f})'></span>"
         f"<span class='adm-bar-label'>{escape(label) if i % step == 0 else ''}</span>"
         "</div>"
         for i, (label, count) in enumerate(zip(labels, counts))
