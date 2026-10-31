@@ -119,6 +119,7 @@
 }
 
 .admin-mode-chip {
+  visibility: hidden; /* 기존 공간을 유지해 주변 요소가 움직이지 않도록 표시만 숨김 */
   display: inline-flex;
   align-items: center;
   height: 2rem;
@@ -824,6 +825,15 @@
   font-size: 0.8125rem;
 }
 
+/* 검토용 두 열만 제목과 체크박스를 각 열의 가운데에 정렬 */
+#not-found-table [data-heading="2"] .cell-wrap,
+#not-found-table [data-heading="3"] .cell-wrap,
+#not-found-table [data-col="2"] .cell-wrap,
+#not-found-table [data-col="3"] .cell-wrap {
+  justify-content: center !important;
+  text-align: center;
+}
+
 /* 체크박스 (Figma 담당자 확인 · KB 업데이트 필요 체크박스 20px): 꺼짐 = 바탕색 + 1.5px 테두리, 켜짐 = 초록 칸 + 체크 표시.
    Gradio 기본은 테두리 1px 이고 마우스를 올리면 테두리 · 바탕색이 바뀌어서 상태마다 직접 지정 */
 #not-found-table input[type="checkbox"],
@@ -886,6 +896,12 @@
 #not-found-table .body-cell .cell-wrap {
   padding-top: 0.5rem !important;
   padding-bottom: 0.5rem !important;
+}
+
+/* 표의 위로 이동 버튼: 기존 반투명 효과는 유지하고 관리자 강조색만 적용 */
+#admin-root #not-found-table .scroll-top-button {
+  background: var(--admin-accent) !important;
+  color: var(--admin-accent-text) !important;
 }
 
 /* 이미 조정한 기간 드롭다운의 폭·여백 유지 */
