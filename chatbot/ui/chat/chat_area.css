@@ -78,6 +78,20 @@
 
 /* gr.Chatbot 기본 모양을 걷어 내고 Figma 말풍선으로 맞춤 (Gradio 6 클래스: .bubble-wrap · .message.user · .message.bot) */
 #chat-messages .bubble-wrap { background: transparent !important; }
+/* 대화 기록과 같은 스크롤바: 투명 트랙 · 둥근 막대 · 동일한 테마 색상 */
+#chat-messages .bubble-wrap {
+  --chat-scroll-thumb: color-mix(in srgb, var(--wk-sb-item-bg) 30%, transparent);
+  --chat-scroll-thumb-hover: color-mix(in srgb, var(--wk-sb-border) 45%, transparent);
+  scrollbar-width: thin;
+  scrollbar-color: var(--chat-scroll-thumb) transparent;
+}
+#chat-messages .bubble-wrap::-webkit-scrollbar { width: 0.5rem; }
+#chat-messages .bubble-wrap::-webkit-scrollbar-track { background: transparent; }
+#chat-messages .bubble-wrap::-webkit-scrollbar-thumb {
+  background: var(--chat-scroll-thumb);
+  border-radius: 999px;
+}
+#chat-messages .bubble-wrap::-webkit-scrollbar-thumb:hover { background: var(--chat-scroll-thumb-hover); }
 #chat-messages .icon-button-wrapper { display: none !important; }   /* 휴지통(대화 지우기): 지우기는 사이드바 '새 대화'로만 */
 #chat-messages .message.user {
   padding: 0.625rem 1rem !important;   /* Figma 말풍선: 위아래 10px · 좌우 16px */
