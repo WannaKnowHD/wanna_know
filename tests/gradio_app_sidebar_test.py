@@ -89,7 +89,7 @@ def test_topbar_shows_service_name_and_sidebar_title():
         area = build_chat_area()
         build_sidebar()
     # 상단 바 칩은 서비스 이름(chat_area.SERVICE_NAME). 예전 설비 표시 자리라 "설비" 글자가 남아 있으면 안 됨
-    assert "Wanna Know" in area.brand.value and "설비" not in area.brand.value
+    assert "컨베이어 문제 해결 챗봇" in area.brand.value and "설비" not in area.brand.value
     assert BRAND == "Wanna Know"
 
 
