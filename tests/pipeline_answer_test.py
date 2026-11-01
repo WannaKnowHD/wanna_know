@@ -22,6 +22,7 @@ from chatbot.core.logger import RequestLogger
 from chatbot.core.safety import SafetyRules
 from chatbot.core.schemas import AnswerResponse, Hit, User
 from chatbot.pipeline import (
+    MAX_FIGURES,
     MSG_ERROR,
     MSG_NOT_FOUND,
     MSG_OUT_OF_SCOPE,
@@ -359,3 +360,55 @@ def test_generate_fail_reason_is_recorded(make):
     assert out["trace"]["generate_fail"] == "llm_not_found"
     out = make(FakeLLM(UNDERSTAND_TS, QUERIES, english, ts_answer()), FakeRetriever([ts_hit()])).answer("모터 과열", state(), "text")
     assert out["status"] == "answered" and out["trace"].get("generate_fail") is None   # 재요청으로 통과하면 기록 없음
+
+
+# ------------------------------------------------------------------------------ 그림 연결
+FIG_PATH = "data/interim/hytrol_138acc/p22_1_figure.png"
+
+
+def figure_hit(page=22, path=FIG_PATH, fig_id="hytrol_138acc:p22:s9:c0"):
+    """색인된 figure 청크와 같은 모양: 본문 앞에 Document/Models 머리말, section_path 는 빈 값"""
+    text = ("Document: Hytrol 138-ACC\nModels: 138-ACC\n\n"
+            "Motor wiring. A diagram of the motor terminal box. No callouts are visible.")
+    meta = {"doc_id": "hytrol_138acc", "page": page, "chunk_type": "figure", "section_path": ""}
+    if path:
+        meta["image_path"] = path
+    return Hit(id=fig_id, text=text, score=0.7, doc_id="hytrol_138acc", page=page, metadata=meta)
+
+
+def ask(make, hits, reply):
+    return make(FakeLLM(UNDERSTAND_TS, QUERIES, reply), FakeRetriever(hits)).answer("모터 과열", state(), "text")
+
+
+def test_figure_on_cited_page_is_attached(make):
+    """인용한 출처(p.22)와 같은 쪽의 figure 청크는 인용하지 않았어도 그림으로 붙는다"""
+    out = ask(make, [ts_hit(), figure_hit()], ts_answer())
+    AnswerResponse.model_validate(out)
+    assert out["status"] == "answered"
+    assert out["figures"] == [{"label": "p.22 그림", "caption": "Motor wiring.", "doc_id": "hytrol_138acc",
+                               "page": 22, "image_path": FIG_PATH}]
+
+
+def test_cited_figure_chunk_is_attached_even_on_other_page(make):
+    hit = figure_hit(page=30, fig_id="fig30")
+    reply = ts_answer()
+    reply["sources"].append({"ref_id": "fig30", "quote": "motor terminal box"})
+    assert [f["page"] for f in ask(make, [ts_hit(), hit], reply)["figures"]] == [30]
+
+
+def test_figure_on_unrelated_page_is_not_attached(make):
+    assert ask(make, [ts_hit(), figure_hit(page=40, fig_id="fig40")], ts_answer())["figures"] == []
+
+
+def test_no_figure_chunk_gives_empty_figures(make):
+    assert ask(make, [ts_hit()], ts_answer())["figures"] == []
+
+
+def test_figure_without_image_path_is_skipped(make):
+    assert ask(make, [ts_hit(), figure_hit(path=None)], ts_answer())["figures"] == []
+
+
+def test_figures_deduplicated_and_capped(make):
+    hits = [ts_hit()] + [figure_hit(fig_id=f"f{i}", path=f"p{i}.png") for i in range(5)] + [figure_hit(fig_id="dup", path="p0.png")]
+    figures = ask(make, hits, ts_answer())["figures"]
+    assert [f["image_path"] for f in figures] == ["p0.png", "p1.png", "p2.png"][:MAX_FIGURES]   # 순위 순서, p0 중복 없음

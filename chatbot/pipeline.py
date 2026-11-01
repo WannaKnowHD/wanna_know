@@ -104,6 +104,10 @@ def load_kb(kb_dir) -> dict[str, dict]:
         entries[entry["kb_id"]] = entry
     return entries
 
+MAX_FIGURES = 1             # 답변 카드에 붙이는 그림 최대 장수
+FIGURE_CAPTION_MAX = 120    # 그림 설명(figure 청크 첫 문장) 최대 글자 수
+
+
 def _ms(since: float) -> int:
     """since(time.perf_counter 값)부터 지금까지 걸린 시간 (밀리초)"""
     return int((time.perf_counter() - since) * 1000)
@@ -130,6 +134,30 @@ def _source(source: dict, hit) -> dict:
             "doc_title": hit.doc_id,          # 문서 이름 대신 doc_id 를 보여 줌 (팀 결정)
             "page": hit.page, "chunk_type": hit.metadata["chunk_type"],
             "image_path": hit.metadata.get("image_path")}
+
+def _figure_caption(hit) -> str:
+    """figure 청크 본문(색인 머리말 "Document/Models" 뒤)의 첫 문장 = 그림 설명"""
+    body = hit.text.split("\n\n", 1)[-1].strip()
+    first = re.split(r"(?<=[.!?])\s", body, maxsplit=1)[0]
+    return first[:FIGURE_CAPTION_MAX] or f"p.{hit.page}"
+
+
+def _figures(sources: list[dict], hits: list) -> list[dict]:
+    """답변에 붙일 그림 (schemas.Figure 모양). 검색된 figure 청크 중 image_path 가 있고,
+    근거로 인용됐거나 인용된 출처와 같은 문서·쪽에 있는 것. 검색 순위대로, image_path 중복 없이 최대 MAX_FIGURES 장"""
+    cited_ids = {s["ref_id"] for s in sources}
+    cited_pages = {(s["doc_id"], s["page"]) for s in sources}
+    figures: dict[str, dict] = {}
+    for hit in hits:
+        path = hit.metadata.get("image_path")
+        if hit.metadata.get("chunk_type") != "figure" or not path:
+            continue
+        if hit.id not in cited_ids and (hit.doc_id, hit.page) not in cited_pages:
+            continue
+        figures.setdefault(path, {"label": hit.metadata.get("section_path") or f"p.{hit.page} 그림",
+                                  "caption": _figure_caption(hit), "doc_id": hit.doc_id,
+                                  "page": hit.page, "image_path": path})
+    return list(figures.values())[:MAX_FIGURES]
 
 class RagPipeline:
     """RagPipeline (기능명세서 기준 뼈대)."""
@@ -240,7 +268,9 @@ class RagPipeline:
                     "equipment": equipment, "filter_released": filter_released,
                     "summary": checked["summary"], "causes": causes, "actions": actions,
                     "sources": sources, "kb_ids": kb_ids, "trace": trace}
-        return response, [self.kb[kb_id] for kb_id in kb_ids if kb_id in self.kb]
+        kb_used = [self.kb[kb_id] for kb_id in kb_ids if kb_id in self.kb]
+        response["figures"] = _figures(sources, hits)
+        return response, kb_used
 
     
     def _generate_checked(self, messages: list[dict], trace: dict) -> dict | None:
