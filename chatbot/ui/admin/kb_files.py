@@ -86,7 +86,7 @@ def check_pdf(data: bytes, filename: str) -> tuple[str, int]:
 
     받는 것: 파일 내용(bytes), 파일 이름
     돌려주는 것: (안전한 파일 이름, 쪽 수)
-    받을 수 없으면 이유를 담은 PdfCheckError 를 낸다. (PDF 아님 · 깨짐 · 암호 · 스캔본 · 너무 큼)
+    받을 수 없으면 이유를 담은 PdfCheckError 를 낸다. (PDF 아님 · 깨짐 · 잘림 · 암호 · 스캔본 · 너무 큼)
     """
     name = safe_filename(filename)
     if not data:
@@ -102,6 +102,10 @@ def check_pdf(data: bytes, filename: str) -> tuple[str, int]:
     try:
         if doc.needs_pass or doc.is_encrypted:
             raise PdfCheckError("암호가 걸린 PDF 는 추가할 수 없습니다. 암호를 푼 파일을 올려 주세요.")
+        if doc.is_repaired:
+            # 뒷부분이 잘린 PDF 도 PyMuPDF 가 복구해서 열면 쪽 수는 그대로이고 앞쪽 글자만 남는다
+            # → 글자 수 검사를 통과해 반쪽짜리 매뉴얼이 "완료"로 색인되므로, 복구가 필요했던 PDF 는 받지 않는다
+            raise PdfCheckError("PDF 파일이 잘렸거나 깨져 있습니다. 원본 파일을 다시 받아 주세요.")
         if doc.page_count == 0:
             raise PdfCheckError("쪽이 없는 PDF 입니다. 원본 파일을 다시 받아 주세요.")
         try:
@@ -109,7 +113,7 @@ def check_pdf(data: bytes, filename: str) -> tuple[str, int]:
         except Exception as error:
             raise PdfCheckError("PDF 파일이 깨져서 글자를 읽을 수 없습니다. 원본 파일을 다시 받아 주세요.") from error
         if text_chars < MIN_TEXT_CHARS:
-            # 중간이 잘린 PDF 도 PyMuPDF 가 복구해서 열면 글자가 거의 없어 여기서 걸린다 → 두 경우를 함께 안내
+            # 스캔본(사진만 있는 PDF)과, 복구 없이 열리지만 글자가 거의 없는 PDF → 두 경우를 함께 안내
             raise PdfCheckError("글자를 읽을 수 없는 PDF 입니다. (스캔본이거나 파일이 깨짐) "
                                 "글자가 들어 있는 원본 PDF 를 올려 주세요.")
         return name, doc.page_count

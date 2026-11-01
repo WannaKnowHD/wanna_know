@@ -116,7 +116,7 @@ def test_good_pdf_passes():
     (b"%PDF-1.7\n broken body", "broken.pdf", "깨져"),           # 깨진 PDF
     (None, "secret.pdf", "암호"),                                # 암호 PDF (아래에서 만듦)
     (None, "scan.pdf", "스캔본"),                                # 글자 없는 PDF (아래에서 만듦)
-    (None, "truncated.pdf", "깨짐"),                             # 중간이 잘린 PDF (복구돼 열리지만 글자가 없음)
+    (None, "truncated.pdf", "잘렸거나"),                         # 중간이 잘린 PDF (복구돼 열리지만 글자가 없음)
 ])
 def test_bad_files_rejected(data, name, word):
     if name == "secret.pdf":
@@ -128,6 +128,16 @@ def test_bad_files_rejected(data, name, word):
         data = data[: len(data) // 3]
     with pytest.raises(PdfCheckError, match=word):
         check_pdf(data, name)
+
+
+def test_truncated_pdf_with_readable_text_rejected():
+    # 뒷부분만 잘린 PDF: 복구해서 열면 쪽 수는 그대로이고 앞쪽 글자가 남아 글자 수 검사로는 걸리지 않음 (11/01 예외 점검에서 발견)
+    data = make_pdf(pages=6)
+    data = data[: len(data) // 2]
+    with pymupdf.open(stream=data, filetype="pdf") as doc:
+        assert doc.page_count == 6 and sum(len(page.get_text()) for page in doc) >= kb_files.MIN_TEXT_CHARS
+    with pytest.raises(PdfCheckError, match="잘렸거나"):
+        check_pdf(data, "half.pdf")
 
 
 def test_too_big_rejected(monkeypatch):
@@ -195,6 +205,16 @@ def test_rejected_file_is_not_saved(env):
     started, message = indexer.add_pdf(db, make_pdf(text=""), "scan.pdf")
     assert not started and "스캔본" in message
     assert not list(env.admin_add_dir.iterdir()) and db.rows() == {}
+
+
+def test_truncated_pdf_is_not_saved_or_indexed(env):
+    db = DocumentsDb()
+    calls = []
+    indexer = KbIndexer(env, lambda settings: calls.append(1), run_in_thread=False)
+    data = make_pdf(pages=6)
+    started, message = indexer.add_pdf(db, data[: len(data) // 2], "half.pdf")
+    assert not started and "잘렸거나" in message
+    assert not list(env.admin_add_dir.iterdir()) and db.rows() == {} and calls == []   # 저장·기록·색인 모두 안 함
 
 
 def test_same_name_as_initial_rejected(env):
