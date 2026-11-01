@@ -36,9 +36,11 @@ SERVICE_NAME = "컨베이어 문제 해결 챗봇"   # 채팅 상단 바 왼쪽 
 INPUT_PLACEHOLDER = "증상이나 알람 코드를 입력하세요"
 
 # 새 질문을 보내면 방금 보낸 질문 말풍선(사진 + 글자)이 채팅창 위쪽에 오도록 한 번만 스크롤 (gradio_app 의 질문 표시 → 답변 사이에 실행).
-# 채팅창은 autoscroll=False 라 답변이 길어질 때는 따라가지 않음. 답변 생성 중 말풍선(.wk-typing)이 그려질 때까지 최대 1.5초 기다림
+# 채팅창은 autoscroll=False 라 답변이 길어질 때는 따라가지 않음. 답변 생성 중 말풍선(.wk-typing)이 그려질 때까지 최대 1.5초 기다림.
+# 사이드바 대화 기록 목록도 맨 위로 올려 지금 대화(목록 맨 위)가 보이게 함
 SCROLL_TO_QUESTION_JS = """
 () => {
+  document.querySelector('#sb-history')?.scrollTo({ top: 0, behavior: 'smooth' });   // 사이드바 대화 기록도 맨 위(지금 대화)로
   const started = Date.now();
   const tick = () => {
     const wrap = document.querySelector('#chat-messages .bubble-wrap');

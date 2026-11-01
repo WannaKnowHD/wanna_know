@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import time
 import traceback
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -200,7 +201,7 @@ class ChatApp:
                 history = list(history or [])
                 message = (message or "").strip()
                 if (current or {}).get("user") is None or not (message or image):   # 로그인 전·빈 입력은 처리하지 않음
-                    return history, None, gr.update(), gr.update(), *clear_preview
+                    return history, None, gr.update(), gr.update(), *clear_preview, gr.update()
                 pending = {"message": message, "image": image, "history": history}   # 답변 단계에서 이 기록에 질문+답변을 붙임
                 shown = list(history)
                 if image:
@@ -208,7 +209,10 @@ class ChatApp:
                 if message:
                     shown.append({"role": "user", "content": render_user_message(message)})
                 shown.append({"role": "assistant", "content": render_typing()})   # 답변 생성 중 말풍선 (Figma 01-1). 답변이 오면 바뀜
-                return shown, pending, "", gr.update(visible=False), *clear_preview
+                title = f"{PHOTO_QUESTIONS['other_photo']} {message}".strip() if image else message
+                # 대화 기록은 답변 뒤에 저장되므로, 그 전에도 지금 대화가 사이드바 맨 위에 보이게 미리 그림 (답변이 오면 answer_event 가 DB 기준으로 다시 그림)
+                pending_list = render_history(self.history_with_pending(current, title), active=current.get("conversation_id"))
+                return shown, pending, "", gr.update(visible=False), *clear_preview, pending_list
 
             def answer_event(pending, history, current):
                 if pending is None:
@@ -246,7 +250,7 @@ class ChatApp:
                 return (new_state, *fresh_values)
 
             pending_question = gr.State(None)   # 질문은 보였지만 아직 답변이 붙지 않은 요청
-            question_outputs = [area.chatbot, pending_question, area.message, area.examples, *preview_outputs]
+            question_outputs = [area.chatbot, pending_question, area.message, area.examples, *preview_outputs, sidebar.history]
             question_inputs = [area.message, area.chatbot, state, pending_image]
             answer_inputs = [pending_question, area.chatbot, state]
             answer_outputs = [area.chatbot, state, area.examples, sidebar.history]
@@ -569,6 +573,20 @@ class ChatApp:
         """
         user = state.get("user")
         return self._conversation.load_conversations(user.employee_id) if user is not None else []
+
+    def history_with_pending(self, state: dict, question: str) -> list:
+        """
+        질문을 보낸 순간의 대화 기록 목록: 지금 대화(state["conversation_id"])를 맨 위로 올리고, 새 대화면 보낸 질문을 맨 위에 임시 항목으로 넣음.
+        임시 항목은 대화 ID 가 비어 있어 눌러도 아무 일도 없음 (open_history 가 찾지 못함)
+
+        Returns: list (load_conversations 와 같은 모양)
+        """
+        rows = self.show_history(state or {})
+        current = (state or {}).get("conversation_id")
+        now = datetime.now()
+        mine = [{**r, "created_at": now} for r in rows if current and history_key(r) == current]
+        others = [r for r in rows if not (current and history_key(r) == current)]
+        return (mine or [{"conversation_id": "", "created_at": now, "question": question}]) + others
 
     def open_history(self, state: dict, index, key: str | None = None):
         """
