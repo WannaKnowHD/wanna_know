@@ -25,7 +25,7 @@ from chatbot.ui.chat import (
     render_user_info,
     render_user_message,
 )
-from chatbot.ui.chat.chat_area import EXAMPLE_FULL_QUESTIONS
+from chatbot.ui.chat.chat_area import EXAMPLE_FULL_QUESTIONS, SCROLL_TO_QUESTION_JS
 from chatbot.ui.dashboard import ADMIN_CSS_PATH, AdminDashboard
 from chatbot.ui.login import (
     LOGIN_CSS_PATHS,
@@ -252,6 +252,8 @@ class ChatApp:
             answer_outputs = [area.chatbot, state, area.examples, sidebar.history]
             for trigger in (area.send_button.click, area.message.submit):
                 trigger(show_question_event, inputs=question_inputs, outputs=question_outputs, **HIDE).then(
+                    None, js=SCROLL_TO_QUESTION_JS   # 방금 보낸 질문이 보이게 한 번만 스크롤 (답변은 따라가지 않음)
+                ).then(
                     answer_event, inputs=answer_inputs, outputs=answer_outputs, **HIDE
                 )
             area.image_button.upload(attach_event, inputs=[area.image_button], outputs=preview_outputs, **HIDE)

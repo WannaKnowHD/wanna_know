@@ -35,6 +35,29 @@ EXAMPLE_FULL_QUESTIONS = {
 SERVICE_NAME = "컨베이어 문제 해결 챗봇"   # 채팅 상단 바 왼쪽 (예전 설비 표시 자리)
 INPUT_PLACEHOLDER = "증상이나 알람 코드를 입력하세요"
 
+# 새 질문을 보내면 방금 보낸 질문 말풍선(사진 + 글자)이 채팅창 위쪽에 오도록 한 번만 스크롤 (gradio_app 의 질문 표시 → 답변 사이에 실행).
+# 채팅창은 autoscroll=False 라 답변이 길어질 때는 따라가지 않음. 답변 생성 중 말풍선(.wk-typing)이 그려질 때까지 최대 1.5초 기다림
+SCROLL_TO_QUESTION_JS = """
+() => {
+  const started = Date.now();
+  const tick = () => {
+    const wrap = document.querySelector('#chat-messages .bubble-wrap');
+    const typing = wrap && wrap.querySelector('.wk-typing');
+    if (!typing) { if (Date.now() - started < 1500) requestAnimationFrame(tick); return; }
+    const before = (el) => el.compareDocumentPosition(typing) & Node.DOCUMENT_POSITION_FOLLOWING;
+    const bots = [...wrap.querySelectorAll('.message.bot')].filter(before);
+    const lastBot = bots[bots.length - 1];
+    const asked = [...wrap.querySelectorAll('.message.user')].filter(
+      (el) => before(el) && (!lastBot || lastBot.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)
+    );
+    const target = asked[0] || typing;
+    const offset = target.getBoundingClientRect().top - wrap.getBoundingClientRect().top;
+    wrap.scrollTo({ top: wrap.scrollTop + offset - 16, behavior: 'smooth' });
+  };
+  requestAnimationFrame(tick);
+}
+"""
+
 
 @dataclass
 class ChatArea:
