@@ -473,6 +473,13 @@
   text-align: left;
 }
 
+#admin-period .options,
+#admin-period [role="option"] {
+  font-size: 0.75rem !important;
+  white-space: nowrap;
+  word-break: normal;
+}
+
 #admin-period .icon-wrap {
   width: 0.75rem;
   color: var(--admin-text-muted);
@@ -770,6 +777,7 @@
 
 /* gr.Dataframe 을 Figma 표 모양으로: 고정폭 글꼴 · 줄무늬 · 칸 세로선 · 선택 테두리 · 오른쪽 위 버튼을 걷어 냄 */
 #not-found-table {
+  --color-accent: var(--admin-accent);
   --font-mono: var(--font);
   --table-even-background-fill: var(--admin-surface);
   --table-odd-background-fill: var(--admin-surface);

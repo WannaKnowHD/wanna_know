@@ -391,9 +391,10 @@ class AdminDashboard:
             return status_values()
 
         outputs = kb_tab.outputs()
-        kb_tab.tab.select(fn=show, inputs=[state], outputs=outputs)
-        kb_tab.timer.tick(fn=show, inputs=[state], outputs=outputs)
-        kb_tab.add_button.upload(fn=add, inputs=[kb_tab.add_button, state], outputs=outputs)
+        kb_tab.tab.select(fn=show, inputs=[state], outputs=outputs, show_progress="hidden")
+        kb_tab.timer.tick(fn=show, inputs=[state], outputs=outputs, show_progress="hidden")
+        kb_tab.add_button.upload(fn=add, inputs=[kb_tab.add_button, state], outputs=outputs,
+                                 show_progress="hidden")
 
     def build_admin_tab(self, state: gr.State | None = None):
         """

@@ -29,6 +29,8 @@ KB_TAB_CSS = """<style>
 #admin-kb-tab .kb-title { margin: 0; color: var(--admin-text); font-size: 1.125rem; font-weight: 700; line-height: 1.375rem; }
 #admin-kb-tab .kb-subtitle { margin: 0.25rem 0 0; color: var(--admin-text-muted); font-size: 0.8125rem; line-height: 1rem; }
 #admin-kb-tab .kb-progress { margin: 0.5rem 0 0; color: var(--admin-accent); font-size: 0.75rem; font-weight: 600; }
+#admin-kb-tab .kb-progress .wk-dots { margin-right: 0.5rem; vertical-align: middle; }
+#admin-kb-tab .kb-progress .wk-dots i { background: var(--admin-accent); }
 #admin-kb-tab .kb-add-button { flex: 0 0 auto !important; min-width: 0 !important; width: auto !important; height: 2.3125rem;
   padding: 0 1.125rem !important; background: var(--admin-accent) !important; color: var(--admin-accent-text) !important;
   border: none !important; border-radius: 0.5rem !important; font-size: 0.875rem !important; font-weight: 500 !important; }
@@ -85,7 +87,10 @@ def render_kb_header(count: int, progress: str = "") -> str:
     받는 것: 목록의 PDF 수, KbIndexer.progress_text() (색인 중이 아니면 빈 글자)
     Returns: str (HTML)
     """
-    progress_html = f"<p class='kb-progress'>{escape(progress)}</p>" if progress else ""
+    progress_html = (
+        "<p class='kb-progress'><span class='wk-dots' aria-hidden='true'><i></i><i></i><i></i></span>"
+        f"{escape(progress)}</p>"
+    ) if progress else ""
     return (
         f"<p class='kb-title'>현재 청킹된 PDF {count}건</p>"
         "<p class='kb-subtitle'>kb/ 폴더의 문서 · 추가하면 색인이 갱신됩니다</p>"
