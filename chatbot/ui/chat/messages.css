@@ -1,0 +1,124 @@
+/* 채팅창 안의 말풍선·답변 카드·안내 (Figma 01~04). 색은 chat.css 의 변수 */
+
+/* 대화 시작 전 안내 (Figma 01) */
+.wk-welcome { text-align: center; max-width: 52rem; margin: 0 auto; padding: 2rem 0; }   /* Figma 01: 가운데 정렬 */
+.wk-welcome-title { color: var(--wk-chat-text); font-size: 1.875rem; font-weight: 700; margin: 0 0 0.625rem; }
+.wk-welcome-text { color: var(--wk-chat-muted); font-size: 0.9375rem; margin: 0 0 0.625rem; }
+
+/* 사용자 말풍선 */
+.wk-user-text { color: var(--wk-chat-text); font-size: 0.875rem; white-space: pre-wrap; }
+
+/* 현재 설비 칩 (상단 바) */
+.wk-chip {
+  display: inline-block;
+  border: 1px solid var(--wk-chat-border);
+  border-radius: 999px;
+  background: var(--wk-chat-control-bg);
+  color: var(--wk-chat-text);
+  font-size: 0.8125rem;
+  padding: 0.3125rem 0.75rem;
+}
+
+/* 답변 카드 (Figma 02) */
+.wk-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  max-width: 51.25rem;
+  background: var(--wk-chat-bg);
+  color: var(--wk-chat-text);
+  border: 1px solid var(--wk-chat-border);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+}
+.wk-section { display: flex; flex-direction: column; gap: 0.375rem; }
+.wk-label { color: var(--wk-chat-muted); font-size: 0.75rem; font-weight: 700; }
+.wk-line { margin: 0; font-size: 0.875rem; line-height: 1.5; color: var(--wk-chat-text); }
+
+/* 원인·조치: 원인마다 한 블록 (번호 + 원인 제목, 아래에 조치 목록) */
+.wk-cause { display: flex; flex-direction: column; gap: 0.375rem; padding: 0.625rem 0.75rem; border: 1px solid var(--wk-chat-border); border-radius: 0.5rem; }
+.wk-cause-head { display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.875rem; font-weight: 700; line-height: 1.5; color: var(--wk-chat-text); }
+.wk-cause-no {
+  flex: 0 0 auto; width: 1.25rem; height: 1.25rem; margin-top: 0.125rem; border-radius: 999px;
+  background: var(--wk-send-bg); color: var(--wk-send-text); font-size: 0.75rem; line-height: 1.25rem; text-align: center;
+}
+.wk-actions { margin: 0; padding-left: 2.25rem; font-size: 0.875rem; line-height: 1.6; color: var(--wk-chat-text); }
+/* 조치 줄 사이: Gradio 기본 목록 여백(줄마다 아래 8px)을 걷어 냄 */
+.wk-actions li { margin: 0 !important; padding: 0 !important; line-height: 1.6; }
+
+.wk-safety {
+  display: flex;
+  gap: 0.75rem;
+  background: var(--wk-safety-bg);
+  border: 1px solid var(--wk-safety-border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+.wk-safety-label { color: var(--wk-safety-text); font-size: 0.8125rem; flex: 0 0 auto; }
+.wk-safety .wk-line { color: var(--wk-safety-text); font-size: 0.8125rem; }
+
+.wk-figure-box {
+  display: flex; align-items: center; justify-content: center;
+  width: 15rem; height: 8.75rem;
+  background: var(--wk-bubble-bg); border-radius: 0.5rem; color: var(--wk-chat-muted); font-size: 0.8125rem;
+}
+.wk-image { display: block; max-width: 100%; margin-top: 0.5rem; border: 1px solid var(--wk-chat-border); border-radius: 0.5rem; }
+.wk-figure .wk-image { margin-top: 0; }
+.wk-safety-source { color: var(--wk-safety-text); font-size: 0.75rem; opacity: 0.8; }
+.wk-caption { color: var(--wk-chat-muted); font-size: 0.75rem; margin-top: 0.375rem; }
+
+.wk-source { margin: 0; }
+.wk-source summary { display: flex; align-items: center; gap: 0.5rem; cursor: default; list-style: none; pointer-events: none; }
+.wk-source > summary > .wk-link { pointer-events: auto; cursor: pointer; }
+.wk-source summary::-webkit-details-marker { display: none; }
+.wk-link { color: var(--wk-chat-text); font-size: 0.8125rem; font-weight: 500; text-decoration: underline; }
+/* 인용문: 출처 칩 바로 아래에 붙여서(위 여백 없음) 최대 3줄. Gradio 본문(prose)의 blockquote 여백도 걷어 냄 */
+.wk-quote {
+  margin: 0 !important; padding: 0.5rem 0.75rem !important;
+  border-left: 3px solid var(--wk-chat-border); color: var(--wk-chat-muted); font-size: 0.8125rem; line-height: 1.5;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
+}
+
+/* 쪽 전체 보기 (원문 보기 안의 두 번째 토글): 쪽 이미지, 누르면 화면 가득 크게 · 다시 누르면 닫힘 */
+.wk-page { margin: 0.375rem 0 0; }
+.wk-page > summary { display: inline-block; cursor: pointer; list-style: none; }
+.wk-page > summary::-webkit-details-marker { display: none; }
+.wk-zoom { display: block; margin-top: 0.375rem; cursor: zoom-in; }
+.wk-zoom input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+.wk-page-image {
+  display: block; width: 100%; max-width: 30rem; height: auto; margin: 0 !important;
+  border: 1px solid var(--wk-chat-border); border-radius: 0.5rem;
+}
+.wk-zoom:has(input:checked) {
+  position: fixed; inset: 0; z-index: 1000; margin: 0;
+  display: flex; justify-content: center; align-items: flex-start;
+  padding: 2rem; overflow: auto; background: rgba(0, 0, 0, 0.75); cursor: zoom-out;
+}
+.wk-zoom:has(input:checked) .wk-page-image { width: auto; max-width: 100%; border: none; border-radius: 0.25rem; }
+
+/* 안내 카드: 근거 부족(되묻기)·명판 결과·재촬영 (Figma 03·04) */
+/* 폭 820 · 제목 위치 (21, 17) · 제목 Bold 16 (글자 상자 19) · 본문 14 (17) → 높이 82, 버튼이 있으면 131 */
+.wk-notice { width: 51.25rem; max-width: 100%; gap: 0.75rem; padding: 1rem 1.25rem; }
+.wk-notice-title { color: var(--wk-chat-text); font-size: 1rem; font-weight: 700; line-height: 1.1875rem; }
+.wk-notice-text { color: var(--wk-chat-text); font-size: 0.875rem; line-height: 1.0625rem; margin: 0; }
+/* 다시 촬영 (Figma Button/Secondary: 높이 37 · Medium 14) */
+.wk-retake {
+  align-self: flex-start; height: 2.3125rem; padding: 0 1rem; cursor: pointer;
+  background: var(--wk-chat-control-bg); color: var(--wk-chat-text);
+  border: 1px solid var(--wk-chat-border); border-radius: 0.5rem; font-size: 0.875rem; font-weight: 500;
+}
+.wk-retake:hover { border-color: var(--wk-send-bg); }
+
+/* 답변 생성 중 (Figma 01-1): 회색 말풍선 안에 점 3개 + "매뉴얼에서 근거를 확인하고 있어요…", 아래 작은 안내 */
+.wk-typing { display: flex; flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+.wk-typing-bubble {
+  display: inline-flex; align-items: center; gap: 0.625rem;
+  padding: 0.75rem 1rem; border-radius: 0.75rem;
+  background: var(--wk-bubble-bg); color: var(--wk-chat-muted); font-size: 0.8125rem;
+}
+.wk-dots { display: inline-flex; gap: 0.25rem; }
+.wk-dots i { width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--wk-chat-muted); animation: wk-blink 1.2s infinite ease-in-out; }
+.wk-dots i:nth-child(2) { animation-delay: 0.2s; }
+.wk-dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes wk-blink { 0%, 80%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
+.wk-typing-note { margin: 0 !important; color: var(--wk-chat-muted); font-size: 0.6875rem; }

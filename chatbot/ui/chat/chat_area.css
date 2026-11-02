@@ -1,0 +1,191 @@
+/* 채팅 영역 (Figma 채팅 영역 1180px: 상단 바·메시지·예시 질문·입력 바). 색은 chat.css 의 변수 */
+#chat-area {
+  background: var(--wk-chat-bg);
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  height: 100vh;
+  gap: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+#chat-area .block,
+#chat-area .form {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* 상단 바 (Figma: 위아래 14px · 좌우 24px, 아래 1px 선): 로고 + 챗봇 이름 칩 + 관리자 전환 + 라이트/다크 */
+#chat-topbar {
+  flex: 0 0 auto !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 0.5rem !important;
+  padding: 0.875rem 1.5rem !important;
+  background: var(--wk-bar-bg);
+  border-bottom: 1px solid var(--wk-chat-border) !important;
+}
+#chat-brand { flex: 1 1 auto !important; padding: 0 !important; }
+/* gr.HTML 기본 안쪽 여백(12px) 제거: 상단 바 · 예시 질문 라벨을 Figma 위치(좌 24px · 48px)에 맞춤 */
+#chat-topbar .html-container,
+#chat-examples .html-container { padding: 0 !important; }
+/* Figma 상단 바 "설비 표시": 로고 40px · 간격 8px · 칩(테두리 1px · 알약 · 위아래 7px 좌우 14px · Bold 14px) */
+.ca-brand { display: flex; align-items: center; gap: 0.5rem; }
+.ca-logo { display: block; flex: 0 0 auto; width: 2.5rem; height: 2.5rem; object-fit: cover; }
+.ca-service-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4375rem 0.875rem;
+  background: var(--wk-chat-control-bg);
+  color: var(--wk-chat-text);
+  border: 1px solid var(--wk-chat-border);
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Figma Button/Secondary: 높이 37px · 좌우 16px · 글자 Medium 14px */
+.ca-button {
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+  width: auto !important;
+  height: 2.3125rem !important;
+  min-height: 0 !important;
+  padding: 0 1rem !important;
+  font-weight: 500 !important;
+  background: var(--wk-chat-control-bg) !important;
+  color: var(--wk-chat-text) !important;
+  border: 1px solid var(--wk-chat-border) !important;
+  border-radius: 0.5rem !important;
+  box-shadow: none !important;
+  font-size: 0.875rem !important;
+}
+
+/* 채팅창은 남는 높이를 모두 차지 (Figma 메시지 영역: 위 20px · 좌우 48px).
+   스크롤은 안쪽 .bubble-wrap 하나만 (바깥까지 스크롤되면 스크롤바가 두 개 보임) */
+#chat-messages {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 1.5rem;
+}
+/* Gradio 메시지 줄이 안쪽 20px 을 더 두므로 여기는 4px 만: 카드 왼쪽 · 말풍선 오른쪽이 Figma 처럼 가장자리에서 48px */
+#chat-messages .bubble-wrap { padding: 1.25rem 0.25rem 0 !important; }
+
+/* gr.Chatbot 기본 모양을 걷어 내고 Figma 말풍선으로 맞춤 (Gradio 6 클래스: .bubble-wrap · .message.user · .message.bot) */
+#chat-messages .bubble-wrap { background: transparent !important; }
+/* 대화 기록과 같은 스크롤바: 투명 트랙 · 둥근 막대 · 동일한 테마 색상 */
+#chat-messages .bubble-wrap {
+  --chat-scroll-thumb: color-mix(in srgb, var(--wk-sb-item-bg) 30%, transparent);
+  --chat-scroll-thumb-hover: color-mix(in srgb, var(--wk-sb-border) 45%, transparent);
+  scrollbar-width: thin;
+  scrollbar-color: var(--chat-scroll-thumb) transparent;
+}
+#chat-messages .bubble-wrap::-webkit-scrollbar { width: 0.5rem; }
+#chat-messages .bubble-wrap::-webkit-scrollbar-track { background: transparent; }
+#chat-messages .bubble-wrap::-webkit-scrollbar-thumb {
+  background: var(--chat-scroll-thumb);
+  border-radius: 999px;
+}
+#chat-messages .bubble-wrap::-webkit-scrollbar-thumb:hover { background: var(--chat-scroll-thumb-hover); }
+#chat-messages .icon-button-wrapper { display: none !important; }   /* 휴지통(대화 지우기): 지우기는 사이드바 '새 대화'로만 */
+#chat-messages .message.user {
+  padding: 0.625rem 1rem !important;   /* Figma 말풍선: 위아래 10px · 좌우 16px */
+  background: var(--wk-bubble-bg) !important;
+  color: var(--wk-chat-text) !important;
+  border: none !important;
+  border-radius: 0.75rem !important;
+}
+/* 사진 말풍선 (Figma 04): 폭 260 · 안쪽 10px, 사진 240×140 · 모서리 8 */
+#chat-messages .message.user:has(.image-container) { padding: 0.625rem !important; }
+#chat-messages .message.user .image-container img {
+  width: 15rem !important;
+  height: 8.75rem !important;
+  margin: 0 !important;   /* Gradio 기본 8px */
+  object-fit: cover;
+  border-radius: 0.5rem;
+}
+#chat-messages .message.bot {
+  background: transparent !important;   /* 답변은 messages.css 의 .wk-card 가 테두리를 가짐 */
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* 예시 질문: 알약 모양 */
+#chat-examples {
+  flex: 0 0 auto !important;
+  flex-wrap: wrap !important;
+  align-items: center;
+  gap: 0.5rem !important;
+  padding: 0 3rem 0.75rem !important;   /* Figma 예시 질문 줄: 좌우 48px · 아래 12px · 칩 간격 8px */
+}
+#chat-examples > * { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important; }   /* 라벨과 칩이 늘어나 오른쪽으로 밀리지 않게 */
+.ca-label { color: var(--wk-chat-muted); font-size: 0.75rem; font-weight: 500; }
+/* Figma Chip: 높이 32px · 좌우 15px · 글자 Regular 13px */
+.ca-chip {
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+  width: auto !important;
+  height: 2rem !important;
+  min-height: 0 !important;
+  padding: 0 0.9375rem !important;
+  font-weight: 400 !important;
+  background: var(--wk-chat-control-bg) !important;
+  color: var(--wk-chat-text) !important;
+  border: 1px solid var(--wk-chat-border) !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+  font-size: 0.8125rem !important;
+}
+
+/* 첨부한 사진 미리보기 (입력 바 바로 위) */
+#chat-preview {
+  flex: 0 0 auto !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 0.75rem !important;
+  padding: 0.5rem 3rem 0 !important;   /* 왼쪽을 입력 바(48px)와 맞춤 */
+}
+#chat-preview > * { flex: 0 0 auto !important; }
+#chat-preview-image { width: 8rem !important; min-width: 0 !important; border-radius: 0.5rem; overflow: hidden; }
+
+/* 입력 바: 사진 첨부 + 질문 입력 + 전송 */
+#chat-inputbar {
+  flex: 0 0 auto !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 0.75rem !important;
+  padding: 1rem 3rem 1.25rem !important;   /* Figma 입력 바: 위 16px · 좌우 48px · 아래 20px · 간격 12px */
+  background: var(--wk-bar-bg);
+  border-top: 1px solid var(--wk-chat-border);
+}
+#chat-input { flex: 1 1 auto !important; min-width: 0 !important; }
+#chat-input textarea,
+#chat-input input {
+  background: var(--wk-chat-control-bg) !important;
+  color: var(--wk-chat-text) !important;
+  border: 1px solid var(--wk-chat-border) !important;
+  border-radius: 0.5rem !important;
+  box-shadow: none !important;
+  min-height: 2.5625rem;   /* Figma 입력칸 높이 41px */
+}
+#chat-send {
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+  width: auto !important;
+  height: 2.3125rem !important;   /* Figma Button/Primary: 62x37 · 글자 Medium 14px */
+  min-width: 3.875rem !important;
+  min-height: 0 !important;
+  padding: 0 1rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  background: var(--wk-send-bg) !important;
+  color: var(--wk-send-text) !important;
+  border: none !important;
+  border-radius: 0.5rem !important;
+  box-shadow: none !important;
+}

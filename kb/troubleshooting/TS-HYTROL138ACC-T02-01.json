@@ -1,0 +1,45 @@
+{
+  "kb_id": "TS-HYTROL138ACC-T02-01",
+  "applies_to": [
+    "138-ACC",
+    "138-LRC",
+    "138-LRS",
+    "138-LRSS"
+  ],
+  "sources": [
+    {
+      "doc_id": "hytrol_138acc",
+      "page": 22,
+      "ref": "TROUBLE SHOOTING DRIVE BELT TRACKING"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Belt slips or won’t move, but drive runs.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-HYTROL138ACC-T02-01#c1",
+      "cause": "Conveyor is overloaded",
+      "actions": [
+        "Check capacity of conveyor and reduce load to recommended level."
+      ]
+    },
+    {
+      "cause_id": "TS-HYTROL138ACC-T02-01#c2",
+      "cause": "Belt too loose.",
+      "actions": [
+        "Re-position take-up sheaves in hole closer to double groove sheaves."
+      ]
+    },
+    {
+      "cause_id": "TS-HYTROL138ACC-T02-01#c3",
+      "cause": "Too much pressure against belt from pressure rollers",
+      "actions": [
+        "Loosen spring tension on pressure rollers in area of stalled rollers. See “Minimum Pressure Adjustment” in Operation section of this manual."
+      ]
+    }
+  ],
+  "safety": []
+}

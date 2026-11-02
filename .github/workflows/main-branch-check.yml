@@ -1,0 +1,20 @@
+name: Main Branch Check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check-source-branch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check source branch
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ "$HEAD_REF" != "dev" ]; then
+            echo "main에는 dev 브랜치만 병합할 수 있습니다."
+            exit 1
+          fi

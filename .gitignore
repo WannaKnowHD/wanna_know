@@ -10,6 +10,9 @@ data/interim/*
 !data/interim/.gitkeep
 index/*
 !index/.gitkeep
+chroma_db/
+chroma_db_versions/
+chroma_db_current.json
 
 # 파이썬·도구
 __pycache__/
@@ -25,3 +28,7 @@ CLAUDE.md
 CLAUDE.local.md
 CLAUDE.local.md.example
 docs/
+
+.chroma_db.rebuild.lock
+.chroma_db.stage-*/
+.chroma_db.backup-*/

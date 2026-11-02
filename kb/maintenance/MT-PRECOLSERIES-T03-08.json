@@ -1,0 +1,24 @@
+{
+  "kb_id": "MT-PRECOLSERIES-T03-08",
+  "applies_to": [
+    "L400",
+    "L500",
+    "L650"
+  ],
+  "sources": [
+    {
+      "doc_id": "preco_l_series",
+      "page": 55,
+      "ref": "Gear motor maintenance"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "maintenance",
+  "task": "Clean or replace the vent screw as necessary",
+  "interval": "operating_hours",
+  "interval_hours": 10000,
+  "interval_note": "For operating temperatures up to 80 °C every 10000 operating hours, at least every 2 years",
+  "details": [],
+  "lockout_required": true
+}

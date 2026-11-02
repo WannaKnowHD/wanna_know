@@ -1,0 +1,67 @@
+/* 라이트/다크 색 변수 (Figma 00 로그인 · 딥 포레스트 시안). login_form.css · chat_shell.css 가 이 변수를 씀 */
+/* 라이트 = 기본 시안, 다크 = "딥 포레스트" 시안. 다크는 <body class="dark"> 일 때 (전환 버튼, gradio_app.THEME_TOGGLE_JS) */
+/* 크기는 rem(1rem = 16px), 테두리 두께·알약 모양만 px */
+
+body {
+  --wk-page-bg: #0e1a15;
+  --wk-card-bg: #ffffff;
+  --wk-card-border: transparent;
+  --wk-text: #16201b;
+  --wk-text-muted: #5b6b63;
+  --wk-input-bg: #ffffff;
+  --wk-input-border: #dce1dd;
+  --wk-accent: #0f6b4a;
+  --wk-accent-text: #ffffff;
+  --wk-tag-bg: rgba(104, 187, 31, 0.5);   /* Figma 태그: #68bb1f 50% */
+  --wk-tag-text: #0e1a15;
+  --wk-title: #16201b;
+  --wk-error: #c0392b;
+}
+
+
+body.dark {
+  --wk-page-bg: #0b100e;
+  --wk-card-bg: #18201c;
+  --wk-card-border: #2e3a34;
+  --wk-text: #e6ede8;
+  --wk-text-muted: #94a39a;
+  --wk-input-bg: #222c27;
+  --wk-input-border: #2e3a34;
+  --wk-accent: #34c77b;
+  --wk-accent-text: #06140d;
+  --wk-tag-bg: #173a2a;
+  --wk-tag-text: #6fe0a6;
+  --wk-title: #6fe0a6;
+  --wk-error: #ff7a6b;
+}
+
+/* 라이트/다크에서 따로 보이는 글자 (시안마다 태그·제목 문구가 다름) */
+.theme-dark-only { display: none !important; }
+.dark .theme-dark-only { display: inline-block !important; }
+.dark .theme-light-only { display: none !important; }
+h1.login-title.theme-dark-only,
+.dark h1.login-title.theme-dark-only { margin: 0; }
+.dark h1.login-title.theme-dark-only { display: block !important; }
+
+/* 라이트/다크 전환 버튼 */
+.theme-toggle {
+  background: transparent !important;
+  color: var(--wk-text-muted) !important;
+  border: 1px solid var(--wk-input-border) !important;
+  border-radius: 0.5rem !important;
+  box-shadow: none !important;
+  font-size: 0 !important;
+  gap: 0 !important;                /* 글자는 숨기고 아이콘만 보이므로 간격을 두면 오른쪽 여백만 넓어짐 */
+}
+.theme-toggle::before {
+  content: "";
+  display: inline-block;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.dark .theme-toggle::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='4' fill='none' stroke='black' stroke-width='1.7'/%3E%3Cpath d='M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5' stroke='black' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E");
+}

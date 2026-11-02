@@ -1,3 +1,246 @@
 {
-  "rules": []
+  "_설명": "안전 문구 규칙 (팀 결정 B안: KB 는 그대로 두고 규칙 파일이 '어떤 경우에 어떤 문구'를 정한다). chatbot/core/safety.py 가 읽는다. text 는 답변에 그대로 붙는 한국어 문구, quote 는 매뉴얼 영어 원문(인쇄 쪽 page). when 은 조건 목록이고 하나라도 맞으면 붙는다(OR). 한 조건 안의 항목은 모두 맞아야 한다(AND): question_types = 질문 유형 중 하나, lockout_required = 점검 KB 중 하나라도 그 값, keywords = 답변에 쓴 KB 글자에 그 단어가 있음, always = 항상. doc_ids 는 답변 출처 문서와 맞아야 하고, 출처 문서에 맞는 규칙이 하나도 없으면 doc_ids 가 [\"*\"] 인 공통 규칙을 붙인다. 붙는 순서는 kind: loto → electrical → qualified → running → guard → entanglement, 최대 3개. 시연용 추가 PDF(MB-200)는 규칙을 미리 넣지 않는다.",
+  "rules": [
+    {
+      "rule_id": "HY-LOTO",
+      "kind": "loto",
+      "doc_ids": [
+        "hytrol_138acc"
+      ],
+      "text": "정비하려고 컨베이어를 멈췄으면 기동 장치와 동력 장치를 잠금·표시(LOTO)해서 갑자기 움직이지 않게 하세요.",
+      "quote": "When a conveyor is stopped for maintenance purposes, starting devices or powered accessories shall be locked or tagged out in accordance with a formalized procedure designed to protect all person or groups involved with the conveyor against an unexpected start.",
+      "doc_title": "Hytrol 138-ACC Installation and Maintenance Manual",
+      "page": 17,
+      "when": [
+        {
+          "question_types": [
+            "troubleshooting",
+            "procedure"
+          ]
+        },
+        {
+          "lockout_required": true
+        }
+      ]
+    },
+    {
+      "rule_id": "HY-QUALIFIED",
+      "kind": "qualified",
+      "doc_ids": [
+        "hytrol_138acc"
+      ],
+      "text": "윤활·조정 같은 정비는 교육받은 자격자만 하세요.",
+      "quote": "Maintenance, such as lubrication and adjustments, shall be performed only by qualified and trained personnel.",
+      "doc_title": "Hytrol 138-ACC Installation and Maintenance Manual",
+      "page": 17,
+      "when": [
+        {
+          "always": true
+        }
+      ]
+    },
+    {
+      "rule_id": "HY-NO-LUBE-RUNNING",
+      "kind": "running",
+      "doc_ids": [
+        "hytrol_138acc"
+      ],
+      "text": "가능하면 컨베이어가 움직이는 동안 윤활하지 마세요.",
+      "quote": "Whenever practical, DO NOT lubricate conveyors while they are in motion.",
+      "doc_title": "Hytrol 138-ACC Installation and Maintenance Manual",
+      "page": 17,
+      "when": [
+        {
+          "keywords": [
+            "lubricat",
+            "lubricant",
+            "grease",
+            "oil"
+          ]
+        }
+      ]
+    },
+    {
+      "rule_id": "HY-GUARDS",
+      "kind": "guard",
+      "doc_ids": [
+        "hytrol_138acc"
+      ],
+      "text": "정상 운전 전에 안전장치와 가드를 모두 다시 다세요.",
+      "quote": "Replace all safety devices and guards before starting equipment for normal operation.",
+      "doc_title": "Hytrol 138-ACC Installation and Maintenance Manual",
+      "page": 17,
+      "when": [
+        {
+          "question_types": [
+            "procedure"
+          ]
+        }
+      ]
+    },
+    {
+      "rule_id": "HY-ENTANGLE",
+      "kind": "entanglement",
+      "doc_ids": [
+        "hytrol_138acc"
+      ],
+      "text": "긴 머리·헐렁한 옷·장신구가 컨베이어에 말려 들어갈 수 있으니 주의하세요.",
+      "quote": "Personnel should be alerted to the potential hazard of entanglement in conveyors caused by items such as long hair, loose clothing, and jewelry.",
+      "doc_title": "Hytrol 138-ACC Installation and Maintenance Manual",
+      "page": 16,
+      "when": [
+        {
+          "keywords": [
+            "running",
+            "in motion"
+          ]
+        }
+      ]
+    },
+    {
+      "rule_id": "HY-ELECTRICIAN",
+      "kind": "electrical",
+      "doc_ids": [
+        "hytrol_138acc"
+      ],
+      "text": "전기 제어 설치·배선은 자격 있는 전기 기술자가 하세요.",
+      "quote": "Electrical controls shall be installed and wired by a qualified electrician.",
+      "doc_title": "Hytrol 138-ACC Installation and Maintenance Manual",
+      "page": 14,
+      "when": [
+        {
+          "keywords": [
+            "electric",
+            "electrical",
+            "electrician",
+            "voltage",
+            "wiring",
+            "wires",
+            "fuse",
+            "circuit breaker",
+            "heater",
+            "current"
+          ]
+        }
+      ]
+    },
+    {
+      "rule_id": "PR-POWER-OFF",
+      "kind": "loto",
+      "doc_ids": [
+        "preco_l_series"
+      ],
+      "text": "조립·전기·정비 작업 전에는 컨베이어를 멈추고 전원을 끄세요.",
+      "quote": "Stop the conveyor and turn off electric power before attempting any type of assembly, electrical or maintenance work;",
+      "doc_title": "PRECO L series Belt Conveyor Manual",
+      "page": 7,
+      "when": [
+        {
+          "question_types": [
+            "troubleshooting",
+            "procedure"
+          ]
+        },
+        {
+          "lockout_required": true
+        }
+      ]
+    },
+    {
+      "rule_id": "PR-QUALIFIED",
+      "kind": "qualified",
+      "doc_ids": [
+        "preco_l_series"
+      ],
+      "text": "윤활·조정을 포함한 정비는 교육받은 자격자만 하세요.",
+      "quote": "Only qualified and trained personnel is allowed to perform maintenance including lubrication and adjustments.",
+      "doc_title": "PRECO L series Belt Conveyor Manual",
+      "page": 54,
+      "when": [
+        {
+          "always": true
+        }
+      ]
+    },
+    {
+      "rule_id": "PR-NO-MAINT-RUNNING",
+      "kind": "running",
+      "doc_ids": [
+        "preco_l_series"
+      ],
+      "text": "컨베이어가 운전 중일 때는 정비하지 마세요.",
+      "quote": "Maintenance is NOT allowed while conveyor in in operation.",
+      "doc_title": "PRECO L series Belt Conveyor Manual",
+      "page": 54,
+      "when": [
+        {
+          "question_types": [
+            "maintenance"
+          ],
+          "lockout_required": false
+        }
+      ]
+    },
+    {
+      "rule_id": "PR-GUARDS",
+      "kind": "guard",
+      "doc_ids": [
+        "preco_l_series"
+      ],
+      "text": "컨베이어를 다시 켜기 전에 안전장치와 가드를 모두 다시 다세요.",
+      "quote": "All safety devices and guards need to be reattached before starting the conveyor.",
+      "doc_title": "PRECO L series Belt Conveyor Manual",
+      "page": 54,
+      "when": [
+        {
+          "question_types": [
+            "procedure"
+          ]
+        }
+      ]
+    },
+    {
+      "rule_id": "PR-ELECTRICIAN",
+      "kind": "electrical",
+      "doc_ids": [
+        "preco_l_series"
+      ],
+      "text": "전기 설치 작업은 자격 있는 전기 기술자가 하세요.",
+      "quote": "Electrical installation must be performed by qualified electrician;",
+      "doc_title": "PRECO L series Belt Conveyor Manual",
+      "page": 7,
+      "when": [
+        {
+          "keywords": [
+            "electric",
+            "electrical",
+            "electrician",
+            "voltage",
+            "wiring",
+            "wires",
+            "fuse",
+            "circuit breaker",
+            "heater",
+            "current"
+          ]
+        }
+      ]
+    },
+    {
+      "rule_id": "COMMON-LOTO",
+      "kind": "loto",
+      "doc_ids": [
+        "*"
+      ],
+      "text": "정비·조정 전에는 컨베이어를 멈추고 전원을 차단한 뒤 잠금·표시(LOTO)하세요. 작업은 교육받은 자격자가 하세요.",
+      "quote": null,
+      "doc_title": null,
+      "page": null,
+      "when": [
+        {
+          "always": true
+        }
+      ]
+    }
+  ]
 }

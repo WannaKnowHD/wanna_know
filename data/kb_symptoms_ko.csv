@@ -1,0 +1,83 @@
+kb_id,symptom_ko
+MT-HYTROL138ACC-T03-01,모터 소음 점검
+MT-HYTROL138ACC-T03-02,모터 온도 점검
+MT-HYTROL138ACC-T03-03,모터 고정 볼트 점검
+MT-HYTROL138ACC-T03-04,감속기 소음 점검
+MT-HYTROL138ACC-T03-05,감속기 온도 점검
+MT-HYTROL138ACC-T03-06,감속기 오일량 점검
+MT-HYTROL138ACC-T03-07,베어링(풀리 · 롤러) 소음 점검
+MT-HYTROL138ACC-T03-08,베어링(풀리 · 롤러) 고정 볼트 점검
+MT-HYTROL138ACC-T03-09,구동 체인 장력 점검
+MT-HYTROL138ACC-T03-10,구동 체인 윤활
+MT-HYTROL138ACC-T03-11,구동 체인 마모 점검
+MT-HYTROL138ACC-T03-12,스프로킷 마모 점검
+MT-HYTROL138ACC-T03-13,스프로킷 고정 나사 · 키 점검
+MT-HYTROL138ACC-T03-14,V벨트 장력 점검
+MT-HYTROL138ACC-T03-15,V벨트 마모 점검
+MT-HYTROL138ACC-T03-16,V벨트 풀리(시브) 정렬 점검
+MT-HYTROL138ACC-T03-17,구조물 전체 점검: 풀린 볼트 조이기
+MT-PRECOLSERIES-T01-01,덮개가 모두 제자리에 고정됐는지 점검
+MT-PRECOLSERIES-T01-02,벨트를 세 바퀴 이상 돌리며 장력 점검
+MT-PRECOLSERIES-T01-03,풀린 볼트 · 나사 점검
+MT-PRECOLSERIES-T01-04,"베어링 · 구동축 · 모터의 큰 소음, 발열 점검"
+MT-PRECOLSERIES-T01-05,벨트 마모 · 손상 점검
+MT-PRECOLSERIES-T01-06,컨베이어 정렬과 벨트 장력 점검
+MT-PRECOLSERIES-T01-07,기어 모터 오일량 점검 (부족하면 보충)
+MT-PRECOLSERIES-T01-08,기어 모터 실(seal) 누유 점검
+MT-PRECOLSERIES-T01-09,벨트 롤러 마모 점검
+MT-PRECOLSERIES-T01-10,풀린 볼트 · 나사 점검
+MT-PRECOLSERIES-T01-11,컨베이어 정렬과 벨트 장력 점검
+MT-PRECOLSERIES-T01-12,투입구 · 배출구 마모 점검
+MT-PRECOLSERIES-T02-01,베어링 윤활
+MT-PRECOLSERIES-T02-02,베어링 윤활
+MT-PRECOLSERIES-T02-03,베어링 윤활
+MT-PRECOLSERIES-T02-04,베어링 윤활
+MT-PRECOLSERIES-T03-01,육안 점검
+MT-PRECOLSERIES-T03-02,운전 소음 점검
+MT-PRECOLSERIES-T03-03,오일량 점검
+MT-PRECOLSERIES-T03-04,호스 육안 점검
+MT-PRECOLSERIES-T03-05,재그리스 주입 · 넘친 그리스 제거
+MT-PRECOLSERIES-T03-06,자동 윤활기 교체 · 넘친 그리스 제거
+MT-PRECOLSERIES-T03-07,오일 교환 (합성유면 주기 2배)
+MT-PRECOLSERIES-T03-08,통기 나사 청소 · 교체
+MT-PRECOLSERIES-T03-09,오일 교환 때마다 축 오일 실 교체 (늦어도 10000시간)
+MT-PRECOLSERIES-T03-10,기어 유닛 베어링 재윤활
+MT-PRECOLSERIES-T03-11,전체 분해 정비
+TS-FENNERBELT-T01-01,테일 풀리에서 벨트가 이탈함
+TS-FENNERBELT-T01-02,벨트가 긴 구간 · 전체 길이에서 한쪽으로 쏠림
+TS-FENNERBELT-T01-03,벨트의 특정 구간이 모든 지점에서 한쪽으로 쏠림
+TS-FENNERBELT-T01-04,헤드 풀리에서 벨트가 이탈함
+TS-FENNERBELT-T01-05,컨베이어 특정 지점에서 벨트가 한쪽으로 쏠림
+TS-FENNERBELT-T01-06,"빈 상태에선 똑바로, 적재하면 비뚤게 감"
+TS-FENNERBELT-T01-07,벨트 미끄러짐
+TS-FENNERBELT-T01-08,기동할 때 벨트 미끄러짐
+TS-FENNERBELT-T01-09,벨트가 지나치게 늘어남
+TS-FENNERBELT-T01-10,"윗면 커버에 홈 · 패임 · 벗겨짐"
+TS-FENNERBELT-T01-11,벨트 윗면 커버가 전체적으로 고르게 많이 닳음
+TS-FENNERBELT-T01-12,풀리 커버(래깅)가 심하게 닳음
+TS-FENNERBELT-T01-13,벨트 밑면 커버에 길게 홈이 파이거나 금이 감
+TS-FENNERBELT-T01-14,커버가 굳거나 갈라짐
+TS-FENNERBELT-T01-15,커버가 군데군데 · 줄무늬로 부풂
+TS-FENNERBELT-T01-16,"이음 철물 부근에서 벨트가 끊어지거나, 철물이 빠짐"
+TS-FENNERBELT-T01-17,가류 이음부가 벌어짐
+TS-FENNERBELT-T01-18,벨트 가장자리가 심하게 닳거나 깨짐
+TS-FENNERBELT-T01-19,벨트 가장자리가 가로로 끊어짐
+TS-FENNERBELT-T01-20,"심체가 가장자리를 따라 짧게 · 별 모양으로 끊어짐"
+TS-FENNERBELT-T01-21,층(플라이) 분리
+TS-FENNERBELT-T01-22,아이들러 롤 사이에서 심체 피로 손상
+TS-FENNERBELT-T01-23,커버에 물집 · 모래 물집이 생김
+TS-FENNERBELT-T01-24,오래된 벨트가 오목하게 휨 (새것일 땐 정상)
+TS-HYTROL138ACC-T01-01,컨베이어가 기동하지 않거나 모터가 자주 멈춤
+TS-HYTROL138ACC-T01-02,구동 체인 · 스프로킷이 심하게 닳음
+TS-HYTROL138ACC-T01-03,터지는 소리나 갈리는 큰 소음
+TS-HYTROL138ACC-T01-04,모터 또는 감속기 과열
+TS-HYTROL138ACC-T02-01,구동부는 도는데 벨트가 미끄러지거나 안 움직임
+TS-HYTROL138ACC-T02-02,벨트는 움직이는데 트레드 롤러가 안 돎
+TS-PRECOLSERIES-T04-01,정해진 처리량이 나오지 않음
+TS-PRECOLSERIES-T04-02,소음이 큼
+TS-PRECOLSERIES-T04-03,모터 과열
+TS-PRECOLSERIES-T04-04,벨트가 한쪽으로 쏠림
+TS-PRECOLSERIES-T04-05,구동 풀리는 도는데 벨트가 안 돎
+TS-PRECOLSERIES-T04-06,모터가 켜지지 않음
+TS-PRECOLSERIES-T04-07,컨베이어가 한동안 돌다가 멈춤
+TS-PRECOLSERIES-T04-08,아이들러가 고르지 않게 닳음

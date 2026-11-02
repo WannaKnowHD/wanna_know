@@ -1,0 +1,68 @@
+{
+  "kb_id": "TS-PRECOLSERIES-T04-06",
+  "applies_to": [
+    "L400",
+    "L500",
+    "L650"
+  ],
+  "sources": [
+    {
+      "doc_id": "preco_l_series",
+      "page": 57,
+      "ref": "TROUBLESHOOTING"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Motor does not turn on",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-PRECOLSERIES-T04-06#c1",
+      "cause": "Switch is off",
+      "actions": [
+        "Turn switch ON"
+      ]
+    },
+    {
+      "cause_id": "TS-PRECOLSERIES-T04-06#c2",
+      "cause": "Thermal overload tripped",
+      "actions": [
+        "Check why the conveyor is overloaded",
+        "If necessary remove excessive material from conveyor",
+        "Fix the cause of the overload",
+        "Turn on the conveyor."
+      ]
+    },
+    {
+      "cause_id": "TS-PRECOLSERIES-T04-06#c3",
+      "cause": "Supply power is disconnected",
+      "actions": [
+        "Reconnect the power"
+      ]
+    },
+    {
+      "cause_id": "TS-PRECOLSERIES-T04-06#c4",
+      "cause": "Damaged motor",
+      "actions": [
+        "Replace motor"
+      ]
+    },
+    {
+      "cause_id": "TS-PRECOLSERIES-T04-06#c5",
+      "cause": "Damaged wiring",
+      "actions": [
+        "Check wires and connections"
+      ]
+    },
+    {
+      "cause_id": "TS-PRECOLSERIES-T04-06#c6",
+      "cause": "Blown fuse",
+      "actions": [
+        "Replace fuse"
+      ]
+    }
+  ],
+  "safety": []
+}

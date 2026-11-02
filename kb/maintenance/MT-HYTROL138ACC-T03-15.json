@@ -1,0 +1,23 @@
+{
+  "kb_id": "MT-HYTROL138ACC-T03-15",
+  "applies_to": [
+    "138-ACC",
+    "138-LRC",
+    "138-LRS",
+    "138-LRSS"
+  ],
+  "sources": [
+    {
+      "doc_id": "hytrol_138acc",
+      "page": 24,
+      "ref": "Preventive Maintenance Checklist"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "maintenance",
+  "task": "V-BELTS: Check for Wear",
+  "interval": "monthly",
+  "details": [],
+  "lockout_required": true
+}

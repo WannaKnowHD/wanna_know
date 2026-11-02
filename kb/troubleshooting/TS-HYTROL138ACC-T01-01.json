@@ -1,0 +1,38 @@
+{
+  "kb_id": "TS-HYTROL138ACC-T01-01",
+  "applies_to": [
+    "138-ACC",
+    "138-LRC",
+    "138-LRS",
+    "138-LRSS"
+  ],
+  "sources": [
+    {
+      "doc_id": "hytrol_138acc",
+      "page": 22,
+      "ref": "TROUBLE SHOOTING DRIVES"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "troubleshooting",
+  "symptom": "Conveyor will not start or motor quits frequently.",
+  "alarm_codes": [],
+  "causes": [
+    {
+      "cause_id": "TS-HYTROL138ACC-T01-01#c1",
+      "cause": "Motor is overloaded.",
+      "actions": [
+        "Check for overloading of conveyor."
+      ]
+    },
+    {
+      "cause_id": "TS-HYTROL138ACC-T01-01#c2",
+      "cause": "Motor is drawing too much current.",
+      "actions": [
+        "Check heater or circuit breaker and change if necessary."
+      ]
+    }
+  ],
+  "safety": []
+}

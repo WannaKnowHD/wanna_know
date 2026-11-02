@@ -1,0 +1,24 @@
+{
+  "kb_id": "MT-PRECOLSERIES-T03-10",
+  "applies_to": [
+    "L400",
+    "L500",
+    "L650"
+  ],
+  "sources": [
+    {
+      "doc_id": "preco_l_series",
+      "page": 55,
+      "ref": "Gear motor maintenance"
+    }
+  ],
+  "figures": [],
+  "related_kb": [],
+  "type": "maintenance",
+  "task": "Re-lubricate the bearings in the gear unit",
+  "interval": "operating_hours",
+  "interval_hours": 20000,
+  "interval_note": "Every 20000 operating hours, at least every 4 years",
+  "details": [],
+  "lockout_required": true
+}

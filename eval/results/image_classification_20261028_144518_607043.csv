@@ -1,0 +1,2 @@
+﻿file,expected,predicted,confidence,correct,retake,threshold,model,latency_ms,error_type
+eval/images/other/belt_damage_010.png,other,other,0.99,True,True,0.6,gpt-5.6-terra,3086,

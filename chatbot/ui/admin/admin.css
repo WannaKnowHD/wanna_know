@@ -1,0 +1,969 @@
+/* 관리자 대시보드 공통 레이아웃 (Figma Page 2 "Design" 06~09 관리자 대시보드: 상단 바 → 탭 → 내용) */
+/* 크기는 rem(1rem = 16px), 테두리 두께·알약 모양만 px. 다크는 <body class="dark"> (Figma "B. 추천 다크 모드 · 딥 포레스트") */
+
+#admin-root {
+  --admin-bg: #f6f7f5;
+  --admin-header-bg: #0e1a15;
+  --admin-header-chip-bg: #1b2c24;
+  --admin-header-chip-border: #2c4136;
+  --admin-header-text: #eaf2ec;
+  --admin-header-subtext: #93a79b;
+  --admin-brand: #68bb1f;
+  --admin-surface: #ffffff;
+  --admin-border: #dce1dd;
+  --admin-text: #16201b;
+  --admin-text-muted: #5b6b63;
+  --admin-gutter: 2rem;
+  --admin-tab-bg: #ffffff;
+  --admin-table-head: #f6f7f5;
+  --admin-chip-bg: #ffffff;         /* 표 안 알약 배지 (KB 현황 '완료') */
+  --admin-accent: #0f6b4a;          /* 막대 · 선택한 탭 밑줄 · 켜진 체크박스 */
+  --admin-accent-text: #ffffff;     /* 초록 버튼 · 배지 위 글자 */
+  --admin-accent-soft: #7fbf9a;     /* 입력 유형 막대 2번째 (명판 사진) */
+  --admin-track: #e9eeea;           /* 입력 유형 막대 3번째 (손상 사진) */
+  --admin-other: #b8c4bc;           /* 입력 유형 막대 4번째 (그 외 사진, 있을 때만) */
+  --admin-check-border: #aeb9b2;    /* 꺼진 체크박스 테두리 */
+  /* 켜진 체크박스의 체크 표시 (Figma 담당자 확인 체크박스: 20px 칸에 2px 흰 선) */
+  --admin-check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 10.75L8.5 14.25L15 6.75' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  /* 채팅 화면과 같은 글꼴. Gradio 기본 글꼴이면 "KB" 같은 영문만 다른 글꼴 · 크기로 보임 */
+  --font: "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+
+  font-family: var(--font);
+  background: var(--admin-bg);
+  min-height: 100vh;
+  gap: 0 !important;
+  padding: 0 !important;
+}
+
+/* body.dark 가 아니라 .dark 로 씀: Gradio 가 이 파일을 ".gradio-container… .contain #admin-root" 로 한 번 더 넣는데,
+   body.dark 로 쓰면 그 사본이 어디에도 안 맞고 라이트 사본이 더 강해서 다크 색이 지워짐 */
+.dark #admin-root {
+  --admin-bg: #111816;
+  --admin-header-bg: #0b100e;
+  --admin-header-chip-bg: #222c27;
+  --admin-header-chip-border: #2e3a34;
+  --admin-header-text: #e6ede8;
+  --admin-header-subtext: #94a39a;
+  --admin-brand: #6fe0a6;
+  --admin-surface: #18201c;
+  --admin-border: #2e3a34;
+  --admin-text: #e6ede8;
+  --admin-text-muted: #94a39a;
+  --admin-tab-bg: #0b100e;
+  --admin-table-head: #0b100e;
+  --admin-chip-bg: #222c27;
+  --admin-accent: #34c77b;
+  --admin-accent-text: #06140d;
+  --admin-accent-soft: #1f6b4a;
+  --admin-track: #222c27;
+  --admin-other: #3a4842;
+  --admin-check-border: #4a5952;
+  --admin-check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 10.75L8.5 14.25L15 6.75' fill='none' stroke='%2306140d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* ── 풀화면: Gradio 기본 최대 너비·여백 제거 ───────── */
+.gradio-container:has(#admin-root) {
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.gradio-container:has(#admin-root) .main {
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Gradio 하단 푸터(API를 통해 사용·Gradio로 제작됨 등) 숨김 */
+.gradio-container:has(#admin-root) footer {
+  display: none !important;
+}
+
+/* ── 상단 바 (Figma: 높이 67px, 왼쪽 제목 + 관리자 모드 칩, 오른쪽 관리자 정보 · 뒤로가기 · 로그아웃) ── */
+#admin-header {
+  background: var(--admin-header-bg);
+  min-height: 4.1875rem;
+  padding: 1rem var(--admin-gutter) 0.875rem !important;
+  align-items: center !important;
+  gap: 0.75rem !important;
+  flex-wrap: nowrap !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+#admin-header > * {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+
+#admin-header .admin-brand {
+  flex: 1 1 auto !important;
+}
+
+/* gr.HTML 기본 안쪽 여백 제거 (제목을 탭 시작 위치와 맞춤) */
+#admin-header .html-container {
+  padding: 0 !important;
+}
+
+.admin-brand-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.admin-brand-title {
+  color: var(--admin-brand);
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.admin-mode-chip {
+  visibility: hidden; /* 기존 공간을 유지해 주변 요소가 움직이지 않도록 표시만 숨김 */
+  display: inline-flex;
+  align-items: center;
+  height: 2rem;
+  padding: 0 0.9375rem;
+  border-radius: 999px;
+  background: var(--admin-header-chip-bg);
+  border: 1px solid var(--admin-header-chip-border);
+  color: var(--admin-header-text);
+  font-size: 0.8125rem;
+}
+
+.admin-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+}
+
+.admin-user-name {
+  color: var(--admin-header-text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.admin-user-id {
+  color: var(--admin-header-subtext);
+  font-size: 0.6875rem;
+}
+
+#admin-header .admin-header-button {
+  height: 2.3125rem;
+  min-width: 0 !important;
+  padding: 0 1.0625rem !important;
+  border-radius: 0.5rem !important;
+  background: var(--admin-header-chip-bg) !important;
+  border: 1px solid var(--admin-header-chip-border) !important;
+  color: var(--admin-header-text) !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+}
+
+#admin-header .admin-header-button:hover {
+  border-color: var(--admin-brand) !important;
+}
+
+/* ── 탭 (Figma: 흰 바 46px, 아래 1px 선, 선택한 탭은 굵게 + 초록 밑줄 2px) ── */
+#admin-tabs {
+  background: var(--admin-bg);
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* Gradio 기본 탭 감싸개 높이(32px) 고정 해제: 탭 바가 헤더를 덮지 않게 */
+#admin-tabs .tab-wrapper {
+  height: auto !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+#admin-tabs [role="tablist"] {
+  background: var(--admin-tab-bg);
+  min-height: 2.875rem;
+  padding: 0 var(--admin-gutter) 0 1.5rem;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--admin-border);
+}
+
+#admin-tabs [role="tab"] {
+  padding: 0.875rem 0.75rem 0.75rem;
+  color: var(--admin-text-muted);
+  font-size: 0.875rem;
+  font-weight: 400;
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
+}
+
+#admin-tabs [role="tab"][aria-selected="true"] {
+  color: var(--admin-text);
+  font-weight: 700;
+  border-bottom-color: var(--admin-accent) !important;
+}
+
+/* Gradio 기본 선택 표시(주황 밑줄) 제거 */
+#admin-tabs [role="tab"]::after {
+  display: none !important;
+}
+
+/* 탭 본문 영역 (Figma: 위 28px · 좌우 32px) */
+#admin-tabs [role="tabpanel"] {
+  padding: 1.75rem var(--admin-gutter) 2.5rem !important;
+  background: var(--admin-bg);
+}
+
+/* 탭 안 구역 사이 간격 (Figma 06~09: 20px). 탭 본문 안쪽 .column 의 Gradio 기본 간격(16px)을 바꿈 */
+#admin-tabs [role="tabpanel"] > .column {
+  gap: 1.25rem;
+}
+
+/* ===================================================== */
+/* 시스템 탭 (system_tab.py) — 모든 규칙은 #admin-system-tab 안에서만 적용 */
+/* 크기는 rem, 글자 기준 간격은 em, 테두리 두께·알약 모양만 px */
+/* ===================================================== */
+
+/* 시스템 탭에서 쓰는 값 모음: 디자인 수정은 여기 값만 바꾸면 됨 */
+#admin-system-tab {
+  --system-bar-color: var(--admin-accent);
+  --system-card-radius: 0.75rem;
+  --system-card-padding: 1.125rem 1.25rem;      /* Figma 08 카드 안쪽: 테두리 1 + 18 · 20 = 글자 위치 19 · 21 */
+  --system-section-gap: 1.25rem;
+  --system-metric-width: 16.25rem;
+  --system-metric-value-size: 1.875rem;         /* KPI Card 값 Bold 30 */
+  --system-title-size: 0.875rem;                /* 카드 제목 Bold 14 */
+  --system-text-size: 0.8125rem;
+  --system-small-size: 0.75rem;
+  --system-stage-name-width: 8.125rem;          /* 단계 이름 칸 130 */
+  --system-stage-bar-width: 26.25rem;           /* 가장 오래 걸린 단계의 막대 420 */
+  --system-stage-bar-height: 0.875rem;          /* 막대 높이 14 */
+
+  gap: var(--system-section-gap);
+}
+
+/* gr.HTML 기본 안쪽 여백 제거 */
+#admin-system-tab .html-container {
+  padding: 0;
+}
+
+/* ── 상단 지표 카드 줄 (가로 배치, 줄바꿈 없음) ───────── */
+#admin-system-tab .system-metric-row {
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 1rem;   /* Figma 08: 카드 사이 16 */
+}
+
+#admin-system-tab .system-metric-row > * {
+  flex: 0 0 var(--system-metric-width);
+  min-width: 0;
+}
+
+/* 집계 기간은 남은 너비를 차지 */
+#admin-system-tab .system-metric-row > .system-period {
+  flex: 1 1 auto;
+}
+
+#admin-system-tab .system-metric-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 7.25rem;   /* Figma KPI Card 높이 116 */
+  padding: var(--system-card-padding);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--system-card-radius);
+  background: var(--admin-surface);
+}
+
+/* 줄 높이는 Figma 글자 상자 높이(16 · 36 · 14)로 맞춤: 18 + 16 + 6 + 36 + 6 + 14 + 18 + 테두리 = 116 */
+#admin-system-tab .system-metric-title {
+  margin: 0;
+  color: var(--admin-text-muted);
+  font-size: var(--system-text-size);
+  line-height: 1rem;
+}
+
+#admin-system-tab .system-metric-value {
+  margin: 0.375rem 0 0;
+  color: var(--admin-text);
+  font-size: var(--system-metric-value-size);
+  font-weight: 700;
+  line-height: 2.25rem;
+}
+
+#admin-system-tab .system-metric-caption {
+  margin: 0.375rem 0 0;
+  color: var(--admin-text-muted);
+  font-size: var(--system-small-size);
+  line-height: 0.875rem;
+}
+
+#admin-system-tab .system-period-text {
+  margin: 0;
+  color: var(--admin-text-muted);
+  font-size: var(--system-small-size);
+  line-height: 0.875rem;
+}
+
+/* ── 카드 (단계별 응답 시간·최근 오류) ───────── */
+#admin-system-tab .system-card {
+  gap: 0.875rem;   /* Figma 08: 제목 아래 14 */
+  padding: var(--system-card-padding);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--system-card-radius);
+  background: var(--admin-surface);
+}
+
+#admin-system-tab .system-card-title {
+  margin: 0;
+  color: var(--admin-text);
+  font-size: var(--system-title-size);
+  font-weight: 700;
+  line-height: 1.0625rem;
+}
+
+/* ── 단계별 응답 시간 막대 ───────── */
+#admin-system-tab .system-stage-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;   /* Figma 08: 줄 높이 20 + 간격 14 */
+}
+
+#admin-system-tab .system-stage-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;   /* 이름 · 막대 · 시간 사이 10 */
+  min-height: 1.25rem;
+}
+
+#admin-system-tab .system-stage-name {
+  flex: 0 0 var(--system-stage-name-width);
+  color: var(--admin-text);
+  font-size: var(--system-text-size);
+  line-height: 1.25rem;
+}
+
+/* 막대: 길이 = 가장 긴 막대 길이 × --ratio (render_stage_times 가 넣음). 시간 글자는 막대 바로 뒤 */
+#admin-system-tab .system-stage-bar {
+  flex: 0 0 auto;
+  width: calc(var(--system-stage-bar-width) * var(--ratio, 0));
+  height: var(--system-stage-bar-height);
+  border-radius: 3px;
+  background: var(--system-bar-color);
+}
+
+#admin-system-tab .system-stage-value {
+  color: var(--admin-text-muted);
+  font-size: var(--system-small-size);
+}
+
+/* ── 최근 오류 표 (gr.Dataframe) ───────── */
+/* Gradio 표 기본값(고정폭 글꼴·줄무늬 배경)을 디자인 색으로 덮어씀 */
+#admin-system-tab .system-error-table {
+  --font-mono: var(--font);
+  --table-even-background-fill: var(--admin-surface);
+  --table-odd-background-fill: var(--admin-surface);
+  --table-border-color: var(--admin-border);
+}
+
+/* Figma 표는 바깥 테두리 없이 제목 행 배경 + 행 사이 선만 있음 */
+#admin-system-tab .system-error-table .upload-container {
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+#admin-system-tab .system-error-table .header-table {
+  margin: 0 !important;
+}
+
+/* 칸 클릭 시 생기는 선택 테두리(주황색)만 제거, 메뉴 버튼(정렬·필터)은 유지 */
+#admin-system-tab .system-error-table .cell-selected .text {
+  box-shadow: none !important;
+}
+
+/* 칸 클릭 시 생기는 행·열 선택 화살표 버튼 숨김 (정렬·필터는 제목 행 메뉴에서 사용) */
+#admin-system-tab .system-error-table .selection-button {
+  display: none !important;
+}
+
+/* 칸 사이 세로선 제거 (Gradio가 box-shadow로 그림) */
+#admin-system-tab .system-error-table .header-cell,
+#admin-system-tab .system-error-table .body-cell {
+  box-shadow: none !important;
+}
+
+/* 행 사이 가로선 */
+#admin-system-tab .system-error-table .virtual-row {
+  border-top: 1px solid var(--admin-border);
+}
+
+#admin-system-tab .system-error-table .header-cell {
+  background: var(--admin-table-head) !important;
+  color: var(--admin-text-muted);
+  font-size: var(--system-text-size);
+  font-weight: 500;
+}
+
+#admin-system-tab .system-error-table .body-cell {
+  color: var(--admin-text);
+  font-size: var(--system-text-size);
+}
+
+/* ===================================================== */
+/* 운영 현황 · 답변 품질 (usage_tab.py · quality_tab.py, WBS 3.8.2~3.8.4) — Figma 06 · 07 */
+/* ===================================================== */
+
+#admin-root .html-container:has(.adm-card),
+#admin-root .html-container:has(.adm-kpis),
+#admin-root .html-container:has(.adm-caption-text) {
+  padding: 0 !important;
+}
+
+/* ── 기간 표시 (Figma: 내용 맨 위 작은 글자 "최근 7일 · …") · 기간 선택 ── */
+#admin-period-row {
+  align-items: center !important;
+  gap: 0.5rem !important;
+  flex-wrap: nowrap !important;
+}
+
+#admin-period-row > * {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+
+/* 기간 선택 (gr.Dropdown): 작은 알약 모양 상자. 바깥 네모(.wrap)는 배경 · 테두리 없이 옆 기간 글자처럼 보이게.
+   로딩 표시([data-testid="status-tracker"])도 .wrap 이라 제외 */
+#admin-period .wrap:not([data-testid="status-tracker"]) {
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+#admin-period {
+  width: 7.5rem !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+#admin-period .wrap-inner {
+  min-height: 1.75rem !important;
+  padding: 0 0.625rem !important;
+  background: var(--admin-surface) !important;
+  border: 1px solid var(--admin-border) !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+}
+
+#admin-period .wrap-inner {
+  margin: 0 !important;
+}
+
+#admin-period input {
+  cursor: pointer;
+  height: 1.625rem !important;
+  padding: 0 !important;
+  background: transparent !important;
+  color: var(--admin-text) !important;
+  font-size: 0.75rem !important;
+  text-align: left;
+}
+
+#admin-period .options,
+#admin-period [role="option"] {
+  font-size: 0.75rem !important;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+#admin-period .icon-wrap {
+  width: 0.75rem;
+  color: var(--admin-text-muted);
+}
+
+.adm-caption-text {
+  color: var(--admin-text-muted);
+  font-size: 0.75rem;
+}
+
+/* ── 카드 두 열 (1열: 일별 · 입력 유형 · 설비 모델 세로로, 2열: Top 10). 간격 20px, 카드 높이는 내용만큼 ── */
+#admin-root .adm-row {
+  gap: 1.25rem !important;
+  align-items: flex-start !important;
+  flex-wrap: nowrap !important;
+}
+
+#admin-root .adm-row > * {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+}
+
+/* 열 안의 카드는 위에서 아래로 쌓고 간격 20px (1열: 일별 · 입력 유형 · 설비 모델) */
+#admin-root .adm-col {
+  gap: 1.25rem !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+.adm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1.125rem 1.25rem;
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: 0.75rem;
+}
+
+.adm-card-title {
+  margin: 0 !important;
+  color: var(--admin-text);
+  font-size: 0.875rem !important;
+  font-weight: 700 !important;
+  line-height: 1.0625rem;   /* Figma 카드 제목 Bold 14 의 글자 상자 17 */
+}
+
+.adm-empty {
+  margin: 0;
+  color: var(--admin-text-muted);
+  font-size: 0.8125rem;
+}
+
+/* ── 일별 질문 수: 세로 막대 (Figma: 너비 36px · 간격 18px · 최대 150px, 위에 건수 · 아래에 날짜) ── */
+.adm-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.125rem;
+  min-height: 11.75rem;
+}
+
+.adm-bar {
+  flex: 0 1 2.25rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.adm-bars.is-dense {
+  gap: 0.25rem;
+}
+
+.adm-bars.is-dense .adm-bar {
+  flex: 1 1 0;
+}
+
+.adm-bar-fill {
+  width: 100%;
+  border-radius: 0.25rem;
+  background: var(--admin-accent);
+}
+
+.adm-bar-value,
+.adm-bar-label {
+  min-height: 0.8125rem;
+  color: var(--admin-text-muted);
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* ── 입력 유형 비율: 이어 붙인 막대 28px + 범례 ── */
+.adm-stack {
+  display: flex;
+  height: 1.75rem;
+  overflow: hidden;
+}
+
+.adm-seg {
+  flex-basis: 0;
+  min-width: 2px;
+}
+
+.adm-seg-0 { background: var(--admin-accent); }
+.adm-seg-1 { background: var(--admin-accent-soft); }
+.adm-seg-2 { background: var(--admin-track); }
+.adm-seg-3 { background: var(--admin-other); }
+
+.adm-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  margin: 0 !important;
+  padding: 0 !important;
+  list-style: none;
+}
+
+.adm-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 !important;
+  color: var(--admin-text);
+  font-size: 0.8125rem;
+}
+
+.adm-swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1px solid var(--admin-border);
+}
+
+/* ── 설비 모델별 질문 수: 모델명 120px · 가로 막대 14px · 건수 ── */
+.adm-hbars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  margin: 0 !important;
+  padding: 0 !important;
+  list-style: none;
+}
+
+.adm-hbar {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0 !important;
+}
+
+.adm-hbar-label {
+  flex: 0 0 7.5rem;
+  overflow: hidden;
+  color: var(--admin-text);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 너비는 usage_tab.render_models 가 "남는 너비 × 비율"로 정함 (카드 폭이 바뀌어도 가장 긴 막대가 넘치지 않게) */
+.adm-hbar-fill {
+  flex: 0 0 auto;
+  min-width: 2px;
+  height: 0.875rem;
+  border-radius: 3px;
+  background: var(--admin-accent);
+}
+
+.adm-hbar-value {
+  color: var(--admin-text-muted);
+  font-size: 0.75rem;
+}
+
+/* ── 표 (자주 묻는 증상 Top 10): 제목 행 배경 · 행마다 아래 1px 선, 행 높이 37px ── */
+.adm-table,
+.adm-table tr {
+  border: none !important;
+}
+
+.adm-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin: 0 !important;
+  font-size: 0.8125rem;
+}
+
+/* 증상: 한국어(크게) + 아래 줄 영어 원문(작게) */
+.adm-symptom,
+.adm-symptom-original {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adm-symptom-original {
+  margin-top: 0.125rem;
+  color: var(--admin-text-muted);
+  font-size: 0.6875rem;
+}
+
+.adm-col-rank { width: 3.5rem; }
+.adm-col-count { width: 5rem; }
+
+.adm-table th,
+.adm-table td {
+  padding: 0.625rem 0.75rem !important;
+  border: none !important;
+  border-bottom: 1px solid var(--admin-border) !important;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adm-table .adm-rank {
+  text-align: center;
+}
+
+.adm-table th {
+  background: var(--admin-table-head) !important;
+  color: var(--admin-text-muted) !important;
+  font-weight: 500 !important;
+}
+
+.adm-table td {
+  background: var(--admin-surface) !important;
+  color: var(--admin-text) !important;
+}
+
+/* ── 답변 품질: 지표 카드 (Figma KPI Card 260x116: 이름 13px · 값 30px 굵게 · 설명 12px) ── */
+.adm-kpis {
+  display: flex;
+  gap: 1rem;
+}
+
+.adm-kpi {
+  display: flex;
+  flex-direction: column;
+  width: 16.25rem;
+  min-height: 7.25rem;
+  padding: 1.125rem 1.25rem;   /* 테두리 1 + 18 · 20 = Figma KPI Card 글자 위치 19 · 21 (높이 116) */
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: 0.75rem;
+}
+
+.adm-kpi-label {
+  color: var(--admin-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1rem;
+}
+
+.adm-kpi-value {
+  margin-top: 0.375rem;
+  color: var(--admin-text);
+  font-size: 1.875rem;
+  font-weight: 700;
+  line-height: 2.25rem;
+}
+
+.adm-kpi-note {
+  margin-top: 0.375rem;
+  color: var(--admin-text-muted);
+  font-size: 0.75rem;
+  line-height: 0.875rem;
+}
+
+/* ── 답 못 찾은 질문 목록 카드 (제목 · 설명 · 체크박스 표) ── */
+#admin-not-found {
+  gap: 0.875rem !important;
+  padding: 1.125rem 1.25rem !important;   /* 테두리 1 + 18 · 20 = Figma 글자 위치 19 · 21 */
+  background: var(--admin-surface) !important;
+  border: 1px solid var(--admin-border) !important;
+  border-radius: 0.75rem !important;
+}
+
+#admin-not-found .html-container {
+  padding: 0 !important;
+}
+
+.adm-help {
+  margin: 0.875rem 0 0 !important;
+  color: var(--admin-text-muted);
+  font-size: 0.75rem !important;
+  line-height: 0.875rem;    /* Figma 설명 글자 상자 14 → 표 위치가 카드 위 78px */
+}
+
+.adm-review-status {
+  color: var(--admin-text-muted);
+  font-size: 0.75rem;
+}
+
+/* gr.Dataframe 을 Figma 표 모양으로: 고정폭 글꼴 · 줄무늬 · 칸 세로선 · 선택 테두리 · 오른쪽 위 버튼을 걷어 냄 */
+#not-found-table {
+  --color-accent: var(--admin-accent);
+  --font-mono: var(--font);
+  --table-even-background-fill: var(--admin-surface);
+  --table-odd-background-fill: var(--admin-surface);
+  --table-border-color: var(--admin-border);
+  --checkbox-background-color: var(--admin-surface);
+  --checkbox-background-color-selected: var(--admin-accent);
+  --checkbox-border-color: var(--admin-check-border);
+  --checkbox-border-color-selected: var(--admin-accent);
+  --checkbox-border-color-focus: var(--admin-accent);
+  --checkbox-border-radius: 4px;
+  --table-row-focus: var(--admin-table-head);   /* 누른 행 배경: Gradio 기본 주황 대신 표 제목 행 색 */
+  --color-accent-soft: var(--admin-table-head);
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* Figma 07 표: 바깥 테두리 없이 제목 행 배경 + 행 사이 선만. 제목 행 위아래 기본 여백(4px)도 없앰 */
+#not-found-table .upload-container {
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+#not-found-table .header-table {
+  margin: 0 !important;
+}
+
+#not-found-table .cell-selected .text {
+  box-shadow: none !important;
+}
+
+#not-found-table .selection-button {
+  display: none !important;
+}
+
+#not-found-table .header-cell,
+#not-found-table .body-cell {
+  box-shadow: none !important;
+}
+
+#not-found-table .virtual-row {
+  border-top: 1px solid var(--admin-border);
+}
+
+#not-found-table .header-cell {
+  background: var(--admin-table-head) !important;
+  color: var(--admin-text-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+#not-found-table .body-cell {
+  color: var(--admin-text);
+  font-size: 0.8125rem;
+}
+
+/* 검토용 두 열만 제목과 체크박스를 각 열의 가운데에 정렬 */
+#not-found-table [data-heading="2"] .cell-wrap,
+#not-found-table [data-heading="3"] .cell-wrap,
+#not-found-table [data-col="2"] .cell-wrap,
+#not-found-table [data-col="3"] .cell-wrap {
+  justify-content: center !important;
+  text-align: center;
+}
+
+/* 체크박스 (Figma 담당자 확인 · KB 업데이트 필요 체크박스 20px): 꺼짐 = 바탕색 + 1.5px 테두리, 켜짐 = 초록 칸 + 체크 표시.
+   Gradio 기본은 테두리 1px 이고 마우스를 올리면 테두리 · 바탕색이 바뀌어서 상태마다 직접 지정 */
+#not-found-table input[type="checkbox"],
+#not-found-table input[type="checkbox"]:hover,
+#not-found-table input[type="checkbox"]:focus {
+  appearance: none;
+  box-sizing: border-box;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  background: var(--admin-surface) !important;
+  border: 1.5px solid var(--admin-check-border) !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+}
+
+#not-found-table input[type="checkbox"]:checked,
+#not-found-table input[type="checkbox"]:checked:hover,
+#not-found-table input[type="checkbox"]:checked:focus {
+  background: var(--admin-check-mark) center / 100% 100% no-repeat border-box, var(--admin-accent) !important;
+  border-color: var(--admin-accent) !important;
+}
+
+/* KB 업데이트 필요(3번째 열)는 같은 행의 담당자 확인(2번째 열)이 체크돼 있을 때만 누를 수 있음.
+   담당자 확인 없이 체크된 값이 와도 AdminDashboard.on_review_input 이 되돌림 */
+#not-found-table .virtual-row:has([data-col="2"] input:not(:checked)) [data-col="3"] {
+  cursor: not-allowed;
+}
+
+#not-found-table .virtual-row:has([data-col="2"] input:not(:checked)) [data-col="3"] .bool-cell {
+  pointer-events: none;
+  opacity: 0.4;
+}
+
+/* 제목 칸 글자를 고치지 못하게 (Gradio 는 제목 칸을 눌러 이름을 바꿀 수 있음) */
+#not-found-table .header-cell {
+  pointer-events: none;
+}
+
+/* Figma 표에 없는 것 숨김: 고정 열 자물쇠 · 칸 메뉴(⋮) · 제목 행 전체 선택 체크박스 */
+#not-found-table [aria-label="Static column"],
+#not-found-table .cell-menu-button,
+#not-found-table .select-all-checkbox {
+  display: none !important;
+}
+
+/* 맨 뒤 저장용 No(log_id) 열(0부터 4번째): 너비 0(column_widths)인 칸은 두고 안의 내용만 숨김.
+   칸 자체를 display: none 으로 빼면 Gradio 가 제목 칸 위치를 잘못 계산해 칸이 어긋남 */
+#not-found-table [data-heading="4"],
+#not-found-table [data-col="4"] {
+  padding: 0 !important;
+  border: none !important;
+}
+
+#not-found-table [data-heading="4"] > *,
+#not-found-table [data-col="4"] > * {
+  display: none !important;
+}
+
+#not-found-table .body-cell .cell-wrap {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+}
+
+/* 표의 위로 이동 버튼: 기존 반투명 효과는 유지하고 관리자 강조색만 적용 */
+#admin-root #not-found-table .scroll-top-button {
+  background: var(--admin-accent) !important;
+  color: var(--admin-accent-text) !important;
+}
+
+/* KB 현황: 상태 제목과 배지만 열 중앙에 정렬 */
+#admin-root #admin-kb-tab .kb-table .kb-state,
+#admin-root #admin-kb-tab .kb-table tbody td:last-child:not(.kb-empty) {
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* 이미 조정한 기간 드롭다운의 폭·여백 유지 */
+#admin-period { width: 6.25rem !important; min-width: 6.25rem !important; }
+#admin-period .wrap-inner { min-height: 2rem !important; gap: 0.375rem !important; }
+#admin-period input { min-width: 0 !important; width: 100% !important; }
+#admin-period .icon-wrap { flex: 0 0 0.75rem; }
+
+/* 원래 카드 배치는 유지하고 일별·입력 유형 카드만 조금 줄인다. */
+#admin-root .adm-daily-panel .adm-bars {
+  --adm-daily-bar-max: clamp(6rem, 13dvh, 8.125rem);
+  min-height: calc(var(--adm-daily-bar-max) + 2.375rem);
+}
+#admin-root .adm-types-panel .adm-stack { height: 1.25rem; }
+#admin-root .adm-types-panel .adm-legend {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+#admin-root .adm-types-panel .adm-legend li {
+  gap: 0.375rem;
+  white-space: nowrap;
+  font-size: clamp(0.6875rem, 0.9vw, 0.8125rem);
+}
+#admin-root .adm-types-panel .adm-swatch { flex-shrink: 0; }
+
+/* 운영 현황의 상단 빈 공간만 축소. 카드와 다른 탭의 배치는 유지한다. */
+#admin-tabs [role="tabpanel"]:has(.adm-usage-row) {
+  padding-top: clamp(0.5rem, 1.2dvh, 1rem) !important;
+  padding-bottom: 0.75rem !important;
+}
+
+/* Top 10만 행 높이를 소폭 늘려 아래쪽 빈 공간을 줄인다. */
+@media (min-width: 901px) {
+  #admin-root .adm-top-panel .adm-table td {
+    padding-top: clamp(0.875rem, 1.875dvh, 1rem) !important;
+    padding-bottom: clamp(0.875rem, 1.875dvh, 1rem) !important;
+  }
+}
+
+/* 모바일은 왼쪽 세 카드 다음에 Top 10을 표시한다. 카드 높이는 내용에 맡긴다. */
+@media (max-width: 900px) {
+  #admin-root .adm-usage-row { flex-wrap: wrap !important; }
+  #admin-root .adm-usage-row > .adm-col {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+  }
+  #admin-root .adm-types-panel .adm-legend { grid-template-columns: 1fr; }
+  #admin-root .adm-types-panel .adm-legend li { font-size: 0.8125rem; }
+}
