@@ -32,3 +32,10 @@ docs/
 .chroma_db.rebuild.lock
 .chroma_db.stage-*/
 .chroma_db.backup-*/
+
+# Evaluation results
+/eval/results/
+
+# Tests: keep only the live pipeline test
+/tests/*
+!/tests/pipeline_answer_live_test.py
